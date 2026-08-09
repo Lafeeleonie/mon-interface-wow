@@ -1,0 +1,26 @@
+# Fichiers temporaires et copies de secours de WoW/addons
+*.bak
+*.old
+*.tmp
+*.temp
+*.log
+
+# Fichiers propres au système ou aux éditeurs
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
+
+# Journaux locaux des scripts
+sync-*.txt
+restore-*.txt
+
+# Données locales qui ne doivent jamais entrer dans la version publique
+Private/
+WTF/Account/Account/
+WTF/Account/*#*/
+Screenshots/
+Logs/
+Cache/
+Errors/
+Fonts/

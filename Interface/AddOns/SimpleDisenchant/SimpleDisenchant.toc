@@ -1,0 +1,55 @@
+## Interface: 120007, 120100
+## Title: Simple Disenchant
+## Author: Artenola
+## Version: 1.7.4
+
+## Notes: Easily disenchant items from your bags with a simple interface
+## Notes-frFR: Desenchantez facilement les objets de vos sacs
+## Notes-deDE: Entzaubern Sie einfach Gegenstande aus Ihren Taschen
+## Notes-esES: Desencanta facilmente objetos de tus bolsas
+## Notes-itIT: Disincanta facilmente gli oggetti dalle tue borse
+## Notes-ruRU: Legko raspylyajte predmety iz sumok
+
+## IconTexture: Interface\Icons\INV_Enchant_Disenchant
+## AddonCompartmentFunc: SimpleDisenchant_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: SimpleDisenchant_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: SimpleDisenchant_OnAddonCompartmentLeave
+## SavedVariablesPerCharacter: SimpleDisenchantDB
+
+## Category: Professions
+## X-Category: Professions
+
+## X-Website: https://github.com/Artenola/SimpleDisenchant
+## X-Curse-Project-ID: 1445028
+## X-Wago-ID: QKy9q4K7
+## X-WoWI-ID:
+
+# Localization
+Locales\Locales.lua
+Locales\frFR.lua
+Locales\deDE.lua
+Locales\esES.lua
+Locales\itIT.lua
+Locales\ruRU.lua
+
+# Libs (optional, embedded by packager)
+Libs\LibStub\LibStub.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+
+# Core
+Core\Constants.lua
+Core\Utils.lua
+Core\Blacklist.lua
+Core\DataBroker.lua
+
+# UI
+UI\MainFrame.lua
+UI\FilterButtons.lua
+UI\ItemList.lua
+UI\ProfessionButton.lua
+UI\BlacklistFrame.lua
+UI\FilteredItemsFrame.lua
+UI\MinimapButton.lua
+
+# Main
+SimpleDisenchant.lua

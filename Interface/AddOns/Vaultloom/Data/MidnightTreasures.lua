@@ -1,0 +1,241 @@
+local _, Addon = ...
+
+Addon.Data = Addon.Data or {}
+
+local PROFESSION_RANGES = {
+    { key = "inscription", first = 89067, last = 89074, skillLineID = 773, spellID = 45357 },
+    { key = "tailoring", first = 89078, last = 89085, skillLineID = 197, spellID = 3908 },
+    { key = "leatherworking", first = 89089, last = 89096, skillLineID = 165, spellID = 2108 },
+    { key = "enchanting", first = 89100, last = 89107, skillLineID = 333, spellID = 7411 },
+    { key = "alchemy", first = 89111, last = 89118, skillLineID = 171, spellID = 2259 },
+    { key = "jewelcrafting", first = 89122, last = 89129, skillLineID = 755, spellID = 25229 },
+    { key = "engineering", first = 89133, last = 89140, skillLineID = 202, spellID = 4036 },
+    { key = "mining", first = 89144, last = 89151, skillLineID = 186, spellID = 2575 },
+    { key = "herbalism", first = 89155, last = 89162, skillLineID = 182, spellID = 2366 },
+    { key = "skinning", first = 89166, last = 89173, skillLineID = 393, spellID = 8613 },
+    { key = "blacksmithing", first = 89177, last = 89184, skillLineID = 164, spellID = 2018 },
+}
+
+local professionByQuestID = {}
+local professionByKey = {}
+local professionBySkillLineID = {}
+for _, definition in ipairs(PROFESSION_RANGES) do
+    professionByKey[definition.key] = definition
+    professionBySkillLineID[definition.skillLineID] = definition.key
+    for questID = definition.first, definition.last do
+        professionByQuestID[questID] = definition.key
+    end
+end
+
+local RAW_NODES = {
+    "2393|24.34|69.28|93967|Rookery Cache|treasure",
+    "2393|26.98|60.29|89177|Deconstructed Forge Techniques|profession",
+    "2393|28.62|46.38|89124|Dual-Function Magnifiers|profession",
+    "2393|31.79|68.28|89084|Particularly Enchanting Tablecloth|profession",
+    "2393|35.73|61.22|89079|A Really Nice Curtain|profession",
+    "2393|37.80|52.38|94781|Incomplete Book of Sonnets|treasure",
+    "2393|43.13|55.62|89171|Sin'dorei Tanning Oil|profession",
+    "2393|44.76|56.26|89096|Artisan's Considered Order|profession",
+    "2393|45.05|44.74|89111|Vial of Eversong Oddities|profession",
+    "2393|47.65|50.39|89073|Songwriter's Pen|profession",
+    "2393|47.75|51.69|89117|Pristine Potion|profession",
+    "2393|48.54|74.38|89184|Silvermoon Blacksmith's Hammer|profession",
+    "2393|49.02|75.93|89160|Simple Leaf Pruners|profession",
+    "2393|49.11|75.86|89115|Freshly Plucked Peacebloom|profession",
+    "2393|49.17|61.33|89183|Sin'dorei Master's Forgemace|profession",
+    "2393|50.50|56.59|89122|Sin'dorei Masterwork Chisel|profession",
+    "2393|51.20|57.20|89139|What To Do When Nothing Works|profession",
+    "2393|51.30|74.40|89133|One Engineer's Junk|profession",
+    "2393|55.44|47.82|89127|Vintage Soul Gem|profession",
+    "2395|37.98|45.38|89147|Solid Ore Punchers|profession",
+    "2395|38.89|76.06|93456|Triple-Locked Safebox|treasure",
+    "2395|39.28|45.43|89072|Half-Baked Techniques|profession",
+    "2395|39.57|45.79|89135|Manual of Mistakes and Mishaps|profession",
+    "2395|39.64|38.82|89129|Sin'dorei Gem Faceters|profession",
+    "2395|40.19|61.21|89101|Enchanted Sunfire Silk|profession",
+    "2395|40.35|61.23|89074|Songwriter's Quill|profession",
+    "2395|40.43|60.89|86645|Stone Vat of Wine|treasure",
+    "2395|40.96|19.45|93544|Gift of the Phoenix|treasure",
+    "2395|43.27|69.49|94747|Forgotten Ink and Quill|treasure",
+    "2395|44.61|45.54|93908|Gilded Armillary Sphere|treasure",
+    "2395|46.36|34.87|89080|Sin'dorei Outfitter's Ruler|profession",
+    "2395|48.31|75.55|89069|Spare Ink|profession",
+    "2395|48.32|75.78|89178|Silvermoon Smithing Kit|profession",
+    "2395|48.40|76.26|89173|Thalassian Skinning Knife|profession",
+    "2395|48.73|75.44|91358|Burbling Paint Pot|treasure",
+    "2395|52.34|45.43|93455|Antique Nobleman's Signet Ring|treasure",
+    "2395|56.62|40.88|89125|Poorly Rounded Vial|profession",
+    "2395|56.84|40.77|89180|Metalworking Cheat Sheet|profession",
+    "2395|60.68|67.29|93457|Farstrider's Lost Quiver|treasure",
+    "2395|60.75|53.01|89103|Everblazing Sunmote|profession",
+    "2395|63.49|32.60|89107|Sin'dorei Enchanting Rod|profession",
+    "2395|64.25|30.46|89158|A Spade|profession",
+    "2405|24.82|70.01|94742|Voidhoarder's Corpse|treasure",
+    "2405|25.76|67.28|92414|Void-Shielded Tomb|treasure",
+    "2405|28.33|72.90|93498|Exaliburn|treasure",
+    "2405|31.50|44.51|93500|Quivering Egg|treasure",
+    "2405|32.79|43.29|89118|Failed Experiment|profession",
+    "2405|34.68|56.97|89156|Peculiar Lotus|profession",
+    "2405|34.72|56.92|89090|Ethereal Leatherworking Knife|profession",
+    "2405|35.49|58.82|89102|Pure Void Crystal|profession",
+    "2405|35.77|41.41|93496|Discarded Energy Pike|treasure",
+    "2405|37.69|69.76|93467|Half-Digested Viscera|treasure",
+    "2405|41.84|38.21|89150|Star Metal Deposit|profession",
+    "2405|43.01|81.94|93493|Faindel's Quiver|treasure",
+    "2405|47.93|78.51|94454|Forgotten Researcher's Cache|treasure",
+    "2405|49.94|79.36|93237|Final Clutch of Predaxas|treasure",
+    "2405|53.36|42.66|93840|Malignant Chest|treasure",
+    "2405|55.37|75.42|93553|Embedded Spear|treasure",
+    "2405|64.53|75.47|93431|Bloody Sack|treasure",
+    "2413|26.73|67.59|93508|Impenatrably Sealed Gourd|treasure",
+    "2413|34.77|24.69|89113|Vial of Rootlands Oddities|profession",
+    "2413|36.10|25.17|89095|Haranir Leatherworking Knife|profession",
+    "2413|36.66|25.06|89159|Lightbloom Root|profession",
+    "2413|37.75|65.22|89104|Entropic Shard|profession",
+    "2413|38.32|67.04|89162|Bloomed Bud|profession",
+    "2413|38.83|65.86|89151|Spare Expedition Torch|profession",
+    "2413|40.64|28.02|93587|Peculiar Cauldron|treasure",
+    "2413|46.65|67.78|93650|Sporespawned Cache|treasure",
+    "2413|47.06|50.25|92426|Burning Branch of the World Tree|treasure",
+    "2413|47.18|53.14|93145|Altar of Vigor|ritual",
+    "2413|51.11|55.71|89155|Planting Shovel|profession",
+    "2413|51.15|47.55|93130|Altar of Innocence|ritual",
+    "2413|51.15|58.56|93146|Altar of Wisdom|ritual",
+    "2413|51.69|51.32|89094|Haranir Leatherworking Mallet|profession",
+    "2413|52.43|52.61|89070|Intrepid Explorer's Marker|profession",
+    "2413|52.75|49.98|89071|Leftover Sanguithorn Pigment|profession",
+    "2413|55.69|39.43|92436|Kemet's Simmering Cauldron|treasure",
+    "2413|62.90|51.24|92431|Reliquary's Lost Paintbrush|treasure",
+    "2413|65.72|50.22|89105|Primal Essence Orb|profession",
+    "2413|66.34|50.85|89182|Rutaani Floratender's Sword|profession",
+    "2413|68.00|49.81|89136|Expeditious Pylon|profession",
+    "2413|69.52|49.17|89168|Primal Hide|profession",
+    "2413|69.76|51.05|89081|Wooden Weaving Sword|profession",
+    "2413|70.56|50.90|89078|A Child's Stuffy|profession",
+    "2413|71.68|31.00|92424|Failed Shroom Jumper's Satchel|treasure",
+    "2413|73.65|65.35|92427|Sporelord's Fight Prize|treasure",
+    "2413|76.09|51.08|89166|Lightbloom Afflicted Hide|profession",
+    "2413|76.13|51.05|89157|Harvester's Sickle|profession",
+    "2437|20.84|66.54|90795|Bait and Tackle|treasure",
+    "2437|21.89|77.38|93871|Sealed Twilight Blade Bounty|treasure",
+    "2437|30.75|83.97|89091|Prestigiously Racked Hide|profession",
+    "2437|33.07|79.07|89172|Amani Skinning Knife|profession",
+    "2437|33.08|78.91|89089|Amani Leatherworker's Tool|profession",
+    "2437|34.21|87.80|89140|Handy Wrench|profession",
+    "2437|40.39|36.01|89170|Amani Tanning Oil|profession",
+    "2437|40.39|51.17|89114|Vial of Zul'Aman Oddities|profession",
+    "2437|40.41|51.18|89106|Loa-Blessed Dust|profession",
+    "2437|40.48|35.95|90798|Secret Formula|treasure",
+    "2437|40.48|49.35|89068|Leather-Bound Techniques|profession",
+    "2437|40.53|49.36|89085|Artisan's Cover Comb|profession",
+    "2437|41.91|45.91|89161|Sweeping Harvester's Scythe|profession",
+    "2437|41.99|47.79|90796|Burrow Bounty|treasure",
+    "2437|42.00|46.53|89145|Spelunker's Lucky Charm|profession",
+    "2437|42.64|52.43|90799|Abandoned Nest|treasure",
+    "2437|44.72|44.09|90794|Abandoned Ritual Skull|treasure",
+    "2437|46.83|81.86|90793|Honored Warrior's Cache|treasure",
+    "2437|52.32|65.99|90797|Mrruk's Mangy Trove|treasure",
+    "2444|28.73|38.56|89148|Glimmering Void Pearl|profession",
+    "2444|28.93|39.03|89134|Miniaturized Transport Skiff|profession",
+    "2444|30.48|69.07|89144|Miner's Guide to Voidstorm|profession",
+    "2444|30.49|69.04|89123|Speculative Voidstorm Crystal|profession",
+    "2444|30.51|68.99|89181|Voidstorm Defense Spear|profession",
+    "2444|41.96|40.62|89112|Vial of Voidstorm Oddities|profession",
+    "2444|45.50|42.40|89169|Voidstorm Leather Sample|profession",
+    "2444|49.05|20.12|94387|Scout's Pack|treasure",
+    "2444|53.13|32.28|93996|Stellar Stash|treasure",
+    "2444|53.74|51.67|89093|Patterns: Beyond the Void|profession",
+    "2444|54.13|51.01|89137|Ethereal Stormwrench|profession",
+    "2444|54.20|51.04|89128|Ethereal Gem Pliers|profession",
+    "2444|54.24|51.59|89146|Lost Voidstorm Satchel|profession",
+    "2444|60.69|84.26|89067|Void-Touched Quill|profession",
+    "2444|61.39|85.12|89083|Satin Throw Pillow|profession",
+    "2444|62.01|83.52|89082|Book of Sin'dorei Stitches|profession",
+    "2444|62.76|53.45|89126|Shattered Glass|profession",
+    "2502|54.59|84.88|94001|Sturdy Chest|delve",
+    "2502|54.63|48.85|94002|Sturdy Chest|delve",
+    "2502|55.90|34.37|94028|Sturdy Chest|delve",
+    "2504|21.74|36.29|94034|Sturdy Chest|delve",
+    "2504|46.93|49.89|94037|Sturdy Chest|delve",
+    "2504|56.82|85.79|94020|Sturdy Chest|delve",
+    "2505|39.72|26.14|94016|Sturdy Chest|delve",
+    "2505|54.23|25.18|94023|Sturdy Chest|delve",
+    "2505|55.43|26.15|94041|Sturdy Chest|delve",
+    "2506|41.80|53.75|94017|Sturdy Chest|delve",
+    "2506|58.26|41.51|94025|Sturdy Chest|delve",
+    "2506|58.63|60.52|94044|Sturdy Chest|delve",
+    "2510|36.97|28.65|94039|Sturdy Chest|delve",
+    "2510|67.53|59.56|94021|Sturdy Chest|delve",
+    "2510|69.76|31.65|94022|Sturdy Chest|delve",
+    "2525|41.58|48.24|94027|Sturdy Chest|delve",
+    "2525|45.81|45.50|94045|Sturdy Chest|delve",
+    "2525|53.10|43.05|94026|Sturdy Chest|delve",
+    "2527|23.74|83.69|94454|Forgotten Researcher's Cache|treasure",
+    "2528|38.14|49.02|94042|Sturdy Chest|delve",
+    "2535|48.34|50.51|94014|Sturdy Chest|delve",
+    "2535|53.00|65.34|94038|Sturdy Chest|delve",
+    "2535|53.06|57.95|94000|Sturdy Chest|delve",
+    "2536|33.08|65.82|89179|Carefully Racked Spear|profession",
+    "2536|33.29|65.91|89149|Amani Expert's Chisel|profession",
+    "2536|44.90|45.17|89167|Cadre Skinning Knife|profession",
+    "2536|45.29|45.61|89092|Bundle of Tanner's Trinkets|profession",
+    "2536|48.71|22.53|89100|Enchanted Amani Mask|profession",
+    "2536|49.10|23.21|89116|Measured Ladle|profession",
+    "2536|65.14|34.76|89138|Offline Helper Bot|profession",
+    "2545|9.63|50.31|94019|Sturdy Chest|delve",
+    "2545|22.44|61.08|94015|Sturdy Chest|delve",
+    "2545|41.16|86.79|94033|Sturdy Chest|delve",
+    "2547|29.54|53.97|94030|Sturdy Chest|delve",
+    "2547|30.95|12.46|94018|Sturdy Chest|delve",
+    "2547|81.28|32.09|94029|Sturdy Chest|delve",
+    "2571|49.75|50.52|94043|Sturdy Chest|delve",
+    "2571|60.11|40.79|94024|Sturdy Chest|delve",
+    "2576|47.23|50.78|93144|Gift of the Cycle|ritual",
+}
+
+local nodes = {}
+local byMapID = {}
+local questIDs = {}
+local mapIDs = {}
+local counts = {
+    treasure = 0,
+    profession = 0,
+    ritual = 0,
+    delve = 0,
+}
+
+for _, line in ipairs(RAW_NODES) do
+    local mapID, x, y, questID, name, kind = line:match(
+        "^(%d+)|([%d%.]+)|([%d%.]+)|(%d+)|(.+)|([%a_]+)$"
+    )
+    mapID, x, y, questID = tonumber(mapID), tonumber(x), tonumber(y), tonumber(questID)
+    if mapID and x and y and questID and name and counts[kind] ~= nil then
+        local node = {
+            key = string.format("%d:%d:%.2f:%.2f", mapID, questID, x, y),
+            mapID = mapID,
+            x = x,
+            y = y,
+            questID = questID,
+            fallbackName = name,
+            kind = kind,
+            professionKey = kind == "profession" and professionByQuestID[questID] or nil,
+        }
+        nodes[#nodes + 1] = node
+        byMapID[mapID] = byMapID[mapID] or {}
+        byMapID[mapID][#byMapID[mapID] + 1] = node
+        questIDs[questID] = true
+        mapIDs[mapID] = true
+        counts[kind] = counts[kind] + 1
+    end
+end
+
+Addon.Data.MIDNIGHT_TREASURES = {
+    nodes = nodes,
+    byMapID = byMapID,
+    questIDs = questIDs,
+    mapIDs = mapIDs,
+    counts = counts,
+    professionByQuestID = professionByQuestID,
+    professionByKey = professionByKey,
+    professionBySkillLineID = professionBySkillLineID,
+}

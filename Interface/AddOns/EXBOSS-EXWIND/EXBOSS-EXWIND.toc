@@ -1,0 +1,10 @@
+﻿## Interface: 120007
+## Title: |cffff4400Ex|r|cff00ccffBoss|r Voice Pack: EXWIND
+## Notes: ExBoss 配套语音包，提供 EXWIND 系列语音标签
+## Author: ExwindStudio
+## Version: 1.0.0
+## Group: EXBoss
+## OptionalDeps: ExBoss, LibSharedMedia-3.0
+
+Labels.lua
+Sounds.lua

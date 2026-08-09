@@ -1,0 +1,12 @@
+## Interface: 120005
+## Title: EXBOSS-VoixFrancaise02 VoicePack
+## Notes: EXBoss voice pack by VoixFrancaise02
+## Author: VoixFrancaise02
+## Version: 1.0.0
+## RequiredDeps: ExBoss, ExwindCore
+## OptionalDeps: LibSharedMedia-3.0
+
+Config\AuthorInfo.lua
+Core.lua
+VoicePack\Labels.lua
+VoicePack\Sounds.lua

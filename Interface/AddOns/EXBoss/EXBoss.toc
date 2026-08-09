@@ -1,0 +1,195 @@
+﻿## Interface: 120007
+## Title: |cffff4400Ex|r|cff00ccffBoss|r
+## Notes: BOSS 技能计时 + 语音提醒
+## Author: Exwind
+## Version: 1.0.0
+## RequiredDeps: ExwindCore, EXBossData, EXBOSS-Locale
+## OptionalDeps: LibSharedMedia-3.0
+## SavedVariables: ExBossDB
+## LoadSavedVariablesFirst: 1
+## IconTexture: Interface\AddOns\ExwindCore\Textures\LOGO\EXUI.jpg
+
+# ── 1. 全局命名空间（最先）
+Core\ExBoss_Metadata.lua
+ExBoss.lua
+Core\ExBoss_Alert.lua
+Core\ExBoss_Print.lua
+Core\ExBoss_Border.lua
+Locale\Init.lua
+Modules\PullCountdown.lua
+Core\ExBoss_EditMode.lua
+Core\ExBoss_Changelog.lua
+Modules\Boss\Store.lua
+12.0NEWPROFILE_CHANGE.lua
+Modules\Boss\TimelineModeRules.lua
+Modules\Boss\TimelinePresentation.lua
+Modules\Boss\Encounters\Registry.lua
+Modules\Boss\Encounters\S12_0_S1\SeatOfTheTriumvirate\2065_ZuraalTheAscended.lua
+Modules\Boss\Encounters\S12_0_S1\SeatOfTheTriumvirate\2066_Saprish.lua
+Modules\Boss\Encounters\S12_0_S1\SeatOfTheTriumvirate\2067_ViceroyNezhar.lua
+Modules\Boss\Encounters\S12_0_S1\SeatOfTheTriumvirate\2068_Lura.lua
+Modules\Boss\Encounters\S12_0_S1\PitOfSaron\1999_ForgemasterGarfrost.lua
+Modules\Boss\Encounters\S12_0_S1\PitOfSaron\2000_ScourgelordTyrannus.lua
+Modules\Boss\Encounters\S12_0_S1\PitOfSaron\2001_IckAndKrick.lua
+Modules\Boss\Encounters\S12_0_S1\Skyreach\1698_Ranjit.lua
+Modules\Boss\Encounters\S12_0_S1\Skyreach\1699_Araknath.lua
+Modules\Boss\Encounters\S12_0_S1\Skyreach\1700_Rukhran.lua
+Modules\Boss\Encounters\S12_0_S1\Skyreach\1701_HighSageViryx.lua
+Modules\Boss\Encounters\S12_0_S1\AlgetharAcademy\2562_Vexamus.lua
+Modules\Boss\Encounters\S12_0_S1\AlgetharAcademy\2563_OvergrownAncient.lua
+Modules\Boss\Encounters\S12_0_S1\AlgetharAcademy\2564_Crawth.lua
+Modules\Boss\Encounters\S12_0_S1\AlgetharAcademy\2565_EchoOfDoragosa.lua
+Modules\Boss\Encounters\S12_0_S1\MaisaraCaverns\3212_MurojinAndNekraxx.lua
+Modules\Boss\Encounters\S12_0_S1\MaisaraCaverns\3213_Vordaza.lua
+Modules\Boss\Encounters\S12_0_S1\MaisaraCaverns\3214_RaktulVesselOfSouls.lua
+Modules\Boss\Encounters\S12_0_S1\NexusPointXenas\3328_ChiefCorewrightKasreth.lua
+Modules\Boss\Encounters\S12_0_S1\NexusPointXenas\3332_CorewardenNysarra.lua
+Modules\Boss\Encounters\S12_0_S1\NexusPointXenas\3333_Lothraxion.lua
+Modules\Boss\Encounters\S12_0_S1\WindrunnerSpire\3056_Emberdawn.lua
+Modules\Boss\Encounters\S12_0_S1\WindrunnerSpire\3057_DerelictDuo.lua
+Modules\Boss\Encounters\S12_0_S1\WindrunnerSpire\3058_CommanderKroluk.lua
+Modules\Boss\Encounters\S12_0_S1\WindrunnerSpire\3059_RestlessHeart.lua
+Modules\Boss\Encounters\S12_0_S1\MagistersTerrace\3071_ArcaneCrowdDispersingConstruct.lua
+Modules\Boss\Encounters\S12_0_S1\MagistersTerrace\3072_SelanarSunlash.lua
+Modules\Boss\Encounters\S12_0_S1\MagistersTerrace\3073_Gemellus.lua
+Modules\Boss\Encounters\S12_0_S1\MagistersTerrace\3074_Degentrius.lua
+Modules\Boss\Encounters\S12_0_S2\MurderRow\3101_KystiaManaheart.lua
+Modules\Boss\Encounters\S12_0_S2\MurderRow\3102_ZaenBladesorrow.lua
+Modules\Boss\Encounters\S12_0_S2\MurderRow\3103_XathuuxTheAnnihilator.lua
+Modules\Boss\Encounters\S12_0_S2\MurderRow\3105_LithielCinderfury.lua
+Modules\Boss\Encounters\S12_0_S2\DenOfNalorakk\3207_TheHoardmonger.lua
+Modules\Boss\Encounters\S12_0_S2\DenOfNalorakk\3208_SentinelOfWinter.lua
+Modules\Boss\Encounters\S12_0_S2\DenOfNalorakk\3209_Nalorakk.lua
+Modules\Boss\Encounters\S12_0_S2\TheBlindingVale\3199_LightblossomTrinity.lua
+Modules\Boss\Encounters\S12_0_S2\TheBlindingVale\3200_IkuzzTheLightHunter.lua
+Modules\Boss\Encounters\S12_0_S2\TheBlindingVale\3201_LightwardenRuia.lua
+Modules\Boss\Encounters\S12_0_S2\TheBlindingVale\3202_Ziekett.lua
+Modules\Boss\Encounters\S12_0_S2\VoidscarArena\3285_TazRah.lua
+Modules\Boss\Encounters\S12_0_S2\VoidscarArena\3286_Atroxus.lua
+Modules\Boss\Encounters\S12_0_S2\VoidscarArena\3287_Charonus.lua
+Modules\Boss\Encounters\S12_0_S2\AltarOfFangs\3456_Ravi.lua
+Modules\Boss\Encounters\S12_0_S2\AltarOfFangs\3457_TheWrithingCoil.lua
+Modules\Boss\Encounters\S12_0_S2\AltarOfFangs\3458_Zuljan.lua
+Modules\Boss\Encounters\S12_0_S2\RubyLifePools\2609_MelidrussaChillworn.lua
+Modules\Boss\Encounters\S12_0_S2\RubyLifePools\2606_KokiaBlazehoof.lua
+Modules\Boss\Encounters\S12_0_S2\RubyLifePools\2623_KyrakkaAndErkhartStormvein.lua
+Modules\Boss\Encounters\S12_0_S2\KingsRest\2139_TheGoldenSerpent.lua
+Modules\Boss\Encounters\S12_0_S2\KingsRest\2142_MchimbaTheEmbalmer.lua
+Modules\Boss\Encounters\S12_0_S2\KingsRest\2140_TheCouncilOfTribes.lua
+Modules\Boss\Encounters\S12_0_S2\KingsRest\2143_KingDazar.lua
+Modules\Boss\Encounters\S12_0_S2\TempleOfSethraliss\2124_AdderisAndAspix.lua
+Modules\Boss\Encounters\S12_0_S2\TempleOfSethraliss\2125_Merektha.lua
+Modules\Boss\Encounters\S12_0_S2\TempleOfSethraliss\2126_Galvazzt.lua
+Modules\Boss\Encounters\S12_0_S2\TempleOfSethraliss\2127_AvatarOfSethraliss.lua
+Modules\Boss\Mechanics\HealthThreshold.lua
+Modules\Boss\DogJumpTracker.lua
+Modules\Conditions\Store.lua
+Modules\Conditions\Compiler.lua
+Modules\Conditions\Actions.lua
+Modules\Conditions\Engine.lua
+Modules\AutoGossip.lua
+# Modules\MDT\Core.lua
+# Modules\MDT\Provider.lua
+# Modules\MDT\Notes.lua
+# Modules\MDT\Presets.lua
+# RouteCollections\hardplay\Collection.lua
+# RouteCollections\hardplay\Notes.lua
+# RouteCollections\shun\Collection.lua
+# RouteCollections\shun\Notes.lua
+# Modules\MDT\Snapshot.lua
+# Modules\MDT\Progress.lua
+# Modules\MDT\Runtime.lua
+# Modules\MDT\ImportPreset.lua
+# Modules\MDT\Overlay.lua
+Modules\PrivateAura\Data.lua
+Modules\PrivateAura\Registry.lua
+Modules\TrashCD\Store.lua
+Modules\TrashCD\Data.lua
+Modules\TrashCD\CustomEvents.lua
+Modules\TrashCD\Core.lua
+Modules\TrashCD\LindormiGuidanceCheck.lua
+Modules\TrashCD\VoiceBlacklist.lua
+Modules\TrashCD\RuntimeConfig.lua
+Modules\TrashCD\InferenceRules.lua
+Modules\TrashCD\Layer1Filter.lua
+Modules\TrashCD\Layer2Filter.lua
+Modules\TrashCD\Inference.lua
+Modules\TrashCD\AuraDelta.lua
+Modules\TrashCD\Output.lua
+Modules\TrashCD\Observation.lua
+Modules\TrashCD\TrashCache.lua
+Modules\TrashCD\Calibration.lua
+Modules\TrashCD\NameplateMarker.lua
+Modules\Boss\Encounters\S12_0_S1\MaisaraCaverns\Trash_248690_AbsorbBar.lua
+Modules\Tools\TargetIdentityState.lua
+Modules\Tools\MythicCast.lua
+Modules\Tools\SpellTarget.lua
+Modules\Tools\StateIcons.lua
+Modules\Tools\InterruptTracker.lua
+
+
+# ── 3. 计时引擎
+ExBossEngine\Scheduler.lua
+ExBossEngine\SpellInference.lua
+ExBossEngine\Dispatcher.lua
+ExBossCondition\Runtime.lua
+
+# ── 4. 显示层
+ExBossDisplay\BunBar\View.lua
+ExBossDisplay\TimerBar\View.lua
+ExBossDisplay\RingProgress.lua
+ExBossDisplay\IconAlert.lua
+ExBossDisplay\CastProgressBar.lua
+ExBossDisplay\ExtraShieldBar.lua
+ExBossDisplay\Countdown.lua
+ExBossDisplay\FlashText.lua
+ExBossDisplay\FlashTextMedium.lua
+ExBossDisplay\PartyFrameGlow.lua
+
+# ── 5. 语音层
+ExBossVoice\ColorSchemes.lua
+ExBossVoice\SharedMedia.lua
+ExBossVoice\Profiles.lua
+ExBossVoice\ImportExport.lua
+Modules\Wago\API.lua
+ExBossVoice\LabelCatalog.lua
+ExBossVoice\Engine.lua
+ExBossVoice\CountdownVoice.lua
+# ExBossVoice\OtherSounds.lua
+Modules\PrivateAura\Runtime.lua
+TargetAlert\Runtime.lua
+
+# ── 6. GUI 层
+Trash\Bootstrap.lua
+Trash\Runtime\ObservationTest.lua
+Modules\Boss\Encounters\S12_0_S1\WindrunnerSpire\Trash.lua
+ExBossGUI\PanelFrame.lua
+ExBossGUI\IconGroupV2.lua
+ExBossGUI\SettingsPage\HomePage.lua
+ExBossGUI\SettingsPage\ToolsPage.lua
+ExBossGUI\SettingsPage\BossPage.lua
+ExBossGUI\SettingsPage\GlobalSettingsPage.lua
+ExBossGUI\SettingsPage\GlobalTrashCDPage.lua
+ExBossGUI\SettingsPage\GeneralOverviewPage.lua
+ExBossGUI\SettingsPage\BatchEditPage.lua
+ExBossGUI\SettingsPage\BunBarPage.lua
+ExBossGUI\SettingsPage\TimerBarPage.lua
+ExBossGUI\SettingsPage\CountdownPage.lua
+ExBossGUI\SettingsPage\FlashTextPage.lua
+ExBossGUI\SettingsPage\FlashTextMediumPage.lua
+ExBossGUI\SettingsPage\RingProgressPage.lua
+ExBossGUI\SettingsPage\IconAlertPage.lua
+ExBossGUI\SettingsPage\CastProgressBarPage.lua
+ExBossGUI\SettingsPage\ExtraShieldBarPage.lua
+ExBossGUI\SettingsPage\DungeonExtraPage.lua
+ExBossGUI\SettingsPage\PrivateAuraMonitorPage.lua
+Modules\Tools\TargetAlertPage.lua
+ExBossGUI\SettingsPage\ImportExportPage.lua
+ExBossGUI\SettingsPage\VoicePackPage.lua
+ExBossGUI\SettingsPage\CountdownVoicePage.lua
+ExBossGUI\SettingsPage\ConditionsPage.lua
+# ExBossGUI\SettingsPage\MDTPage.lua
+Trash\GUI\TrashCDPage.lua
+
+# ── 7. 启动（最后）
+Init.lua

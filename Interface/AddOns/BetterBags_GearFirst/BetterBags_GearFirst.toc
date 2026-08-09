@@ -1,0 +1,25 @@
+## Interface: 11503, 40400, 110002
+
+## Title: BetterBags - Gear First
+## Author: Liwwo
+## Version: v1.0.11
+## X-Date: 2024-09-24T03:17:20
+## X-License: MIT
+## X-Curse-Project-ID: 1012882
+
+## Dependencies: BetterBags
+
+## Notes: Add options to show gear categories first.
+## Notes-ruRU: 
+## Notes-deDE: 
+## Notes-koKR: 
+## Notes-esMX: 
+## Notes-esES: 
+## Notes-ptBR: 
+## Notes-zhCN: 
+## Notes-zhTW: 
+## Notes-itIT: 
+## Notes-frFR: 
+
+i18n.lua
+main.lua

@@ -1,0 +1,63 @@
+-- SimpleDisenchant Constants
+local addonName, addon = ...
+
+addon.Constants = {}
+local C = addon.Constants
+
+-- Spell IDs
+C.DISENCHANT_SPELL_ID = 13262
+
+-- Profession IDs
+C.ENCHANTING_PROFESSION_ID = 333
+
+-- Quality colors (RGB values)
+C.QUALITY_COLORS = {
+    [2] = {0.12, 1.00, 0.00},    -- Green (Uncommon)
+    [3] = {0.00, 0.44, 0.87},    -- Blue (Rare)
+    [4] = {0.64, 0.21, 0.93},    -- Purple (Epic)
+}
+
+-- Item class IDs that can be disenchanted
+C.DISENCHANTABLE_CLASSES = {
+    [2] = true,   -- Weapons
+    [4] = true,   -- Armor
+    [19] = true,  -- Profession equipment
+}
+
+-- Item class ID for profession equipment
+C.ITEM_CLASS_PROFESSION = 19
+
+-- Minimum quality for disenchanting
+C.MIN_DISENCHANT_QUALITY = 2  -- Green
+
+-- Frame dimensions
+C.FRAME_WIDTH = 320
+C.FRAME_HEIGHT = 450
+
+-- Item list row height
+C.ITEM_ROW_HEIGHT = 36
+
+-- Filtered items frame dimensions
+C.FILTERED_FRAME_WIDTH = 300
+C.FILTERED_FRAME_HEIGHT = 400
+
+-- Default filter values (nil means "no limit")
+C.DEFAULT_FILTERS = {
+    quality = { [2] = true, [3] = true, [4] = true },
+    ilvlMin = nil,
+    ilvlMax = nil,
+    goldMin = nil,
+    goldMax = nil,
+    bindingType = { boe = true, bop = true },
+    hideEquipmentSets = true,
+    itemTypes = { armor = true, weapon = true, profession = true },
+}
+
+-- Binding types (from C_Item.GetItemInfo return #14)
+C.BIND_TYPE_BOE = 2  -- Bind on Equip
+C.BIND_TYPE_BOP = 1  -- Bind on Pickup
+C.BIND_TYPE_BOU = 3  -- Bind on Use (treated as BoE for filtering)
+
+-- Gold conversion
+C.COPPER_PER_GOLD = 10000
+C.COPPER_PER_SILVER = 100

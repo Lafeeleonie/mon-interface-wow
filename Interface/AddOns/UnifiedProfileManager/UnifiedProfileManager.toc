@@ -1,0 +1,26 @@
+## Interface: 120007,120100, 120007,120100, 50504, 40402, 30403, 20505, 11508
+## Title: Unified Profile Manager
+## Notes: A simple overview of all addon profiles for addons that use AceDB
+## Author: Numy
+## SavedVariables: UnifiedProfileManagerDB
+## AddonCompartmentFunc: UnifiedProfileManager_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: UnifiedProfileManager_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: UnifiedProfileManager_OnAddonCompartmentLeave
+## IconTexture: Interface\Addons\UnifiedProfileManager\media\icon
+## Version: v1.1.24
+## X-Curse-Project-ID: 1033706
+## X-Wago-ID: BKpq3XGE
+## Category-enUS: Other
+## Category-deDE: Anderes
+## Category-esES: Otros
+## Category-esMX: Otros
+## Category-frFR: Autre
+## Category-itIT: Altro
+## Category-koKR: 기타
+## Category-ptBR: Outro
+## Category-ruRU: Другое
+## Category-zhCN: 其它
+## Category-zhTW: 其他
+
+libs\libs.xml
+UnifiedProfileManager.lua

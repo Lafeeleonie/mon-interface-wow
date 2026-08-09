@@ -1,0 +1,15 @@
+## Interface: 120005, 120007
+## Title: Monk Stagger Bar Prime
+## Notes: Simple moveable stagger bar for Brewmaster Monks. Based on earlier work by Claude and Roffe.
+## Author: bljakk
+## Version: 2.0.2
+## SavedVariables: MonkStaggerBarPrimeDB
+## DefaultState: enabled
+## IconTexture: Interface\AddOns\MonkStaggerBarPrime\MSBPIcon
+## X-Category: Combat, Monk, Brewmaster, Tank
+## X-License: MIT
+## X-Website: https://github.com/bljakk-alt/MonkStaggerBarPrime
+## X-Curse-Project-ID: 1515597
+
+MonkStaggerBarPrime.lua
+MonkStaggerBarPrime_Options.lua

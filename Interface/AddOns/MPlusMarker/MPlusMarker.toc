@@ -1,0 +1,9 @@
+## Interface: 120000, 120001
+## Title: M+ Marker
+## Notes: Dynamically updates a targeting macro for M+ Dungeons with an interactive GUI.
+## Author: Respls
+## Version: 2.3.20
+## SavedVariables: MPlusMarkerDB
+
+Locales.lua
+MPlusMarker.lua

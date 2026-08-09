@@ -1,0 +1,22 @@
+# Fichiers texte : fins de ligne cohérentes dans Git, CRLF dans PowerShell.
+* text=auto
+*.ps1 text eol=crlf
+*.lua text eol=crlf
+*.toc text eol=crlf
+*.xml text eol=crlf
+*.wtf text eol=crlf
+
+# Ressources binaires volumineuses.
+*.ttf filter=lfs diff=lfs merge=lfs -text
+*.otf filter=lfs diff=lfs merge=lfs -text
+*.slug filter=lfs diff=lfs merge=lfs -text
+*.slugo filter=lfs diff=lfs merge=lfs -text
+*.tga filter=lfs diff=lfs merge=lfs -text
+*.blp filter=lfs diff=lfs merge=lfs -text
+*.mp3 filter=lfs diff=lfs merge=lfs -text
+*.ogg filter=lfs diff=lfs merge=lfs -text
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+
+# Les bases Raider.IO contiennent de très gros fichiers Lua générés.
+Interface/AddOns/RaiderIO/db/*.lua filter=lfs diff=lfs merge=lfs -text

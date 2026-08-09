@@ -1,0 +1,41 @@
+## Interface: 120007
+## Title: ThyraxUtil
+## Notes: Mouse Tracker, Quest Accept Hotkey & Combat QoL
+## Author: Thyrax
+## Version: 5.2.4
+## IconTexture: Interface\AddOns\ThyraxUtil\icon.tga
+## SavedVariables: ThyraxUtilDB
+
+Core\Namespace.lua
+Core\Versions.lua
+Core\Diagnostics.lua
+Core\Compat.lua
+Core\Color.lua
+Core\Format.lua
+Core\Settings.lua
+Core\EventBus.lua
+Core\ModuleRegistry.lua
+Core\UITheme.lua
+Core\Onboarding.lua
+
+Modules\Crosshair.lua
+Modules\DarknessAnnouncer.lua
+Modules\MouseTracker.lua
+Modules\QuestAcceptHotkey.lua
+Modules\DynamicFlightTracker.lua
+Modules\AuctionFilterPersist.lua
+Modules\AccountingTracker.lua
+Modules\AccountingTracker\EntryBlob.lua
+Modules\AccountingTracker\Minimap.lua
+Modules\AccountingTracker\Commands.lua
+Modules\AccountingTracker\Mail.lua
+Modules\AccountingTracker\Window.lua
+Modules\CharacterPanelEnhancer.lua
+Modules\CharacterPanelEnhancer\StatsPanel.lua
+Modules\CharacterPanelEnhancer\Inspect.lua
+
+UI\SlashCommands.lua
+UI\OptionsPanel.lua
+UI\DeveloperMode.lua
+
+Core\Init.lua

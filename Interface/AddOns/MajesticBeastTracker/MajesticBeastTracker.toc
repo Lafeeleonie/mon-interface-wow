@@ -1,0 +1,27 @@
+## Interface: 120001, 120005, 120007
+## Title: Majestic Beast Tracker
+## Notes: Tracks daily Majestic Lure beast cooldowns across all characters
+## Author: Vichob
+## Version: v2.1.0
+## SavedVariables: MajesticBeastTrackerDB
+## X-Curse-Project-ID: 1481252
+## OptionalDeps: !Mechanic
+
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+Core.lua
+Components\TalentData.lua
+Templates.xml
+UI.lua
+UI\LureIcons.lua
+UI\TravelBar.lua
+UI\SettingsDropdown.lua
+UI\UpdateUI.lua
+Components\ConsumableBar.lua
+Components\CalendarPicker.lua
+LootUI.lua
+Components\GearPopup.lua
+Settings.lua

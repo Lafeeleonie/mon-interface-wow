@@ -1,0 +1,72 @@
+-- Please use the Localization App on CurseForge to update this file
+-- https://legacy.curseforge.com/wow/addons/mythicpluspullreestimated/localization
+local name, _ = ...
+
+local debug = false
+--[==[@debug@
+debug = true
+--@end-debug@]==]
+
+local L = LibStub("AceLocale-3.0"):NewLocale(name, "enUS", true, debug)
+
+-- MythicPlusPullReEstimated
+L["A long way of writing 100%%."] = "A long way of writing 100%%."
+L["Activities"] = "Activities"
+L["Adds percentage info to the unit tooltip"] = "Adds percentage info to the unit tooltip"
+L["Adds the % info to the enemy nameplates"] = "Adds the % info to the enemy nameplates"
+L["Color of the text on the enemy nameplates"] = "Color of the text on the enemy nameplates"
+L["CTRL-C to copy"] = "CTRL-C to copy"
+L["Current pull:"] = "Current pull:"
+L["Display a frame with current pull information"] = "Display a frame with current pull information"
+L["Enable Current Pull frame"] = "Enable Current Pull frame"
+L["Enable in Delves"] = "Enable in Delves"
+L["Enable in Mythic+"] = "Enable in Mythic+"
+L["Enable Nameplate Text"] = "Enable Nameplate Text"
+L["Enable the addon in Delves. Only works for delves that have a progress bar objective."] = "Enable the addon in Delves. Only works for delves that have a progress bar objective."
+L["Enable the addon in Mythic+ dungeons."] = "Enable the addon in Mythic+ dungeons."
+L["Enable Tooltip"] = "Enable Tooltip"
+L["Hide frame when API unavailable"] = "Hide frame when API unavailable"
+L["Horizontal offset ( <-> )"] = "Horizontal offset ( <-> )"
+L["Horizontal offset of the nameplate text"] = "Horizontal offset of the nameplate text"
+L["Include Count"] = "Include Count"
+L["Include the raw count value in the tooltip, as well as the percentage"] = "Include the raw count value in the tooltip, as well as the percentage"
+L["Lock frame"] = "Lock frame"
+L["Lock the frame in place"] = "Lock the frame in place"
+L["M+Progress:"] = "M+Progress:"
+L["Mythic Plus Pull"] = "Mythic Plus Pull"
+L["Mythic Plus Pull progress tracker"] = "Mythic Plus Pull progress tracker"
+L["Nameplate"] = "Nameplate"
+L["Nameplate Text Color"] = "Nameplate Text Color"
+L["Nameplate Text Scale"] = "Nameplate Text Scale"
+L["No Progress."] = "No Progress."
+L["Only in combat"] = "Only in combat"
+L["Only show the frame when you are in combat"] = "Only show the frame when you are in combat"
+L["Pull % information is unavailable in Midnight due to missing APIs. This option will hide the frame until the required APIs are added by Blizzard."] = "Pull % information is unavailable in Midnight due to missing APIs. This option will hide the frame until the required APIs are added by Blizzard."
+L["Pull Estimate frame"] = "Pull Estimate frame"
+L["Pull Frame Text Scale"] = "Pull Frame Text Scale"
+L["Reset position"] = "Reset position"
+L["Reset position of Current Pull frame to the default"] = "Reset position of Current Pull frame to the default"
+L["Reset to defaults"] = "Reset to defaults"
+L["Running first time setup. This should only happen once. Enjoy! ;)"] = "Running first time setup. This should only happen once. Enjoy! ;)"
+L["Scale of the text on the enemy nameplates"] = "Scale of the text on the enemy nameplates"
+L["Scale of the text on the pull frame"] = "Scale of the text on the pull frame"
+L["Text Format"] = "Text Format"
+L["The count of mobs pulled."] = "The count of mobs pulled."
+L["The current count of mobs killed."] = "The current count of mobs killed."
+L["The current percentage of mobs killed."] = "The current percentage of mobs killed."
+L["The estimated count after all pulled mobs are killed."] = "The estimated count after all pulled mobs are killed."
+L["The estimated percentage after all pulled mobs are killed."] = "The estimated percentage after all pulled mobs are killed."
+L["The following placeholders are available:"] = "The following placeholders are available:"
+L["The percentage of mobs pulled."] = "The percentage of mobs pulled."
+L["The percentage the mob gives."] = "The percentage the mob gives."
+L["The raw count the mob gives."] = "The raw count the mob gives."
+L["The required count of mobs to reach 100%%."] = "The required count of mobs to reach 100%%."
+L["The text format of the nameplate text. Use placeholders to display information."] = "The text format of the nameplate text. Use placeholders to display information."
+L["The text format of the pull frame. Use placeholders to display information."] = "The text format of the pull frame. Use placeholders to display information."
+L["Toggle an example display of the pull frame and nameplate text, using fake data."] = "Toggle an example display of the pull frame and nameplate text, using fake data."
+L["Toggle Example"] = "Toggle Example"
+L["Tooltip"] = "Tooltip"
+L["Version:"] = "Version:"
+L["Vertical Offset ( | )"] = "Vertical Offset ( | )"
+L["Vertical offset of the nameplate text"] = "Vertical offset of the nameplate text"
+

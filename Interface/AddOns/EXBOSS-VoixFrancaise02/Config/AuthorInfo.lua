@@ -1,0 +1,3 @@
+local _, NS = ...
+NS = type(NS) == "table" and NS or {}
+NS.AuthorInfo = { pluginKey="EXBOSS-VoixFrancaise02", authorKey="Melune", authorName="VoixFrancaise02" }

@@ -1,0 +1,27 @@
+## Interface: 120007
+## Title: MDTHelper
+## Notes: Live route guide for MDT dungeon routes
+## Author: MDTHelper
+## Version: 0.2.0
+## Dependencies: MythicDungeonTools
+## OptionalDeps: MDT_Legacy
+## IconTexture: Interface\AddOns\MDTHelper\MDTHelper.tga
+## SavedVariables: MDTHelperDB
+
+## Category-enUS: Mythic+ Dungeons
+## Category-deDE: Mythic+ Dungeons
+## Category-esES: Mythic+ Dungeons
+## Category-esMX: Mythic+ Dungeons
+## Category-frFR: Donjons Mythique+
+## Category-itIT: Mythic+ Dungeons
+## Category-koKR: Mythic+ Dungeons
+## Category-ptBR: Mythic+ Dungeons
+## Category-ruRU: Подземелья М+
+## Category-zhCN: Mythic+ Dungeons
+## Category-zhTW: Mythic+ Dungeons
+
+Core.lua
+RouteGuide.lua
+ForcesOverlay.lua
+MapPopout.lua
+Settings.lua

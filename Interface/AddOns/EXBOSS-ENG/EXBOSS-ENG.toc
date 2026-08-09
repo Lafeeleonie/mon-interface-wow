@@ -1,0 +1,10 @@
+## Interface: 120007
+## Title: |cffff4400Ex|r|cff00ccffBoss|r Voice Pack: English (ENG)
+## Notes: ExBoss voice pack - English (ENG)
+## Author: ExwindStudio
+## Version: 1.0.0
+## Group: EXBoss
+## OptionalDeps: ExBoss, LibSharedMedia-3.0
+
+Labels.lua
+Sounds.lua

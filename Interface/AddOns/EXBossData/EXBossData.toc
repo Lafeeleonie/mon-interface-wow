@@ -1,0 +1,77 @@
+﻿## Interface: 120007
+## Title: |cffff4400Ex|r|cff00ccffBoss|r Data
+## Notes: ExBoss static encounter data module
+## Author: Exwind
+## Version: 1.0.0
+## IconTexture: Interface\AddOns\ExwindCore\Textures\LOGO\EXUI.jpg
+## SavedVariables: EXBossDataDB
+
+FixedTimelineBosses.lua
+EncounterData.lua
+PrivateAuraData.lua
+HealthTextRules.lua
+Modules\Boss\Presets\Loader.lua
+Modules\Presets\Loader.lua
+## BossPresetFilesStart
+Modules\Boss\Presets\MplusDps\RURU.lua
+Modules\Boss\Presets\MplusDps\nine.lua
+Modules\Boss\Presets\MplusDps\B.lua
+Modules\Boss\Presets\MplusDps\C.lua
+Modules\Boss\Presets\MplusDps\EXWIND_CN.lua
+Modules\Boss\Presets\MplusDps\EXWIND_US.lua
+Modules\Boss\Presets\MplusDps\PresetConfig.lua
+Modules\Boss\Presets\MplusHealer\RURU.lua
+Modules\Boss\Presets\MplusHealer\nine.lua
+
+Modules\Boss\Presets\MplusHealer\C.lua
+Modules\Boss\Presets\MplusHealer\EXWIND_CN.lua
+Modules\Boss\Presets\MplusHealer\EXWIND_US.lua
+Modules\Boss\Presets\MplusHealer\PresetConfig.lua
+Modules\Boss\Presets\MplusTank\RURU.lua
+Modules\Boss\Presets\MplusTank\nine.lua
+Modules\Boss\Presets\MplusTank\B.lua
+Modules\Boss\Presets\MplusTank\C.lua
+Modules\Boss\Presets\MplusTank\EXWIND_CN.lua
+Modules\Boss\Presets\MplusTank\EXWIND_US.lua
+Modules\Boss\Presets\MplusTank\PresetConfig.lua
+Modules\Boss\Presets\RaidDps\RURU.lua
+Modules\Boss\Presets\RaidDps\B.lua
+Modules\Boss\Presets\RaidDps\C.lua
+Modules\Boss\Presets\RaidDps\EXWIND_CN.lua
+Modules\Boss\Presets\RaidDps\EXWIND_US.lua
+Modules\Boss\Presets\RaidDps\PresetConfig.lua
+Modules\Boss\Presets\RaidHealer\RURU.lua
+Modules\Boss\Presets\RaidHealer\B.lua
+Modules\Boss\Presets\RaidHealer\C.lua
+Modules\Boss\Presets\RaidHealer\EXWIND_CN.lua
+Modules\Boss\Presets\RaidHealer\EXWIND_US.lua
+Modules\Boss\Presets\RaidHealer\PresetConfig.lua
+Modules\Boss\Presets\RaidTank\RURU.lua
+Modules\Boss\Presets\RaidTank\B.lua
+Modules\Boss\Presets\RaidTank\C.lua
+Modules\Boss\Presets\RaidTank\EXWIND_CN.lua
+Modules\Boss\Presets\RaidTank\EXWIND_US.lua
+Modules\Boss\Presets\RaidTank\PresetConfig.lua
+## BossPresetFilesEnd
+## BuiltInSettingsPresetFilesStart
+Modules\Presets\SettingsPage\RURU.lua
+Modules\Presets\SettingsPage\B.lua
+Modules\Presets\SettingsPage\C.lua
+Modules\Presets\SettingsPage\EXWIND_CN.lua
+Modules\Presets\SettingsPage\EXWIND_US.lua
+Modules\Presets\SettingsPage\PresetConfig.lua
+## BuiltInSettingsPresetFilesEnd
+## BuiltInTrashPresetFilesStart
+Modules\Presets\Trash\RURU.lua
+Modules\Presets\Trash\B.lua
+Modules\Presets\Trash\C.lua
+Modules\Presets\Trash\nine.lua
+Modules\Presets\Trash\EXWIND_CN.lua
+Modules\Presets\Trash\EXWIND_US.lua
+Modules\Presets\Trash\PresetConfig.lua
+## BuiltInTrashPresetFilesEnd
+TrashCDData.lua
+TrashCDLocale.lua
+TrashMobTraits.lua
+TrashCDPreset.lua
+Store.lua

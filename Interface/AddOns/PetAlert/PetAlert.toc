@@ -1,0 +1,10 @@
+## Interface: 110207,120000,120001,120005,11508,20505,50503
+## Title: PetAlert
+## Notes: Premium combat pet alert console for missing pets, low health, and passive mode.
+## Author: Kowkow
+## Version: 3.1.1
+## SavedVariables: PetAlertDB
+## IconTexture: Interface\AddOns\PetAlert\media\icon
+
+PetAlert.lua
+PetAlert_Config.lua
