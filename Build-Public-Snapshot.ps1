@@ -214,5 +214,6 @@ Copiez les fichiers voulus dans `WTF/Account/<votre-compte>/SavedVariables` avec
 Copy-PublicAddons
 Copy-SanitizedSettings
 Remove-TreeIfPresent -Path (Join-Path $repoRoot "Fonts")
+& (Join-Path $repoRoot "Update-Addon-Catalog.ps1")
 
 Write-Host "Version publique reconstruite et assainie. Vérifiez les changements avec : git status"
