@@ -44,7 +44,7 @@ function Get-AddonCategory {
         '^(?i:lafee|__recap)' {
             return "Addons personnels"
         }
-        '^(?i:AddOnSkins|BetterCooldownManager|ElvUI|MiniAuras|MiniCC|Plater|WIM_ElvUI_Skin)' {
+        '^(?i:AddOnSkins|BetterCooldownManager|ElvUI|MiniAuras|MiniCC|Plater|Platynator|WIM_ElvUI_Skin)' {
             return "Interface et affichage"
         }
         '^(?i:ArchonTooltip|DBM-|Decursive|Details|EXBoss|EXBOSS-|ExwindCore|LoggerHeadLite|MDTHelper|MonkStaggerBarPrime|MPlusMarker|MRT|MythicDungeonTools|MythicPlusPullReEstimated|Oilvl|PetAlert|RaiderIO|Simulationcraft|WarpDeplete)' {
@@ -125,6 +125,10 @@ $categoryOrder = @(
     "Confort et outils"
 )
 
+$profileLinks = @{
+    Platynator = "https://wago.io/OYbMwElUi"
+}
+
 $catalogAddons = @($addons | Where-Object { $_.Folder -notmatch '^(?i:RaiderIO)' })
 
 $builder = [System.Text.StringBuilder]::new()
@@ -157,12 +161,13 @@ foreach ($category in $categoryOrder) {
 
     foreach ($addon in $items) {
         $encodedFolder = [Uri]::EscapeDataString($addon.Folder)
+        $addonLink = if ($profileLinks.ContainsKey($addon.Folder)) { $profileLinks[$addon.Folder] } else { "Interface/AddOns/$encodedFolder" }
         $titleCell = ConvertTo-MarkdownCell -Value $addon.Title
         $folderCell = ConvertTo-MarkdownCell -Value $addon.Folder
         $versionCell = ConvertTo-MarkdownCell -Value $addon.Version
         $authorCell = ConvertTo-MarkdownCell -Value $addon.Author
         $descriptionCell = ConvertTo-MarkdownCell -Value $addon.Description
-        [void] $builder.AppendLine("| [$titleCell](Interface/AddOns/$encodedFolder)<br><sub>$folderCell</sub> | $versionCell | $authorCell | $descriptionCell |")
+        [void] $builder.AppendLine("| [$titleCell]($addonLink)<br><sub>$folderCell</sub> | $versionCell | $authorCell | $descriptionCell |")
     }
 
     [void] $builder.AppendLine()

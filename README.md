@@ -35,7 +35,7 @@ Les descriptions et versions proviennent directement des métadonnées installé
 </details>
 
 <details>
-<summary><strong>Interface et affichage</strong> — 9 dossier(s)</summary>
+<summary><strong>Interface et affichage</strong> — 10 dossier(s)</summary>
 
 | Addon | Version | Auteur | Présentation |
 |---|---:|---|---|
@@ -47,6 +47,7 @@ Les descriptions et versions proviennent directement des métadonnées installé
 | [ElvUI WindTools](Interface/AddOns/ElvUI_WindTools)<br><sub>ElvUI_WindTools</sub> | 4.19 | fang2hou | Customizable enhancements for ElvUI. |
 | [MiniAuras](Interface/AddOns/MiniAuras)<br><sub>MiniAuras</sub> | 5.12.2 | Verz | Shows CC and important spells on frames/nameplates/alerts in PvP. |
 | [MiniCC (settings bridge for MiniAuras)](Interface/AddOns/MiniCC)<br><sub>MiniCC</sub> | 5.12.2 | Verz | Loads the old MiniCC settings file so MiniAuras can import it. Does nothing else. |
+| [Platynator](https://wago.io/OYbMwElUi)<br><sub>Platynator</sub> | 462 | plusmouse | Module ou extension de Platynator. |
 | [WIM - ElvUI Skin](Interface/AddOns/WIM_ElvUI_Skin)<br><sub>WIM_ElvUI_Skin</sub> | 120007.01-Release | fuba | A simple skin matching the Design of Elvui |
 
 </details>
@@ -121,7 +122,7 @@ Les descriptions et versions proviennent directement des métadonnées installé
 </details>
 
 <details>
-<summary><strong>Confort et outils</strong> — 11 dossier(s)</summary>
+<summary><strong>Confort et outils</strong> — 10 dossier(s)</summary>
 
 | Addon | Version | Auteur | Présentation |
 |---|---:|---|---|
@@ -130,7 +131,6 @@ Les descriptions et versions proviennent directement des métadonnées installé
 | [BugSack](Interface/AddOns/BugSack)<br><sub>BugSack</sub> | v12.0.13 | Funkeh | Toss those bugs inna sack. |
 | [Copybara](Interface/AddOns/Copybara)<br><sub>Copybara</sub> | 1.2.0 | MickeyPickey, sato942_ | Addon to copy your chat tabs and settings from one character to another. |
 | [FastCinematicSkip](Interface/AddOns/FastCinematicSkip)<br><sub>FastCinematicSkip</sub> | 11.1 | BloodDragon2580 | Automatically cancels all InGame cinematics and movies. |
-| [Platynator](Interface/AddOns/Platynator)<br><sub>Platynator</sub> | 462 | plusmouse | Module ou extension de Platynator. |
 | [Premade Groups Filter](Interface/AddOns/PremadeGroupsFilter)<br><sub>PremadeGroupsFilter</sub> | 7.5.2 | Bernhard Saumweber | Permet de filtrer des groupes prédéfinis à l'aide d'une interface utilisateur ou d'expressions de filtre avancées. |
 | [ThyraxUtil](Interface/AddOns/ThyraxUtil)<br><sub>ThyraxUtil</sub> | 5.2.5r | Thyrax | Mouse Tracker, Quest Accept Hotkey &amp; Combat QoL |
 | [TomTom](Interface/AddOns/TomTom)<br><sub>TomTom</sub> | v4.3.8-release | Cladhaire, Ludovicus | Agit comme un assistant de navigation portable |
