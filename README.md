@@ -15,7 +15,7 @@ Ne sont volontairement pas publiés : historiques de discussion, combat, enchèr
 ## Mes addons
 
 <!-- ADDON_CATALOG_START -->
-Cette installation contient **95 dossiers**, dont **94 modules WoW détectés** par leur fichier `.toc`.
+Ce catalogue référence **79 dossiers**, dont **78 modules WoW détectés** par leur fichier `.toc`.
 Le **dossier auxiliaire** sans `.toc` est également indiqué pour que l'inventaire reste exhaustif.
 
 Les descriptions et versions proviennent directement des métadonnées installées ; leur langue peut donc varier selon l'addon.
@@ -52,7 +52,7 @@ Les descriptions et versions proviennent directement des métadonnées installé
 </details>
 
 <details>
-<summary><strong>Combat, donjons et raids</strong> — 57 dossier(s)</summary>
+<summary><strong>Combat, donjons et raids</strong> — 41 dossier(s)</summary>
 
 | Addon | Version | Auteur | Présentation |
 |---|---:|---|---|
@@ -95,22 +95,6 @@ Les descriptions et versions proviennent directement des métadonnées installé
 | [Mythic Plus Pull](Interface/AddOns/MythicPlusPullReEstimated)<br><sub>MythicPlusPullReEstimated</sub> | v1.12.5 | Numy | Tracks and displays % progress gained from individual mobs or entire pulls in Mythic+ dungeons. /mpp for options |
 | [O Item Level(OiLvL)](Interface/AddOns/Oilvl)<br><sub>Oilvl</sub> | 12.1.0 | OlzenKhaw, Teece | Shows Item Level of raiders in party / raid. Shows Item Level and raid progression on tooltips. |
 | [PetAlert](Interface/AddOns/PetAlert)<br><sub>PetAlert</sub> | 3.1.1 | Kowkow | Premium combat pet alert console for missing pets, low health, and passive mode. |
-| [Raider.IO Mythic Plus (Americas)](Interface/AddOns/RaiderIO_DB_US_M)<br><sub>RaiderIO_DB_US_M</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Mythic Plus (Americas). |
-| [Raider.IO Mythic Plus (China)](Interface/AddOns/RaiderIO_DB_CN_M)<br><sub>RaiderIO_DB_CN_M</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Mythic Plus (China). |
-| [Raider.IO Mythic Plus (Europe)](Interface/AddOns/RaiderIO_DB_EU_M)<br><sub>RaiderIO_DB_EU_M</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Mythic Plus (Europe). |
-| [Raider.IO Mythic Plus (Korea)](Interface/AddOns/RaiderIO_DB_KR_M)<br><sub>RaiderIO_DB_KR_M</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Mythic Plus (Korea). |
-| [Raider.IO Mythic Plus (Taiwan)](Interface/AddOns/RaiderIO_DB_TW_M)<br><sub>RaiderIO_DB_TW_M</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Mythic Plus (Taiwan). |
-| [Raider.IO Mythic Plus, Raiding, and Recruitment](Interface/AddOns/RaiderIO)<br><sub>RaiderIO</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Shows Raider.IO Mythic+ Score, Raid Progress, and Recruitment status in-game. Make sure to load one or more region DB. |
-| [Raider.IO Raiding (Americas)](Interface/AddOns/RaiderIO_DB_US_R)<br><sub>RaiderIO_DB_US_R</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Raiding (Americas). |
-| [Raider.IO Raiding (China)](Interface/AddOns/RaiderIO_DB_CN_R)<br><sub>RaiderIO_DB_CN_R</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Raiding (China). |
-| [Raider.IO Raiding (Europe)](Interface/AddOns/RaiderIO_DB_EU_R)<br><sub>RaiderIO_DB_EU_R</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Raiding (Europe). |
-| [Raider.IO Raiding (Korea)](Interface/AddOns/RaiderIO_DB_KR_R)<br><sub>RaiderIO_DB_KR_R</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Raiding (Korea). |
-| [Raider.IO Raiding (Taiwan)](Interface/AddOns/RaiderIO_DB_TW_R)<br><sub>RaiderIO_DB_TW_R</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Raiding (Taiwan). |
-| [Raider.IO Recruitment (Americas)](Interface/AddOns/RaiderIO_DB_US_F)<br><sub>RaiderIO_DB_US_F</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Recruitment (Americas). |
-| [Raider.IO Recruitment (China)](Interface/AddOns/RaiderIO_DB_CN_F)<br><sub>RaiderIO_DB_CN_F</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Recruitment (China). |
-| [Raider.IO Recruitment (Europe)](Interface/AddOns/RaiderIO_DB_EU_F)<br><sub>RaiderIO_DB_EU_F</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Recruitment (Europe). |
-| [Raider.IO Recruitment (Korea)](Interface/AddOns/RaiderIO_DB_KR_F)<br><sub>RaiderIO_DB_KR_F</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Recruitment (Korea). |
-| [Raider.IO Recruitment (Taiwan)](Interface/AddOns/RaiderIO_DB_TW_F)<br><sub>RaiderIO_DB_TW_F</sub> | 12.1.0 (v202608140600) | Vladinator (Vladinator-TarrenMill), Aspyr (Aspyrox-Skullcrusher) and Isak (Isak-Sargeras) | Module ou extension de Raider.IO Recruitment (Taiwan). |
 | [Simulationcraft](Interface/AddOns/Simulationcraft)<br><sub>Simulationcraft</sub> | 12.1.0-02 | Theck, navv_, seriallos | Constructs SimC export strings |
 | [WarpDeplete](Interface/AddOns/WarpDeplete)<br><sub>WarpDeplete</sub> | 5.4.2 | Happens | Module ou extension de WarpDeplete. |
 

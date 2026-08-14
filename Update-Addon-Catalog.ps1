@@ -125,11 +125,13 @@ $categoryOrder = @(
     "Confort et outils"
 )
 
-$builder = [System.Text.StringBuilder]::new()
-$moduleCount = @($addons | Where-Object HasToc).Count
-$auxiliaryCount = $addons.Count - $moduleCount
+$catalogAddons = @($addons | Where-Object { $_.Folder -notmatch '^(?i:RaiderIO)' })
 
-[void] $builder.AppendLine("Cette installation contient **$($addons.Count) dossiers**, dont **$moduleCount modules WoW détectés** par leur fichier ``.toc``.")
+$builder = [System.Text.StringBuilder]::new()
+$moduleCount = @($catalogAddons | Where-Object HasToc).Count
+$auxiliaryCount = $catalogAddons.Count - $moduleCount
+
+[void] $builder.AppendLine("Ce catalogue référence **$($catalogAddons.Count) dossiers**, dont **$moduleCount modules WoW détectés** par leur fichier ``.toc``.")
 if ($auxiliaryCount -gt 0) {
     if ($auxiliaryCount -eq 1) {
         [void] $builder.AppendLine("Le **dossier auxiliaire** sans ``.toc`` est également indiqué pour que l'inventaire reste exhaustif.")
@@ -142,7 +144,7 @@ if ($auxiliaryCount -gt 0) {
 [void] $builder.AppendLine()
 
 foreach ($category in $categoryOrder) {
-    $items = @($addons | Where-Object Category -EQ $category | Sort-Object Title, Folder)
+    $items = @($catalogAddons | Where-Object Category -EQ $category | Sort-Object Title, Folder)
     if ($items.Count -eq 0) {
         continue
     }
@@ -184,4 +186,4 @@ if ($updatedReadme -NE $readme) {
     Set-Content -LiteralPath $readmePath -Value $updatedReadme -Encoding UTF8 -NoNewline
 }
 
-Write-Host "Catalogue mis à jour : $($addons.Count) dossiers, $moduleCount modules WoW."
+Write-Host "Catalogue mis à jour : $($catalogAddons.Count) dossiers, $moduleCount modules WoW."
