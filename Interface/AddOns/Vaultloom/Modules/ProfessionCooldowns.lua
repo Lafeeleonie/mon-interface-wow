@@ -36,7 +36,14 @@ local function collectCooldowns()
     local scanned = false
     if scanRequested then
         snapshot, scanned = Addon.ProfessionCooldownLogic:ScanOpenProfession(identity, snapshot)
-        if snapshot then record.snapshots.professionCooldowns = snapshot end
+        if snapshot and not Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "professionCooldowns",
+            snapshot,
+            "refresh"
+        ) then
+            snapshot = Service:GetSnapshot(identity.key)
+        end
         scanRequested = false
     end
     return { characterKey = identity.key, snapshot = snapshot, scanned = scanned == true }

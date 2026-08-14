@@ -2,10 +2,10 @@
 local _, addon = ...
 local mini = addon.Framework
 local L = addon.L
-local wowEx = addon.Utils.WoWEx
 local verticalSpacing = mini.VerticalSpacing
 local horizontalSpacing = mini.HorizontalSpacing
 local helpers = addon.Config.PanelHelpers
+local dbDefaults = addon.Config.Defaults
 ---@class MiscellaneousConfig
 local M = {}
 addon.Config.Miscellaneous = M
@@ -75,7 +75,9 @@ function M:Build(panel)
 				return
 			end
 			db.LocaleOverride = newKey
-			StaticPopup_Show("MINIAURAS_RELOAD_CONFIRM")
+			StaticPopup_Show("MINIAURAS_CONFIRM", L["Language changed. Reload UI now?"], nil, {
+				OnYes = C_UI.Reload,
+			})
 		end,
 	})
 
@@ -107,28 +109,6 @@ function M:Build(panel)
 	})
 
 	configureBlizzardNameplatesChk:SetPoint("TOPLEFT", behaviourDivider, "BOTTOMLEFT", 0, -verticalSpacing)
-
-	-- 12.1 sorts inside the AuraContainer, and only by aura instance id - every other sort rule
-	-- keys off data the addon cannot read there. The option fed the legacy UnitAuraWatcher's sort,
-	-- and no watcher exists on that path, so the toggle does nothing. Hidden rather than left as a
-	-- control with no effect.
-	if not wowEx:UseAuraContainers() then
-		local ccNativeOrderChk = mini:Checkbox({
-			Parent = panel,
-			LabelText = L["CC Native Order"],
-			Tooltip = L["Instead of showing the latest CC applied (MiniAuras behaviour), use Blizzard's default CC priority which usually shows the first CC applied (with some exceptions)."],
-			GetValue = function()
-				return db.CCNativeOrder or false
-			end,
-			SetValue = function(value)
-				db.CCNativeOrder = value
-				addon:Refresh()
-			end,
-		})
-
-		ccNativeOrderChk:SetPoint("LEFT", panel, "LEFT", checkColumnWidth * 2, 0)
-		ccNativeOrderChk:SetPoint("TOP", configureBlizzardNameplatesChk, "TOP", 0, 0)
-	end
 
 	local iconsDivider = mini:Divider({
 		Parent = panel,
@@ -172,42 +152,38 @@ function M:Build(panel)
 	fadeWithParentChk:SetPoint("LEFT", panel, "LEFT", checkColumnWidth, 0)
 	fadeWithParentChk:SetPoint("TOP", disableSwipeChk, "TOP", 0, 0)
 
-	-- Glow Type: on 12.1 aura icons render as AuraButtons, which LibCustomGlow can't attach to,
-	-- so only the two texture-based glows are offered there. TEMPORARY: drop the split and keep
-	-- the full list once the legacy path is retired.
-	local useAuraContainers = addon.Utils.WoWEx:UseAuraContainers()
+	-- The crop is baked into an icon when its frame is built, and the frames are pooled, so
+	-- icons already made keep the old one until the UI is reloaded.
+	local iconZoomChk = mini:Checkbox({
+		Parent = panel,
+		LabelText = L["Zoom Icons"],
+		Tooltip = L["Crops the silver border off spell icons. Turn it off to show the icons exactly as Blizzard draws them. Needs a reload."],
+		GetValue = function()
+			return db.IconZoom ~= false
+		end,
+		SetValue = function(value)
+			db.IconZoom = value
+			addon:Refresh()
+			StaticPopup_Show("MINIAURAS_CONFIRM", L["This change needs a UI reload. Reload now?"], nil, {
+				OnYes = C_UI.Reload,
+			})
+		end,
+	})
 
-	-- 12.1 only: the colour rides a curve on the native duration text, which the legacy path
-	-- has no equivalent for.
-	if useAuraContainers then
-		local colorCountdownChk = mini:Checkbox({
-			Parent = panel,
-			LabelText = L["Colour Countdown"],
-			Tooltip = L["Colours the countdown timer text by the time remaining: white above a minute, yellow under a minute, and red in the last five seconds."],
-			GetValue = function()
-				return db.ColorCountdownByTime or false
-			end,
-			SetValue = function(value)
-				db.ColorCountdownByTime = value
-				addon:Refresh()
-			end,
-		})
+	iconZoomChk:SetPoint("LEFT", panel, "LEFT", checkColumnWidth * 2, 0)
+	iconZoomChk:SetPoint("TOP", disableSwipeChk, "TOP", 0, 0)
 
-		colorCountdownChk:SetPoint("LEFT", panel, "LEFT", checkColumnWidth * 2, 0)
-		colorCountdownChk:SetPoint("TOP", disableSwipeChk, "TOP", 0, 0)
-	end
-
-	local glowItems = useAuraContainers and {
+	-- Aura icons render as AuraButtons, which LibCustomGlow cannot attach to, so only the
+	-- texture-based glows are on offer.
+	local glowItems = {
 		"Rotation Assist (Clockwise)",
 		"Rotation Assist (Anti-clockwise)",
 		"Ants (Anti-Clockwise)",
+		"Twins",
+		"Mirror",
+		"Twins Mirror",
 		"Slot Glow",
-	} or {
-		"Proc Glow",
-		"Rotation Assist (Anti-clockwise)",
-		"Pixel Glow",
-		"Autocast Shine",
-		"Slot Glow",
+		"Static Pixel Border",
 	}
 
 	-- Rotation Assist runs a looping flipbook per AuraButton, and the 12.1 containers pre-create
@@ -215,12 +191,9 @@ function M:Build(panel)
 	-- per icon: AuraButtons forbid UntrustedScriptExecution (no OnShow/OnHide hook), their shown
 	-- state is deliberately secret (ApplyVisibility secretwraps it), and frames are acquired LIFO
 	-- so there's no stable "these can never show" set. Hence the warning rather than a fix.
-	local glowNoteLines = useAuraContainers and {
+	local glowNoteLines = {
 		L["The Slot Glow is static and uses the least CPU."],
 		L["Animated glows keep animating icons with no aura, costing CPU while idle."],
-	} or {
-		L["The Proc Glow uses the least CPU."],
-		L["The others seem to use a non-trivial amount of CPU."],
 	}
 
 	local glowTypeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -233,8 +206,8 @@ function M:Build(panel)
 		GetValue = function()
 			local current = db.GlowType or "Slot Glow"
 
-			-- A profile saved on 12.0 can hold an LCG-only type; show what actually renders.
-			if useAuraContainers and not tContains(glowItems, current) then
+			-- An older profile can hold a LibCustomGlow-only type; show what actually renders.
+			if not tContains(glowItems, current) then
 				return "Slot Glow"
 			end
 
@@ -264,8 +237,8 @@ function M:Build(panel)
 		Min = 0.5,
 		Max = 1.5,
 		Step = 0.05,
-		Default = 1.0,
-		Fallback = 1.0,
+		Default = dbDefaults.FontScale,
+		Fallback = dbDefaults.FontScale,
 		Float = true,
 		Width = columnWidth - horizontalSpacing,
 		Target = db,
@@ -279,8 +252,8 @@ function M:Build(panel)
 		LabelText = L["Milliseconds Threshold"],
 		Min = 1,
 		Max = 6,
-		Default = 5,
-		Fallback = 5,
+		Default = dbDefaults.MillisecondsThreshold,
+		Fallback = dbDefaults.MillisecondsThreshold,
 		Width = columnWidth - horizontalSpacing,
 		Target = db,
 		Key = "MillisecondsThreshold",
@@ -288,4 +261,96 @@ function M:Build(panel)
 
 	millisThresholdSlider.Slider:SetPoint("LEFT", fontScaleSlider.Slider, "RIGHT", horizontalSpacing, 0)
 	millisThresholdSlider.Slider:SetPoint("TOP", fontScaleSlider.Slider, "TOP", 0, 0)
+
+	local countdownDivider = mini:Divider({
+		Parent = panel,
+		Text = L["Countdown Colours"],
+	})
+	countdownDivider:SetPoint("LEFT", panel, "LEFT")
+	countdownDivider:SetPoint("RIGHT", panel, "RIGHT")
+	countdownDivider:SetPoint("TOP", fontScaleSlider.Slider, "BOTTOM", 0, -verticalSpacing * 2)
+
+	local colorCountdownChk = mini:Checkbox({
+		Parent = panel,
+		LabelText = L["Colour Countdown"],
+		Tooltip = L["Colours the countdown timer text by the time remaining: white above a minute, yellow under a minute, and red in the last five seconds."],
+		GetValue = function()
+			return db.ColorCountdownByTime or false
+		end,
+		SetValue = function(value)
+			db.ColorCountdownByTime = value
+			addon:Refresh()
+		end,
+	})
+
+	colorCountdownChk:SetPoint("TOPLEFT", countdownDivider, "BOTTOMLEFT", 0, -verticalSpacing)
+
+	-- A snapshot saved before the colours existed round-trips without the table, so both are
+	-- recreated from the defaults on first touch rather than assumed.
+	local function CountdownColor(key)
+		local colors = db.CountdownColors
+
+		if not colors then
+			colors = {}
+			db.CountdownColors = colors
+		end
+
+		local color = colors[key]
+
+		if not color then
+			local default = dbDefaults.CountdownColors[key]
+			color = { R = default.R, G = default.G, B = default.B }
+			colors[key] = color
+		end
+
+		return color
+	end
+
+	-- The picker fires per drag tick, and a refresh here restyles and re-binds every countdown
+	-- in the addon, so the refresh waits until the dragging has gone quiet. The ticker-driven
+	-- legacy icons still preview live: they read the saved colours directly each tick.
+	local refreshTimer
+	local function QueueColorRefresh()
+		if refreshTimer then
+			refreshTimer:Cancel()
+		end
+
+		refreshTimer = C_Timer.NewTimer(0.3, function()
+			refreshTimer = nil
+			addon:Refresh()
+		end)
+	end
+
+	local function BuildCountdownSwatch(labelText, tooltip, key)
+		return mini:ColorSwatch({
+			Parent = panel,
+			LabelText = labelText,
+			Tooltip = tooltip,
+			HasOpacity = false,
+			GetValue = function()
+				local color = CountdownColor(key)
+				return color.R, color.G, color.B, 1
+			end,
+			SetValue = function(r, g, b)
+				local color = CountdownColor(key)
+				color.R, color.G, color.B = r, g, b
+				QueueColorRefresh()
+			end,
+		})
+	end
+
+	local under5Swatch = BuildCountdownSwatch(L["Under 5s"],
+		L["Countdown text colour in the last five seconds."], "Under5s")
+	local under60Swatch = BuildCountdownSwatch(L["Under 1m"],
+		L["Countdown text colour under a minute."], "Under60s")
+	local over60Swatch = BuildCountdownSwatch(L["Above 1m"],
+		L["Countdown text colour above a minute."], "Over60s")
+
+	-- On the checkbox's row, one grid column each, like the icon toggles above.
+	under5Swatch:SetPoint("LEFT", panel, "LEFT", checkColumnWidth, 0)
+	under5Swatch:SetPoint("TOP", colorCountdownChk, "TOP", 0, 0)
+	under60Swatch:SetPoint("LEFT", panel, "LEFT", checkColumnWidth * 2, 0)
+	under60Swatch:SetPoint("TOP", colorCountdownChk, "TOP", 0, 0)
+	over60Swatch:SetPoint("LEFT", panel, "LEFT", checkColumnWidth * 3, 0)
+	over60Swatch:SetPoint("TOP", colorCountdownChk, "TOP", 0, 0)
 end

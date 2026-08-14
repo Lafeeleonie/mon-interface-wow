@@ -1,8 +1,8 @@
-## Interface: 120007
+## Interface: 120100
 ## Title: Vaultloom |cff8edcff(Beta)|r
 ## Notes: Warband, weekly progress, character snapshots, collections, and optional quality-of-life tools.
 ## Author: Legijaone
-## Version: 1.0.6-beta
+## Version: 1.1.2-beta
 ## SavedVariables: VaultloomDB, VaultloomLanguage
 ## IconTexture: Interface\Icons\Inv_10_gearupgrade_drakesshadowflameenhancedcrest
 ## AddonCompartmentFunc: Vaultloom_OnAddonCompartmentClick
@@ -32,6 +32,7 @@ Localization\Load.lua
 Core\Logger.lua
 Core\PerformanceDiagnostics.lua
 Core\Database.lua
+Core\Sound.lua
 Core\EventBus.lua
 Core\StateStore.lua
 Core\RefreshScheduler.lua
@@ -40,8 +41,11 @@ Core\FeatureRegistry.lua
 Core\ScreenRegistry.lua
 Core\WoWApi.lua
 Core\ContainerItems.lua
+Data\OneClickProcessing.lua
 Core\OneClickProcessingLogic.lua
 Core\InventoryTrackerLogic.lua
+Core\MailLogic.lua
+Core\MailSendLogic.lua
 Core\ItemFinderLogic.lua
 Core\ShoppingListLogic.lua
 Core\SpecSwitcherLogic.lua
@@ -86,19 +90,20 @@ Features\MidnightRareMapPins.lua
 Features\MidnightRareMapPins.xml
 Features\MidnightTreasureMapPins.lua
 Features\MidnightTreasureMapPins.xml
-Features\MapCoordinates.lua
 Features\GatheringNodes.lua
 Features\GatheringNodes.xml
 Features\ProfessionKnowledgeBadges.lua
 Features\QuietLoot.lua
 Features\BlizzardUnitFrames.lua
 Features\BlizzardWindowMover.lua
+Data\PveCoiledIsle.lua
 Data\PveWorld.lua
 Data\PveVoidInvasion.lua
 Data\PveDarkmoon.lua
 Data\PvpWeekly.lua
 Data\Professions.lua
 Data\Raids.lua
+Data\Seasons.lua
 Data\Dungeons.lua
 Data\MythicPlus.lua
 Data\Housing.lua
@@ -108,6 +113,7 @@ UI\Theme.lua
 UI\Widgets.lua
 UI\VaultRewardBadge.lua
 UI\ScrollFrames.lua
+Features\Mailbox.lua
 Features\MerchantFilters.lua
 UI\StatusRows.lua
 UI\RaidRows.lua
@@ -117,6 +123,7 @@ UI\Features.lua
 UI\ProfessionBadges.lua
 UI\WarbandOverview.lua
 UI\MythicPlusOverview.lua
+UI\CharacterOrderDialog.lua
 UI\WorldMapFeatureButton.lua
 UI\VerticalNavigation.lua
 UI\Welcome.lua
@@ -131,6 +138,7 @@ Core\PveEventsLogic.lua
 Core\PveDelvesLogic.lua
 Core\PvePreyLogic.lua
 Core\PveRaresLogic.lua
+Core\PveCoiledIsleLogic.lua
 Core\PveWorldLogic.lua
 Core\PveVoidInvasionLogic.lua
 Core\DarkmoonDetector.lua
@@ -165,6 +173,8 @@ Screens\Compendium.lua
 
 Modules\CharacterIdentity.lua
 Modules\Arsenal.lua
+Modules\Mailbox.lua
+Modules\MailSender.lua
 Modules\UtilityResources.lua
 Modules\WarbandRoster.lua
 Modules\VaultProgress.lua
@@ -174,6 +184,7 @@ Modules\PveEvents.lua
 Modules\PveDelves.lua
 Modules\PvePrey.lua
 Modules\PveRares.lua
+Modules\PveCoiledIsle.lua
 Modules\PveWorld.lua
 Modules\PveVoidInvasion.lua
 Modules\PveDarkmoon.lua

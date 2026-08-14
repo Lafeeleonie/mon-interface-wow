@@ -25,6 +25,7 @@ local VALID_CARD_FIELDS = {
     realm = true,
     professions = true,
     vault = true,
+    specializationArt = true,
 }
 
 local function characterName(character)
@@ -52,6 +53,40 @@ local function applyManualOrder(roster, order)
         end
     end
     return ordered
+end
+
+local function buildCanonicalOrder(db, roster, preferredOrder)
+    local order, seen = {}, {}
+    local function add(characterKey)
+        local record = type(characterKey) == "string" and db.characters[characterKey] or nil
+        if type(characterKey) ~= "string" or characterKey == "" or seen[characterKey]
+            or type(record) ~= "table" or type(record.identity) ~= "table"
+        then
+            return
+        end
+        order[#order + 1] = characterKey
+        seen[characterKey] = true
+    end
+
+    local savedOrder = type(preferredOrder) == "table" and preferredOrder
+        or type(db.ui.sidebarOrder) == "table" and db.ui.sidebarOrder
+        or {}
+    for _, characterKey in ipairs(savedOrder) do
+        add(characterKey)
+    end
+    for _, character in ipairs(type(roster) == "table" and roster or {}) do
+        add(character and character.key)
+    end
+
+    local missing = {}
+    for characterKey, record in pairs(db.characters) do
+        if not seen[characterKey] and type(record) == "table" and type(record.identity) == "table" then
+            missing[#missing + 1] = characterKey
+        end
+    end
+    table.sort(missing, function(a, b) return string.lower(a) < string.lower(b) end)
+    for _, characterKey in ipairs(missing) do add(characterKey) end
+    return order
 end
 
 local function sortDefault(a, b)
@@ -86,6 +121,11 @@ local function collectRoster()
                 realm = identity.realm,
                 className = identity.className,
                 classFile = identity.classFile,
+                specID = tonumber(identity.specID),
+                specIndex = tonumber(identity.specIndex),
+                specName = identity.specName,
+                specIcon = identity.specIcon,
+                specRole = identity.specRole,
                 level = math.max(0, tonumber(identity.level) or 0),
                 itemLevel = tonumber(identity.itemLevel),
                 money = tonumber(identity.money),
@@ -372,6 +412,23 @@ function Service:SetSortMode(sortMode)
         return false
     end
     Addon.Database:GetUI().sidebarSortMode = sortMode
+    return true
+end
+
+function Service:GetManualOrder()
+    local db = Addon.Database:Get()
+    return buildCanonicalOrder(db, self:GetAll())
+end
+
+function Service:SetManualOrder(preferredOrder)
+    if type(preferredOrder) ~= "table" then
+        return false, "invalid"
+    end
+
+    local db = Addon.Database:Get()
+    db.ui.sidebarOrder = buildCanonicalOrder(db, self:GetAll(), preferredOrder)
+    db.ui.sidebarSortMode = nil
+    Addon.RefreshScheduler:Run(Module.id)
     return true
 end
 

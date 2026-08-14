@@ -581,6 +581,10 @@ function Runtime:OnEnable()
         Runtime.lastIndex = nil
         Runtime:Refresh()
     end)
+    Addon.StateStore:Subscribe("mailbox.snapshots", self, function()
+        Runtime.lastIndex = nil
+        Runtime:Refresh()
+    end)
     Addon.EventBus:Subscribe("ITEM_DATA_LOAD_RESULT", self, function(_, itemID)
         Runtime:HandleItemData(itemID)
     end)

@@ -9,6 +9,7 @@ local REFRESH_EVENTS = {
     "PLAYER_ENTERING_WORLD",
     "PLAYER_LEVEL_UP",
     "PLAYER_EQUIPMENT_CHANGED",
+    "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
     "SKILL_LINES_CHANGED",
     "TRADE_SKILL_LIST_UPDATE",
 }
@@ -45,14 +46,22 @@ local function collectIdentity()
     if identity.professions == nil and type(record.identity) == "table" then
         identity.professions = record.identity.professions
     end
+    if identity.specID == nil and type(record.identity) == "table" then
+        identity.specID = record.identity.specID
+        identity.specIndex = record.identity.specIndex
+        identity.specName = record.identity.specName
+        identity.specIcon = record.identity.specIcon
+        identity.specRole = record.identity.specRole
+    end
     record.identity = identity
     db.characters[identity.key] = record
 
     if type(db.mainCharacterKey) ~= "string" or db.mainCharacterKey == "" then
         db.mainCharacterKey = identity.key
     end
-    if type(db.ui.selectedCharacterKey) ~= "string" or db.ui.selectedCharacterKey == "" then
+    if not Addon.Runtime.currentCharacterSelectionInitialized then
         db.ui.selectedCharacterKey = identity.key
+        Addon.Runtime.currentCharacterSelectionInitialized = true
     end
     return identity
 end

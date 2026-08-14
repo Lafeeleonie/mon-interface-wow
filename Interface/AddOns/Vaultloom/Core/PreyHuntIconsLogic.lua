@@ -41,6 +41,7 @@ function Logic:GetQuestData(questID)
         questID = questID,
         difficulty = positiveInteger(entry.difficulty),
         criteriaID = positiveInteger(entry.criteriaID),
+        achievementID = positiveInteger(entry.achievementID),
     }
 end
 
@@ -55,7 +56,7 @@ function Logic:BuildPinModel(questID, criteriaCompleted, showAchievementMarker, 
     local quest = self:GetQuestData(questID)
     if not quest or not quest.difficulty or not quest.criteriaID then return nil end
     local data = Addon.Data.PREY_HUNT_ICONS
-    local achievementID = data.achievementIDs[quest.difficulty]
+    local achievementID = quest.achievementID or data.achievementIDs[quest.difficulty]
     local completed
     if type(criteriaCompleted) == "function" and achievementID then
         local ok, value = pcall(criteriaCompleted, achievementID, quest.criteriaID)

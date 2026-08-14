@@ -177,8 +177,9 @@ local function ensureMatrixCell(row, index)
     cell = CreateFrame("Frame", nil, row, BACKDROP_TEMPLATE)
     cell:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     cell.value = Widgets:CreateLabel(cell, "GameFontNormal", "CENTER")
     cell.value:SetPoint("TOPLEFT", 3, -5)

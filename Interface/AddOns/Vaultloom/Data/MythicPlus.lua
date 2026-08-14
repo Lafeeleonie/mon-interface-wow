@@ -1,12 +1,19 @@
 local _, Addon = ...
 
+local Seasons = Addon.Data.SEASONS
+local activeSeason = Seasons:GetDefinition(Seasons:GetActiveKey("mythicPlus"))
+
 Addon.Data.MYTHIC_PLUS = {
-    seasonKey = "season1",
+    seasonKey = activeSeason.key,
+    stateID = Seasons:GetStateID("mythicplus", activeSeason.key),
     fallbackIcon = "Interface\\Icons\\Inv_10_gearupgrade_drakesshadowflameenhancedcrest",
     maxRecentRuns = 6,
     portalLevel = 10,
     subTabs = {
-        { key = "season1", labelKey = "MYTHIC_PLUS_TAB_SEASON1" },
+        { key = activeSeason.key, labelKey = activeSeason.mythicPlusLabelKey },
+    },
+    seasonKeys = {
+        [activeSeason.key] = true,
     },
     goals = {
         { key = "explorer", labelKey = "MYTHIC_PLUS_REWARD_EXPLORER", timedRuns = 1, value = "1 Run" },

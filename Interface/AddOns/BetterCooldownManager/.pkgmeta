@@ -1,0 +1,42 @@
+package-as: BetterCooldownManager
+enable-nolib-creation: no
+
+curse-id: 1435851
+wago-id: ANz030K4
+
+externals:
+    Libraries/Ace3/AceAddon-3.0: https://repos.curseforge.com/wow/ace3/trunk/AceAddon-3.0
+    Libraries/Ace3/AceDB-3.0: https://repos.curseforge.com/wow/ace3/trunk/AceDB-3.0
+    Libraries/Ace3/AceLocale-3.0: https://repos.curseforge.com/wow/ace3/trunk/AceLocale-3.0
+    Libraries/Ace3/AceSerializer-3.0: https://repos.curseforge.com/wow/ace3/trunk/AceSerializer-3.0
+    Libraries/CallbackHandler-1.0: https://repos.curseforge.com/wow/callbackhandler/trunk/CallbackHandler-1.0
+    Libraries/LibStub: https://repos.curseforge.com/wow/libstub/trunk
+    Libraries/LibSharedCanvas-1.0:
+        url: https://github.com/Silverbrit/LibSharedCanvas.git
+        branch: main
+    Libraries/LibSharedMedia-3.0: https://repos.curseforge.com/wow/libsharedmedia-3-0/trunk/LibSharedMedia-3.0
+    Libraries/LibDeflate:
+        url: https://github.com/SafeteeWoW/LibDeflate.git
+        tag: latest
+    Libraries/LibCustomGlow-1.0:
+        url: https://github.com/Stanzilla/LibCustomGlow.git
+        branch: master
+    Libraries/LibDualSpec-1.0:
+        url: https://github.com/AdiAddons/LibDualSpec-1.0.git
+        branch: master
+    Libraries/LibEditModeOverride:
+        url: https://github.com/plusmouse/LibEditModeOverride.git
+        branch: main
+
+ignore:
+    - README.md
+    - Options/README.md
+    - .git/
+    - .github/
+    - .vscode/
+    - .codex/
+    - .context/
+    - .libraries/
+    - AGENTS.md
+    - .pkgmeta
+    - install-deps.sh

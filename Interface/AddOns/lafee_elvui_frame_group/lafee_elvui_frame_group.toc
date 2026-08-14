@@ -1,8 +1,8 @@
-## Interface: 120005, 120007, 120100
+## Interface: 120007, 120100
 ## Title: Lafee ElvUI Frame Group
 ## Notes: Link ElvUI movers so they can be moved together.
 ## Author: Lafee
-## Version: 1.1.2
+## Version: 1.1.4
 ## RequiredDeps: ElvUI
 ## SavedVariables: LafeeElvUIFrameGroupDB
 

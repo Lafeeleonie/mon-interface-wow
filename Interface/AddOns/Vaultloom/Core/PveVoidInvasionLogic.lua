@@ -379,8 +379,12 @@ function Logic:BuildSnapshot(existingSnapshot)
         return existingSnapshot
     end
 
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
-    if type(existingSnapshot) == "table" and tonumber(existingSnapshot.resetAt) ~= tonumber(resetAt) then
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
+    if type(existingSnapshot) == "table"
+        and Addon.WoWApi:IsResetExpired(existingSnapshot.resetAt)
+    then
         existingSnapshot = nil
     end
 

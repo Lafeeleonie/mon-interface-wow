@@ -3,12 +3,8 @@ local _, addon = ...
 
 ---@class Db
 ---@field SpecCache table<string, {SpecId: number?, LastSeen: number?, LastAttempt: number?}>
----TEMPORARY: TalentCache and PvPTalentCache are written only by the legacy cooldown trackers'
----talent sync; both fields die with the 12.0 path.
----@field TalentCache table<string, {SpecId: number, TalentString: string, Time: number}>
----@field PvPTalentCache table<string, {Ids: number[], Time: number}>
 local dbDefaults = {
-	Version = 63,
+	Version = 67,
 	Profiles = {},
 	ActiveProfile = "Default",
 	AutoSwitch = {},
@@ -17,13 +13,20 @@ local dbDefaults = {
 	GlowType = "Slot Glow",
 	FontScale = 1.0,
 	ConfigureBlizzardNameplates = true,
-	-- TEMPORARY: feeds only the legacy watcher sort (12.1 sorts inside the AuraContainer);
-	-- dies with the 12.0 path, together with its ProfileManager PayloadKeys entry.
-	CCNativeOrder = false,
 	DisableSwipe = false,
-	ColorCountdownByTime = true,
+	-- Crops Blizzard's silver border off every icon. Off gives the stock art back.
+	IconZoom = true,
+	-- Off: enough people asked for it back off that it does not earn being the default.
+	ColorCountdownByTime = false,
 	FadeWithParent = true,
 	MillisecondsThreshold = 5,
+	-- Colour Countdown band tints: OmniCC's classic red under five seconds, yellow to the
+	-- minute, white above.
+	CountdownColors = {
+		Under5s = { R = 1, G = 0, B = 0 },
+		Under60s = { R = 1, G = 0.8, B = 0 },
+		Over60s = { R = 1, G = 1, B = 1 },
+	},
 	LocaleOverride = false,
 	-- TEMPORARY: true when first-time setup ran without MiniCCDB, so a legacy table appearing on
 	-- a later login can still be offered for import. Dies with the settings bridge.
@@ -158,8 +161,6 @@ local dbDefaults = {
 				ColorByDispelType = true,
 			},
 
-			-- TEMPORARY: Font and ShowWarningText only feed the legacy warning text (12.1 cannot
-			-- know a healer is CC'd); both die with the 12.0 path.
 			Font = {
 				File = "Fonts\\FRIZQT__.TTF",
 				Size = 32,
@@ -192,10 +193,10 @@ local dbDefaults = {
 			SplitBars = false,
 			-- Pixel padding between the alerts bar icons.
 			IconSpacing = 2,
-			-- Direction the alert bars extend as icons appear: LEFT, RIGHT, or CENTER (symmetric
-			-- growth around the anchor; treated as RIGHT on 12.1, where the chained per-unit rows
-			-- have secret widths and can't be centered). Filled from dbDefaults for existing dbs.
-			Grow = "CENTER",
+			-- Direction the alert bars extend as icons appear. Only LEFT and RIGHT render: the
+			-- chained per-unit rows have secret widths, so there is nothing to centre on. An older
+			-- db can still carry CENTER, which every reader resolves to RIGHT.
+			Grow = "RIGHT",
 			Point = "CENTER",
 			RelativePoint = "TOP",
 			RelativeTo = "UIParent",
@@ -224,8 +225,8 @@ local dbDefaults = {
 				},
 			},
 
-			-- Dedicated, separately-movable bar for important enemy buffs (e.g. offensive cooldowns,
-			-- precog), read from Blizzard's nameplate buff lists across every active enemy.
+			-- Dedicated, separately-movable bar for important enemy buffs (e.g. offensive
+			-- cooldowns), collected across every active enemy nameplate.
 			Important = {
 				Enabled = true,
 				Point = "CENTER",
@@ -240,32 +241,41 @@ local dbDefaults = {
 			},
 
 			Sound = {
+				-- One output channel for both alert categories, like the TTS announcements.
+				Channel = "Master",
 				-- Important-spell sound (opt-in, like the defensive sound). Important auras are now
 				-- read reliably from Blizzard's nameplate buff lists.
 				Important = {
 					Enabled = false,
-					Channel = "Master",
 					File = "AirHorn",
 				},
 				Defensive = {
 					Enabled = false,
-					Channel = "Master",
 					File = "AlertToastWarm",
 				},
 			},
 
-			-- TEMPORARY: TTS reads the aura's spell name, which is secret on 12.1; the whole
-			-- subtree dies with the 12.0 path.
+			-- The Enabled flags turn the baked TTS clips on and VoicePack picks which pack plays.
 			TTS = {
-				Volume = 100,
-				VoiceID = 0,
-				SpeechRate = 0,
-				-- Important-spell TTS (opt-in, like the defensive TTS).
+				VoicePack = "David",
+				-- The engine plays the baked clips, so they need an output channel.
+				Channel = "Master",
+				-- Important-spell TTS (opt-in, like the defensive TTS). MutedSpellIds is what the
+				-- TTS Spells tab writes: an opt-out list, so a category announces everything it
+				-- has a clip for until something is switched off, including clips added later.
 				Important = {
 					Enabled = false,
+					MutedSpellIds = {},
 				},
 				Defensive = {
 					Enabled = false,
+					MutedSpellIds = {},
+				},
+				-- Enemy cooldowns that land on your own side rather than on the caster, so they
+				-- are announced on the party instead of on a nameplate.
+				EnemyDebuff = {
+					Enabled = false,
+					MutedSpellIds = {},
 				},
 			},
 
@@ -273,13 +283,10 @@ local dbDefaults = {
 				Enabled = true,
 				Size = 50,
 				Glow = true,
-				-- Per-category glow tints (12.1 only; the legacy path colours by class instead).
+				-- Per-category glow tints. Class colouring is not an option: UnitClass is secret.
 				ImportantColor = { R = 1, G = 0.2, B = 0.2, A = 1 },
 				DefensiveColor = { R = 0.2, G = 1, B = 0.2, A = 1 },
 				ReverseCooldown = true,
-				-- TEMPORARY: class colouring needs UnitClass, which is secret on 12.1; dies with
-				-- the 12.0 path (the per-category colours above replace it).
-				ColorByClass = true,
 				MaxIcons = 8,
 			},
 
@@ -298,6 +305,12 @@ local dbDefaults = {
 			-- Anchor icons to UnitFrame.HealthBarsContainer instead of the nameplate frame, so
 			-- they follow addons that resize plates by shrinking that container (e.g. BBP).
 			AnchorToHealthBar = false,
+
+			-- Category tints for every bar that colours by category. CC takes the game's dispel
+			-- type colours; these cover the two categories it has no colour for. Module wide
+			-- rather than per bar, since a category should read the same on whichever bar it lands.
+			ImportantColor = { R = 1, G = 0.2, B = 0.2, A = 1 },
+			DefensiveColor = { R = 0.2, G = 1, B = 0.2, A = 1 },
 
 			---@class NameplateFactionOptions
 			Friendly = {
@@ -470,8 +483,6 @@ local dbDefaults = {
 				Texture = "Blizzard Raid Bar",
 			},
 		},
-		-- Used by the standalone Party Trinkets module (12.1+); on older clients the friendly
-		-- cooldown tracker renders the trinket slot instead.
 		---@class TrinketsModuleOptions
 		TrinketsModule = {
 			Enabled = {
@@ -527,13 +538,19 @@ local dbDefaults = {
 				Raid = false,
 			},
 
+			-- Category tints, applied wherever the dispel colours are switched on. CC takes the
+			-- game's dispel type colours; these cover the buffs it has no colour for. Module wide,
+			-- so a defensive reads the same on a party frame as it does on a raid frame.
+			ImportantColor = { R = 1, G = 0.2, B = 0.2, A = 1 },
+			DefensiveColor = { R = 0.2, G = 1, B = 0.2, A = 1 },
+
 			---@class RaidFrameAurasInstanceOptions
 			Default = {
 				ExcludePlayer = false,
 				ShowDefensives = true,
 				ShowImportant = true,
 				ShowCC = false,
-				ShowKicks = true,
+				ShowKicks = false,
 				Offset = { X = 0, Y = 0 },
 				Grow = "CENTER",
 				IconSpacing = 2,
@@ -583,142 +600,6 @@ local dbDefaults = {
 			-- Set once the starter groups have been created, so deleting them is permanent and
 			-- an install updating from a version without them still gets them.
 			SeededDefaults = false,
-		},
-		-- TEMPORARY: the friendly cooldown tracker infers cooldowns from aura data, which 12.1
-		-- cannot read; the whole table dies with the 12.0 path.
-		---@class FriendlyCooldownTrackerModuleOptions
-		---@field DisabledSpells table<number, boolean> SpellIds excluded from the static-ability display; keyed by SpellId, value true. Treated as an opaque user hash - CleanTable must not recurse into it.
-		FriendlyCooldownTrackerModule = {
-			Enabled = {
-				World = true,
-				Arena = true,
-				BattleGrounds = false,
-				Dungeons = true,
-				Raid = false,
-			},
-			DisabledSpells = {},
-
-			---@class FriendlyCooldownTrackerAnchorOptions
-			---@field IconSpacing number
-			---@field Predictive boolean When true, icons glow and show a countdown while a buff is active before the cooldown timer is committed.
-			Default = {
-				Grow = "LEFT",
-				Offset = { X = -2, Y = 0 },
-				ExcludeSelf = false,
-				ShowTooltips = true,
-				ShowTrinket = true,
-				Predictive = true,
-				IconSpacing = 2,
-				Icons = {
-					Size = 40,
-					SizeIsPercent = false,
-					SizePercent = 100,
-					ReverseCooldown = true,
-					DesaturateOnCooldown = false,
-					MaxIcons = 10,
-					Rows = 1,
-					Columns = 1,
-				},
-			},
-
-			---@type FriendlyCooldownTrackerAnchorOptions
-			Raid = {
-				Grow = "CENTER",
-				Offset = { X = -2, Y = 0 },
-				ExcludeSelf = false,
-				ShowTooltips = true,
-				ShowTrinket = true,
-				Predictive = true,
-				IconSpacing = 2,
-				Icons = {
-					Size = 20,
-					SizeIsPercent = false,
-					SizePercent = 50,
-					ReverseCooldown = true,
-					DesaturateOnCooldown = false,
-					MaxIcons = 5,
-					Rows = 1,
-					Columns = 1,
-				},
-			},
-		},
-
-		-- TEMPORARY: the enemy cooldown tracker infers cooldowns from aura data, which 12.1
-		-- cannot read; the whole table dies with the 12.0 path.
-		---@class EnemyCooldownTrackerModuleOptions
-		---@field DisabledSpells table<number, boolean> SpellIds excluded from the display; keyed by SpellId, value true. Treated as an opaque user hash - CleanTable must not recurse into it.
-		EnemyCooldownTrackerModule = {
-			Enabled = {
-				World = false,
-				Arena = true,
-				BattleGrounds = false,
-				Dungeons = false,
-				Raid = false,
-			},
-
-			DisabledSpells = {},
-
-			DisplayMode  = "Linear",
-			ShowTooltips = false,
-			IconSpacing  = 2,
-			EntrySpacing = 4,
-			AlwaysShow   = false,
-
-			Icons = {
-				Size                 = 40,
-				ReverseCooldown      = true,
-				DesaturateOnCooldown = false,
-			},
-
-			---@class EcdArenaFramesOptions
-			ArenaFrames = {
-				Grow   = "RIGHT",
-				Offset = { X = 58, Y = 0 },
-			},
-
-			---@class EcdLinearOptions
-			Linear = {
-				Point         = "CENTER",
-				RelativeTo    = "UIParent",
-				RelativePoint = "CENTER",
-				X             = 0,
-				Y             = -100,
-			},
-		},
-
-		-- TEMPORARY: the precog module is superseded on 12.1 by the starter custom aura groups
-		-- tracking the same two spells; the whole table dies with the 12.0 path.
-		---@class PrecogModuleOptions
-		PrecogModule = {
-			Enabled = {
-				Always = true,
-			},
-
-			-- Off by default: precog is already a hard-to-miss icon in the middle of the screen,
-			-- so the sound is for people who want it rather than another noise by default.
-			Sound = {
-				Enabled = false,
-				Channel = "Master",
-				File = "ElectricalSpark",
-			},
-
-			Point = "CENTER",
-			RelativeTo = "UIParent",
-			RelativePoint = "CENTER",
-			Offset = {
-				X = 0,
-				Y = 70,
-			},
-
-			Icons = {
-				Size = 70,
-				Glow = true,
-				Border = true,
-				ReverseCooldown = true,
-				-- Glow/border tint. These icons carry no dispel or category colouring to derive
-				-- one from, so the colour is the user's choice.
-				Color = { R = 1, G = 1, B = 1, A = 1 },
-			},
 		},
 	},
 }

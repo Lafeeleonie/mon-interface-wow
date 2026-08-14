@@ -2,19 +2,25 @@
 local _, addon = ...
 local units = addon.Utils.Units
 
--- Duel detection: no event fires when a friendly unit turns attackable at duel start (or back
--- at duel end), so visible plates' enemy status is polled and subscribers are notified when it
--- flips. One shared ticker serves every module that needs this instead of a ticker per module.
--- Duels only occur in the open world, so the poll early-returns inside instances. Each
--- subscriber keeps its own per-token baseline set (seeded on plate add, cleared on plate
--- remove) because subscribers gate their plate events differently, so their tracked token
--- sets can diverge.
+-- The states that change with no event to announce them, polled because there is no alternative:
+-- a friendly unit turning attackable at duel start (or back at the end), a unit leaving or
+-- re-entering the player's visible world, and a unit becoming charmed (mind control flips it to
+-- the other team's control). All decide what the engine will do with an aura filter, so a
+-- display that ignores them shows the wrong thing until something unrelated refreshes it. One
+-- shared ticker serves every module that needs this instead of a ticker per module. Each
+-- subscriber keeps its own per-token baselines (seeded on plate add or per refresh, cleared on
+-- removal) because subscribers track different token sets.
+--
+-- Duels only occur in the open world, but visibility and mind control do not, so only the duel
+-- half of the poll early-returns inside instances.
 
 ---@class DuelPoller
 local M = {}
 addon.Core.DuelPoller = M
 
 local POLL_INTERVAL = 0.25
+-- Scratch for the tokens one subscriber's scan found flipped, so OnFlip runs after the walk.
+local flipped = {}
 ---@type DuelPollerSubscriber[]
 local subscribers = {}
 local ticker
@@ -24,40 +30,69 @@ local Subscriber = {}
 Subscriber.__index = Subscriber
 
 local function Poll()
-	if IsInInstance() then
-		return
-	end
+	local outdoors = not IsInInstance()
 
 	for i = 1, #subscribers do
 		local subscriber = subscribers[i]
 		if subscriber.IsActive() then
+			wipe(flipped)
+
 			for unitToken, wasEnemy in pairs(subscriber.Baselines) do
-				local isEnemy = units:IsEnemy(unitToken)
-				if isEnemy ~= wasEnemy then
-					subscriber.Baselines[unitToken] = isEnemy
-					subscriber.OnFlip(unitToken)
+				-- Not an and/or chain: IsEnemy returning false there would read as "unchanged"
+				-- and a duel ending would never be noticed.
+				local isEnemy = wasEnemy
+
+				if outdoors then
+					isEnemy = units:IsEnemy(unitToken)
 				end
+
+				local isVisible = units:IsVisible(unitToken)
+				local isCharmed = units:IsCharmed(unitToken)
+
+				if isEnemy ~= wasEnemy
+					or isVisible ~= subscriber.Visibility[unitToken]
+					or isCharmed ~= subscriber.Charmed[unitToken] then
+					subscriber.Baselines[unitToken] = isEnemy
+					subscriber.Visibility[unitToken] = isVisible
+					subscriber.Charmed[unitToken] = isCharmed
+					flipped[#flipped + 1] = unitToken
+				end
+			end
+
+			-- Fired after the walk, never inside it: a subscriber's OnFlip refreshes its module,
+			-- and a module that re-seeds its baselines (the raid frames do) clears and refills
+			-- the very table being traversed, which Lua does not define.
+			for index = 1, #flipped do
+				subscriber.OnFlip(flipped[index])
 			end
 		end
 	end
 end
 
----Seeds or refreshes a token's baseline from its current enemy status, returning that status.
+---Seeds or refreshes a token's baselines from its current state, returning its enemy status.
 ---@param unitToken string
 ---@return boolean isEnemy
 function Subscriber:Seed(unitToken)
 	local isEnemy = units:IsEnemy(unitToken)
+
 	self.Baselines[unitToken] = isEnemy
+	self.Visibility[unitToken] = units:IsVisible(unitToken)
+	self.Charmed[unitToken] = units:IsCharmed(unitToken)
+
 	return isEnemy
 end
 
 ---@param unitToken string
 function Subscriber:Clear(unitToken)
 	self.Baselines[unitToken] = nil
+	self.Visibility[unitToken] = nil
+	self.Charmed[unitToken] = nil
 end
 
 function Subscriber:ClearAll()
 	wipe(self.Baselines)
+	wipe(self.Visibility)
+	wipe(self.Charmed)
 end
 
 ---Registers a poll subscriber. IsActive gates the subscriber's whole scan (typically the
@@ -71,6 +106,8 @@ function M:Register(isActive, onFlip)
 		IsActive = isActive,
 		OnFlip = onFlip,
 		Baselines = {},
+		Visibility = {},
+		Charmed = {},
 	}, Subscriber)
 	subscribers[#subscribers + 1] = subscriber
 
@@ -84,4 +121,6 @@ end
 ---@class DuelPollerSubscriber
 ---@field IsActive fun(): boolean
 ---@field OnFlip fun(unitToken: string)
----@field Baselines table<string, boolean>
+---@field Baselines table<string, boolean> Token -> was an enemy at the last poll.
+---@field Visibility table<string, boolean> Token -> was in the player's visible world.
+---@field Charmed table<string, boolean> Token -> was charmed (mind controlled).

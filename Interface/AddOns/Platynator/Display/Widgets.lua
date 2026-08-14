@@ -1,0 +1,1017 @@
+---@class addonTablePlatynator
+local addonTable = select(2, ...)
+
+local LSM = LibStub("LibSharedMedia-3.0")
+
+function addonTable.Display.ApplyAnchor(frame, anchor, scale)
+  scale = scale or 1
+  frame:ClearAllPoints()
+  if #anchor == 0 then
+    frame:SetPoint("CENTER")
+  elseif #anchor == 3 then
+    PixelUtil.SetPoint(frame, anchor[1], frame:GetParent(), "CENTER", anchor[2] * scale, anchor[3] * scale)
+  elseif #anchor == 2 then
+    PixelUtil.SetPoint(frame, "CENTER", frame:GetParent(), "CENTER", anchor[1] * scale, anchor[2] * scale)
+  elseif #anchor == 1 then
+    frame:SetPoint(anchor[1], frame:GetParent(), "CENTER")
+  end
+end
+
+local ApplyAnchor = addonTable.Display.ApplyAnchor
+
+local function InitBar(frame, details)
+  if frame.Strip then
+    frame:Strip()
+  end
+
+  local borderDetails = LSM:Fetch("ninesliceborder", details.border.asset, true) or LSM:Fetch("ninesliceborder", "Platy: 4px")
+  assert(borderDetails)
+  local borderSliceDetails = LSM:Fetch("nineslice", borderDetails.nineslice)
+  assert(borderSliceDetails)
+
+  frame.lowerScale = 1/borderSliceDetails.scaleModifier
+  frame.rawWidth, frame.rawHeight = details.border.width * addonTable.Assets.BarBordersSize.width, details.border.height * addonTable.Assets.BarBordersSize.height
+  frame.borderWidth = frame.rawWidth + (borderSliceDetails.padding.left + borderSliceDetails.padding.right) / 2
+  frame.borderHeight = frame.rawHeight + (borderSliceDetails.padding.top + borderSliceDetails.padding.bottom) / 2
+
+  local foreground = LSM:Fetch("statusbar", details.foreground.asset, true) or LSM:Fetch("statusbar", "Platy: Solid White")
+  frame.statusBar:SetScale(borderSliceDetails.scaleModifier * details.scale)
+  frame.statusBar:SetMinMaxValues(0, 1)
+  frame.statusBar:SetValue(1)
+  frame.statusBar:SetStatusBarTexture(foreground)
+  frame.statusBar:GetStatusBarTexture():SetDrawLayer("ARTWORK")
+
+  local background = LSM:Fetch("statusbar", details.background.asset, true) or LSM:Fetch("statusbar", "Platy: Solid Grey")
+  frame.background:SetTexture(background)
+  frame.background:SetAllPoints()
+  frame.background:SetScale(borderSliceDetails.scaleModifier * details.scale)
+  frame.background:SetVertexColor(details.background.color.r, details.background.color.g, details.background.color.b, details.background.color.a)
+  frame.border:SetTexture(borderSliceDetails.file)
+  frame.border:SetScale(borderSliceDetails.scaleModifier * details.scale)
+  frame.border:SetVertexColor(details.border.color.r, details.border.color.g, details.border.color.b, details.border.color.a)
+  frame.border:SetTextureSliceMargins(borderSliceDetails.margins.left, borderSliceDetails.margins.top, borderSliceDetails.margins.right, borderSliceDetails.margins.bottom)
+  if details.marker.asset ~= "none" then
+    frame.marker:Show()
+    local markerDetails = addonTable.Assets.BarPositionHighlights[details.marker.asset]
+    frame.marker:SetTexture(markerDetails.file)
+    if markerDetails.mask then
+      frame.edgeMask:SetBlockingLoadsRequested(true)
+      frame.edgeMask:SetTexture(markerDetails.mask, "CLAMPTOWHITE", "CLAMPTOWHITE")
+      frame.statusBar:GetStatusBarTexture():AddMaskTexture(frame.edgeMask)
+    else
+      frame.statusBar:GetStatusBarTexture():RemoveMaskTexture(frame.edgeMask)
+    end
+  else
+    frame.marker:Hide()
+    frame.statusBar:GetStatusBarTexture():RemoveMaskTexture(frame.edgeMask)
+  end
+
+  frame.statusBar:GetStatusBarTexture():RemoveMaskTexture(frame.mask)
+  frame.background:RemoveMaskTexture(frame.mask)
+  frame.marker:RemoveMaskTexture(frame.mask)
+
+  local maskDetails = borderDetails.mask
+  frame.mask:SetBlockingLoadsRequested(true)
+  frame.mask:SetTexture(maskDetails.file, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+  frame.mask:SetTextureSliceMargins(maskDetails.margins.left, maskDetails.margins.top, maskDetails.margins.right, maskDetails.margins.bottom)
+  frame.mask:SetScale(details.scale)
+
+  frame.statusBar:GetStatusBarTexture():AddMaskTexture(frame.mask)
+  frame.background:AddMaskTexture(frame.mask)
+  frame.marker:AddMaskTexture(frame.mask)
+
+  frame.details = details
+
+  frame.marker:SetDrawLayer("ARTWORK", 2)
+end
+
+local function SizeBar(frame, details)
+  PixelUtil.SetSize(frame, frame.rawWidth * details.scale, frame.rawHeight * details.scale)
+
+  PixelUtil.SetSize(frame.statusBar, frame.rawWidth * frame.lowerScale, frame.rawHeight * frame.lowerScale)
+  PixelUtil.SetSize(frame.border, frame.borderWidth * frame.lowerScale, frame.borderHeight * frame.lowerScale)
+  if details.marker.asset ~= "none" then
+    local markerDetails = addonTable.Assets.BarPositionHighlights[details.marker.asset]
+    PixelUtil.SetSize(frame.marker, markerDetails.width * details.scale * frame.lowerScale, frame.rawHeight * frame.lowerScale)
+    PixelUtil.SetSize(frame.edgeMask, markerDetails.width * details.scale, frame.rawHeight * details.scale)
+  end
+end
+
+local function AnchorBar(frame, details)
+  ApplyAnchor(frame, frame.details.anchor)
+  if details.marker.asset ~= "none" then
+    local markerDetails = addonTable.Assets.BarPositionHighlights[details.marker.asset]
+    PixelUtil.SetPoint(frame.marker, "RIGHT", frame.statusBar:GetStatusBarTexture(), "RIGHT", markerDetails.width * details.scale * frame.lowerScale * markerDetails.offset, 0)
+    PixelUtil.SetPoint(frame.edgeMask, "RIGHT", frame.statusBar:GetStatusBarTexture(), "RIGHT", markerDetails.width * details.scale * markerDetails.offset + 1, 0)
+  end
+end
+
+function addonTable.Display.GetHealthBar(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+
+  frame.statusBarAbsorb = CreateFrame("StatusBar", nil, frame)
+
+  frame.statusBarCutaway = CreateFrame("StatusBar", nil, frame)
+  frame.statusBarCutawayAnimation = frame.statusBarCutaway:CreateAnimationGroup()
+  frame.statusBarCutawayAnimation:SetToFinalAlpha(true)
+  local alpha = frame.statusBarCutawayAnimation:CreateAnimation("Alpha")
+  alpha:SetSmoothing("IN_OUT")
+  alpha:SetFromAlpha(1)
+  alpha:SetToAlpha(0)
+  alpha:SetDuration(0.3)
+  frame.statusBarCutawayMask = frame.statusBarCutaway:CreateMaskTexture()
+  frame.statusBarCutawayMask:SetBlockingLoadsRequested(true)
+  frame.statusBarCutawayMask:SetTexture("Interface/AddOns/Platynator/Assets/Special/white.png", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+  frame.statusBarCutawayMask:SetTextureSliceMargins(1, 1, 1, 1)
+
+  frame.statusBar = CreateFrame("StatusBar", nil, frame)
+  frame.statusBar:SetPoint("CENTER")
+
+  frame.statusBarCutaway:SetAllPoints(frame.statusBar)
+
+  frame.marker = frame.statusBar:CreateTexture()
+  frame.marker:SetSnapToPixelGrid(false)
+
+  local borderHolder = CreateFrame("Frame", nil, frame)
+  borderHolder:SetFlattensRenderLayers(true)
+  frame.border = borderHolder:CreateTexture()
+  frame.border:SetDrawLayer("OVERLAY")
+  frame.border:SetPoint("CENTER", frame)
+
+  frame.mask = frame:CreateMaskTexture()
+  frame.mask:SetAllPoints(frame.statusBar)
+
+  frame.edgeMask = frame:CreateMaskTexture()
+
+  frame.background = frame:CreateTexture()
+  frame.background:SetPoint("CENTER")
+  frame.background:SetDrawLayer("BACKGROUND")
+
+  function frame:Init(details)
+    InitBar(frame, details)
+
+    local borderDetails = LSM:Fetch("ninesliceborder", details.border.asset, true) or LSM:Fetch("ninesliceborder", "Platy: 4px")
+    assert(borderDetails)
+    local borderSliceDetails = LSM:Fetch("nineslice", borderDetails.nineslice)
+    assert(borderSliceDetails)
+
+    frame.statusBarCutaway:SetShown(details.animate)
+
+    frame.statusBarAbsorb:SetStatusBarTexture(LSM:Fetch("statusbar", details.absorb.asset, true) or LSM:Fetch("statusbar", "Platy: Absorb Wide"))
+    frame.statusBarAbsorb:GetStatusBarTexture():SetVertexColor(details.absorb.color.r, details.absorb.color.g, details.absorb.color.b, details.absorb.color.a)
+    frame.statusBarAbsorb:SetPoint("LEFT", frame.statusBar:GetStatusBarTexture(), "RIGHT")
+    frame.statusBarAbsorb:SetScale(borderSliceDetails.scaleModifier * details.scale)
+    frame.statusBarAbsorb:GetStatusBarTexture():RemoveMaskTexture(frame.mask)
+
+    frame.statusBarCutaway:SetStatusBarTexture(LSM:Fetch("statusbar", details.foreground.asset, true) or LSM:Fetch("statusbar", "Platy: Solid White"))
+    frame.statusBarCutaway:SetScale(borderSliceDetails.scaleModifier * details.scale)
+    frame.statusBarCutaway:GetStatusBarTexture():RemoveMaskTexture(frame.mask)
+    frame.statusBarCutaway:SetAlpha(0)
+    frame.statusBarCutawayMask:SetPoint("LEFT", frame.statusBar:GetStatusBarTexture(), "RIGHT")
+    frame.statusBarCutawayMask:SetScale(details.scale)
+
+    frame.statusBarAbsorb:GetStatusBarTexture():AddMaskTexture(frame.mask)
+    frame.statusBarCutaway:GetStatusBarTexture():AddMaskTexture(frame.statusBarCutawayMask)
+    frame.statusBarCutaway:GetStatusBarTexture():AddMaskTexture(frame.mask)
+
+    if details.kind == "health" then
+      Mixin(frame, addonTable.Display.HealthBarMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyFrameLevels()
+    frame.statusBarCutaway:SetFrameLevel(frame:GetFrameLevel() + 1)
+    frame.statusBarAbsorb:SetFrameLevel(frame:GetFrameLevel() + 2)
+    frame.statusBar:SetFrameLevel(frame:GetFrameLevel() + 3)
+    borderHolder:SetFrameLevel(frame:GetFrameLevel() + 5)
+  end
+
+  function frame:ApplyAnchor()
+    AnchorBar(frame, frame.details)
+  end
+
+  function frame:ApplySize()
+    SizeBar(frame, frame.details)
+    PixelUtil.SetSize(frame.statusBarAbsorb, frame.rawWidth * frame.lowerScale, frame.rawHeight * frame.lowerScale)
+    PixelUtil.SetSize(frame.statusBarCutawayMask, frame.rawWidth * frame.lowerScale, frame.rawHeight * frame.lowerScale)
+  end
+
+  return frame
+end
+
+function addonTable.Display.GetCastBar(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+
+  frame.statusBar = CreateFrame("StatusBar", nil, frame)
+  frame.statusBar:SetPoint("CENTER")
+
+  frame.marker = frame.statusBar:CreateTexture()
+  frame.marker:SetSnapToPixelGrid(false)
+
+  local borderHolder = CreateFrame("Frame", nil, frame)
+  borderHolder:SetFlattensRenderLayers(true)
+  frame.border = borderHolder:CreateTexture()
+  frame.border:SetDrawLayer("OVERLAY")
+  frame.border:SetPoint("CENTER", frame)
+
+  frame.mask = frame:CreateMaskTexture()
+  frame.mask:SetAllPoints(frame.statusBar)
+
+  frame.edgeMask = frame:CreateMaskTexture()
+
+  frame.background = frame:CreateTexture()
+  frame.background:SetPoint("CENTER")
+  frame.background:SetDrawLayer("BACKGROUND")
+
+  frame.interruptPositioner = CreateFrame("StatusBar", nil, frame)
+  frame.interruptPositioner:SetStatusBarTexture("Interface/AddOns/Platynator/Special/transparent.png")
+  frame.interruptPositioner:SetPoint("CENTER")
+
+  frame.interruptMarker = CreateFrame("StatusBar", nil, frame)
+  frame.interruptMarker:SetStatusBarTexture("Interface/AddOns/Platynator/Special/transparent.png")
+  frame.interruptMarkerPoint = frame.interruptMarker:CreateTexture()
+  frame.interruptMarkerPoint:SetColorTexture(1, 1, 1)
+  frame.interruptMarkerPoint:SetWidth(5)
+  frame.interruptMarker:SetPoint("LEFT", frame.interruptPositioner:GetStatusBarTexture(), "RIGHT")
+  frame.interruptMarkerPoint:SetPoint("LEFT", frame.interruptMarker:GetStatusBarTexture(), "RIGHT")
+
+  function frame:ReverseInterruptMarker(state)
+    if state then
+      self.interruptMarker:SetFillStyle(Enum.StatusBarFillStyle.Reverse)
+      self.interruptPositioner:SetFillStyle(Enum.StatusBarFillStyle.Reverse)
+      self.interruptMarker:ClearAllPoints()
+      self.interruptMarkerPoint:ClearAllPoints()
+      self.interruptMarker:SetPoint("RIGHT", frame.interruptPositioner:GetStatusBarTexture(), "LEFT")
+      self.interruptMarkerPoint:SetPoint("RIGHT", frame.interruptMarker:GetStatusBarTexture(), "LEFT")
+    else
+      self.interruptMarker:SetFillStyle(Enum.StatusBarFillStyle.Standard)
+      self.interruptPositioner:SetFillStyle(Enum.StatusBarFillStyle.Standard)
+      self.interruptMarker:ClearAllPoints()
+      self.interruptMarkerPoint:ClearAllPoints()
+      self.interruptMarker:SetPoint("LEFT", frame.interruptPositioner:GetStatusBarTexture(), "RIGHT")
+      self.interruptMarkerPoint:SetPoint("LEFT", frame.interruptMarker:GetStatusBarTexture(), "RIGHT")
+    end
+  end
+
+  function frame:Init(details)
+    InitBar(frame, details)
+
+    local borderDetails = LSM:Fetch("ninesliceborder", details.border.asset, true) or LSM:Fetch("ninesliceborder", "Platy: 4px")
+    assert(borderDetails)
+    local borderSliceDetails = LSM:Fetch("nineslice", borderDetails.nineslice)
+    assert(borderSliceDetails)
+
+    frame.interruptMarker:SetScale(borderSliceDetails.scaleModifier * details.scale)
+    frame.interruptPositioner:SetScale(borderSliceDetails.scaleModifier * details.scale)
+    if details.interruptMarker.asset ~= "none" then
+      local markerDetails = addonTable.Assets.BarPositionHighlights[details.interruptMarker.asset]
+      frame.interruptMarkerPoint:SetTexture(markerDetails.file)
+      local color = details.interruptMarker.color
+      frame.interruptMarkerPoint:SetVertexColor(color.r, color.g, color.b)
+    end
+
+    frame.interruptMarkerPoint:RemoveMaskTexture(frame.mask)
+    frame.interruptMarkerPoint:AddMaskTexture(frame.mask)
+
+    frame.details = details
+
+    if details.kind == "cast" then
+      Mixin(frame, addonTable.Display.CastBarMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyFrameLevels()
+    frame.statusBar:SetFrameLevel(frame:GetFrameLevel() + 2)
+    frame.interruptMarker:SetFrameLevel(frame:GetFrameLevel() + 5)
+    borderHolder:SetFrameLevel(frame:GetFrameLevel() + 6)
+  end
+
+  function frame:ApplyAnchor()
+    AnchorBar(frame, frame.details)
+  end
+
+  function frame:ApplySize()
+    local details = frame.details
+    SizeBar(frame, details)
+
+    local lowerScale = frame.lowerScale
+    frame.interruptMarkerPoint:SetHeight(frame.rawHeight * lowerScale)
+    frame.interruptMarker:SetSize(frame.rawWidth * lowerScale, frame.rawHeight * lowerScale)
+    frame.interruptPositioner:SetSize(frame.rawWidth * lowerScale, frame.rawHeight * lowerScale)
+    if details.interruptMarker.asset ~= "none" then
+      local markerDetails = addonTable.Assets.BarPositionHighlights[details.interruptMarker.asset]
+      PixelUtil.SetSize(frame.interruptMarkerPoint, markerDetails.width * details.scale * lowerScale, frame.rawHeight * lowerScale)
+    end
+  end
+
+  return frame
+end
+
+function addonTable.Display.GetEnergyBar(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+
+  frame.statusBar = CreateFrame("StatusBar", nil, frame)
+  frame.statusBar:SetPoint("CENTER")
+
+  frame.marker = frame.statusBar:CreateTexture()
+  frame.marker:SetSnapToPixelGrid(false)
+
+  local borderHolder = CreateFrame("Frame", nil, frame)
+  borderHolder:SetFlattensRenderLayers(true)
+  frame.border = borderHolder:CreateTexture()
+  frame.border:SetDrawLayer("OVERLAY")
+  frame.border:SetPoint("CENTER", frame)
+
+  frame.mask = frame:CreateMaskTexture()
+  frame.mask:SetAllPoints(frame.statusBar)
+
+  frame.edgeMask = frame:CreateMaskTexture()
+
+  frame.background = frame:CreateTexture()
+  frame.background:SetPoint("CENTER")
+  frame.background:SetDrawLayer("BACKGROUND")
+
+  function frame:Init(details)
+    InitBar(frame, details)
+
+    if details.kind == "energy" then
+      Mixin(frame, addonTable.Display.EnergyBarMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyFrameLevels()
+    frame.statusBar:SetFrameLevel(frame:GetFrameLevel() + 3)
+    borderHolder:SetFrameLevel(frame:GetFrameLevel() + 5)
+  end
+
+  function frame:ApplyAnchor()
+    AnchorBar(frame, frame.details)
+  end
+
+  function frame:ApplySize()
+    SizeBar(frame, frame.details)
+  end
+
+  return frame
+end
+
+function addonTable.Display.GetPower(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+
+  frame.powerTextures = {}
+
+  function frame:Init(details)
+    if frame.Strip then
+      frame:Strip()
+    end
+
+    frame.details = details
+
+    Mixin(frame, addonTable.Display.PowerBarMixin)
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    self.asset = addonTable.Assets.PowerBars[self.details.asset]
+
+    for _, t in ipairs(self.powerTextures) do
+      t:SetTexture(self.asset.file)
+    end
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyAnchor()
+    ApplyAnchor(frame, frame.details.anchor)
+  end
+
+  function frame:ApplySize()
+    self.lastMaxPower = nil
+    PixelUtil.SetSize(self, (self.asset.width - self.asset.inset) * (self.points and #self.points or 0), self.asset.height)
+    if self.points then
+      self:SetValue(self.points)
+    end
+  end
+
+  function frame:SetValue(points)
+    local maxPower = #points
+    self.points = points
+    if self.lastMaxPower ~= maxPower then
+      local width = PixelUtil.ConvertPixelsToUIForRegion(self.asset.width * self.details.scale, self)
+      local height = PixelUtil.ConvertPixelsToUIForRegion(self.asset.height * self.details.scale, self)
+      while #self.powerTextures < maxPower do
+        local t = self:CreateTexture(nil, "ARTWORK")
+        t:SetTexture(self.asset.file)
+
+        table.insert(self.powerTextures, t)
+      end
+
+      if #self.powerTextures > maxPower then
+        for i = maxPower + 1, #self.powerTextures do
+          self.powerTextures[i]:Hide()
+        end
+      end
+
+      local offset = PixelUtil.ConvertPixelsToUIForRegion((-(self.asset.width - self.asset.inset) * maxPower/2 - self.asset.inset / 2) * self.details.scale, self)
+      local step = PixelUtil.ConvertPixelsToUIForRegion((self.asset.width - self.asset.inset) * self.details.scale, self)
+      for i = 1, maxPower do
+        local t = self.powerTextures[i]
+        t:ClearAllPoints()
+        t:SetPoint("LEFT", self, "CENTER", offset, 0)
+        t:SetSize(width, height)
+        t:Show()
+        offset = offset + step
+      end
+
+      self.lastMaxPower = maxPower
+
+      PixelUtil.SetSize(self, (self.asset.width - self.asset.inset) * self.details.scale * maxPower, (self.asset.height - self.asset.inset) * self.details.scale)
+    end
+
+    if maxPower > 0 then
+      if self.powerTextures[1].SetSpriteSheetCell then
+        for i, point in ipairs(points) do
+          local t = self.powerTextures[i]
+          t:SetSpriteSheetCell(point.set and 1 or 2, 1, 2)
+          t:SetVertexColor(point.color.r, point.color.g, point.color.b)
+        end
+      else
+        for i, point in ipairs(points) do
+          local t = self.powerTextures[i]
+          if point.set then
+            t:SetTexCoord(0, 0.5, 0, 1)
+          else
+            t:SetTexCoord(0.5, 1, 0, 1)
+          end
+          t:SetVertexColor(point.color.r, point.color.g, point.color.b)
+        end
+      end
+    end
+  end
+end
+
+function addonTable.Display.GetHighlight(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+
+  frame.highlight = frame:CreateTexture()
+  frame.highlight:SetAllPoints()
+
+  function frame:Init(details)
+    local highlightDetails = (details.sliced and (LSM:Fetch("nineslice", details.asset, true) or LSM:Fetch("nineslice", "Platy: 7px"))) or (LSM:Fetch("platynator/sizedtexture", details.asset, true) or LSM:Fetch("platynator/sizedtexture", "Platy: Glow"))
+    assert(highlightDetails)
+    frame.details = details
+
+    frame.highlight:SetTexture(highlightDetails.file)
+    frame.highlight:SetVertexColor(details.color.r, details.color.g, details.color.b, details.color.a)
+    frame.highlight:SetScale(details.scale)
+
+    if details.sliced then
+      frame.highlight:SetScale(highlightDetails.scaleModifier * details.scale)
+      frame.highlight:SetTextureSliceMargins(highlightDetails.margins.left, highlightDetails.margins.top, highlightDetails.margins.right, highlightDetails.margins.bottom)
+    else
+      frame.highlight:ClearTextureSlice()
+    end
+
+    if details.kind == "target" then
+      Mixin(frame, addonTable.Display.TargetHighlightMixin)
+    elseif details.kind == "softTarget" then
+      Mixin(frame, addonTable.Display.SoftTargetHighlightMixin)
+    elseif details.kind == "focus" then
+      Mixin(frame, addonTable.Display.FocusHighlightMixin)
+    elseif details.kind == "mouseover" then
+      Mixin(frame, addonTable.Display.MouseoverHighlightMixin)
+    elseif details.kind == "automatic" then
+      Mixin(frame, addonTable.Display.AutomaticHighlightMixin)
+    elseif details.kind == "fixed" then
+      Mixin(frame, addonTable.Display.FixedHighlightMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyAnchor()
+    ApplyAnchor(frame, frame.details.anchor)
+  end
+
+  function frame:ApplySize()
+    local details = frame.details
+    local highlightDetails = (details.sliced and (LSM:Fetch("nineslice", details.asset, true) or LSM:Fetch("nineslice", "Platy: 7px"))) or (LSM:Fetch("platynator/sizedtexture", details.asset, true) or LSM:Fetch("platynator/sizedtexture", "Platy: Glow"))
+    assert(highlightDetails)
+    if details.sliced then
+      local width, height = details.width * addonTable.Assets.BarBordersSize.width, details.height * addonTable.Assets.BarBordersSize.height
+      PixelUtil.SetSize(frame, width * details.scale, height * details.scale)
+      PixelUtil.SetSize(frame.highlight, (width + (highlightDetails.padding.left + highlightDetails.padding.right) / 2) / highlightDetails.scaleModifier, (height + (highlightDetails.padding.top + highlightDetails.padding.bottom) / 2) / highlightDetails.scaleModifier)
+    else
+      PixelUtil.SetSize(frame, highlightDetails.width * details.width * details.scale, highlightDetails.height * details.height * details.scale)
+      PixelUtil.SetSize(frame.highlight, highlightDetails.width * details.width, highlightDetails.height * details.height)
+    end
+  end
+
+  return frame
+end
+
+function addonTable.Display.GetAnimatedBorderHighlight(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+
+  frame.Animation = frame:CreateAnimationGroup()
+  do
+    frame.Top = frame:CreateTexture()
+    frame.Top:SetPoint("TOPLEFT")
+    frame.Top:SetPoint("TOPRIGHT")
+    frame.Top:SetTexture("Interface/AddOns/Platynator/Assets/Special/pandemic.png")
+    frame.Bottom = frame:CreateTexture()
+    frame.Bottom:SetPoint("BOTTOMLEFT")
+    frame.Bottom:SetPoint("BOTTOMRIGHT")
+    frame.Bottom:SetTexture("Interface/AddOns/Platynator/Assets/Special/pandemic.png")
+    frame.Bottom:SetRotation(math.pi)
+    frame.Left = frame:CreateTexture()
+    frame.Left:SetPoint("TOPLEFT")
+    frame.Left:SetPoint("BOTTOMLEFT")
+    frame.Left:SetTexture("Interface/AddOns/Platynator/Assets/Special/pandemic-90.png")
+    frame.Right = frame:CreateTexture()
+    frame.Right:SetPoint("TOPRIGHT")
+    frame.Right:SetPoint("BOTTOMRIGHT")
+    frame.Right:SetTexture("Interface/AddOns/Platynator/Assets/Special/pandemic-90.png")
+    frame.Right:SetRotation(math.pi)
+    frame.TopFlipBook = frame.Animation:CreateAnimation("Flipbook")
+    frame.TopFlipBook:SetTarget(frame.Top)
+    frame.BottomFlipBook = frame.Animation:CreateAnimation("Flipbook")
+    frame.BottomFlipBook:SetTarget(frame.Bottom)
+    frame.LeftFlipBook = frame.Animation:CreateAnimation("Flipbook")
+    frame.LeftFlipBook:SetTarget(frame.Left)
+    frame.RightFlipBook = frame.Animation:CreateAnimation("Flipbook")
+    frame.RightFlipBook:SetTarget(frame.Right)
+    frame.Animation:SetLooping("REPEAT")
+  end
+
+  function frame:Init(details)
+    local highlightDetails = addonTable.Assets.Highlights[details.asset]
+    frame.defaultBorderDim = highlightDetails.defaultWidth
+    frame.details = details
+
+    frame.Top:SetTexture(highlightDetails.horizontal)
+    frame.Bottom:SetTexture(highlightDetails.horizontal)
+    frame.Right:SetTexture(highlightDetails.vertical)
+    frame.Left:SetTexture(highlightDetails.vertical)
+    frame.Top:SetVertexColor(details.color.r, details.color.g, details.color.b, details.color.a)
+    frame.Bottom:SetVertexColor(details.color.r, details.color.g, details.color.b, details.color.a)
+    frame.Right:SetVertexColor(details.color.r, details.color.g, details.color.b, details.color.a)
+    frame.Left:SetVertexColor(details.color.r, details.color.g, details.color.b, details.color.a)
+
+    frame.TopFlipBook:SetFlipBookColumns(highlightDetails.columns)
+    frame.TopFlipBook:SetFlipBookRows(highlightDetails.rows)
+    frame.BottomFlipBook:SetFlipBookColumns(highlightDetails.columns)
+    frame.BottomFlipBook:SetFlipBookRows(highlightDetails.rows)
+    frame.RightFlipBook:SetFlipBookColumns(highlightDetails.rows)
+    frame.RightFlipBook:SetFlipBookRows(highlightDetails.columns)
+    frame.LeftFlipBook:SetFlipBookColumns(highlightDetails.rows)
+    frame.LeftFlipBook:SetFlipBookRows(highlightDetails.columns)
+
+    frame.TopFlipBook:SetDuration(highlightDetails.duration)
+    frame.BottomFlipBook:SetDuration(highlightDetails.duration)
+    frame.LeftFlipBook:SetDuration(highlightDetails.duration)
+    frame.RightFlipBook:SetDuration(highlightDetails.duration)
+
+    if details.kind == "animatedBorder" then
+      Mixin(frame, addonTable.Display.AnimatedBorderHighlightMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyAnchor()
+    ApplyAnchor(frame, frame.details.anchor)
+  end
+
+  function frame:ApplySize()
+    local details = frame.details
+    PixelUtil.SetSize(frame, addonTable.Assets.BarBordersSize.width * details.width * details.scale, addonTable.Assets.BarBordersSize.height * details.height * details.scale)
+
+    local dim = PixelUtil.ConvertPixelsToUIForRegion(details.borderWidth * frame.defaultBorderDim, frame)
+    frame.Top:SetHeight(dim)
+    frame.Bottom:SetHeight(dim)
+    frame.Left:SetWidth(dim)
+    frame.Right:SetWidth(dim)
+  end
+
+  return frame
+end
+
+function addonTable.Display.GetMarker(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+
+  frame.marker = frame:CreateTexture()
+
+  frame.marker:SetAllPoints()
+
+  function frame:Init(details)
+    frame.details = details
+
+    local markerDetails = addonTable.Assets.Markers[details.asset]
+
+    frame.marker:SetTexture(markerDetails.file)
+    if details.color then
+      frame.marker:SetVertexColor(details.color.r, details.color.g, details.color.b)
+    else
+      frame.marker:SetVertexColor(1, 1, 1)
+    end
+
+    if details.kind == "quest" then
+      Mixin(frame, addonTable.Display.QuestMarkerMixin)
+    elseif details.kind == "cannotInterrupt" then
+      Mixin(frame, addonTable.Display.CannotInterruptMarkerMixin)
+    elseif details.kind == "elite" then
+      Mixin(frame, addonTable.Display.EliteMarkerMixin)
+    elseif details.kind == "rare" then
+      Mixin(frame, addonTable.Display.RareMarkerMixin)
+    elseif details.kind == "raid" then
+      Mixin(frame, addonTable.Display.RaidMarkerMixin)
+    elseif details.kind == "castIcon" then
+      Mixin(frame, addonTable.Display.CastIconMarkerMixin)
+    elseif details.kind == "pvp" then
+      Mixin(frame, addonTable.Display.PvPMarkerMixin)
+    elseif details.kind == "faction" then
+      Mixin(frame, addonTable.Display.FactionMarkerMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyAnchor()
+    ApplyAnchor(frame, frame.details.anchor)
+    if frame.PostApplyAnchor then
+      frame:PostApplyAnchor()
+    end
+  end
+
+  function frame:ApplySize()
+    local details = frame.details
+    local markerDetails = addonTable.Assets.Markers[details.asset]
+    PixelUtil.SetSize(frame, markerDetails.width * details.scale, markerDetails.height * details.scale)
+  end
+
+  return frame
+end
+
+function addonTable.Display.GetText(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+  frame:SetSize(1, 1)
+
+  frame.text = frame:CreateFontString(nil, nil, "GameFontNormal")
+  frame.text:SetPoint("CENTER")
+  frame.text:SetText(" ")
+
+  function frame:Init(details)
+    if frame.Strip then
+      frame:Strip()
+    end
+
+    frame.details = details
+
+    frame.text:SetFontObject(addonTable.CurrentFont)
+    frame.text:ClearAllPoints()
+    frame.text:SetPoint(details.anchor[1] or "CENTER")
+    frame.text:SetTextColor(details.color.r, details.color.g, details.color.b)
+    frame.text:SetWordWrap(not details.truncate)
+    frame.text:SetNonSpaceWrap(false)
+    frame.text:SetSpacing(0)
+
+    frame.text:SetJustifyV("BOTTOM")
+    if details.align ~= frame.text:GetJustifyH() then
+      frame.text:SetText(" ")
+    end
+    frame.text:SetJustifyH(details.align)
+    local scale = details.scale * 0.85
+    local width = details.maxWidth * addonTable.Assets.BarBordersSize.width
+    if frame.text.SetSmoothScaling then
+      frame.text:SetSmoothScaling(addonTable.CurrentFontUsesSmoothing)
+      frame.text:SetScale(scale)
+      frame.text:SetWidth(width / scale)
+    else
+      frame.text:SetTextScale(scale)
+      frame.text:SetScale(1)
+      frame.text:SetWidth(width)
+    end
+
+    if details.kind == "health" then
+      Mixin(frame, addonTable.Display.HealthTextMixin)
+    elseif details.kind == "damageAbsorb" then
+      Mixin(frame, addonTable.Display.AbsorbTextMixin)
+    elseif details.kind == "creatureName" then
+      Mixin(frame, addonTable.Display.CreatureTextMixin)
+    elseif details.kind == "guild" then
+      Mixin(frame, addonTable.Display.GuildTextMixin)
+    elseif details.kind == "castSpellName" then
+      Mixin(frame, addonTable.Display.CastTextMixin)
+    elseif details.kind == "level" then
+      Mixin(frame, addonTable.Display.LevelTextMixin)
+    elseif details.kind == "target" then
+      Mixin(frame, addonTable.Display.UnitTargetTextMixin)
+    elseif details.kind == "castTarget" then
+      Mixin(frame, addonTable.Display.CastTargetTextMixin)
+    elseif details.kind == "castInterrupter" then
+      Mixin(frame, addonTable.Display.CastInterrupterTextMixin)
+    elseif details.kind == "castTimeLeft" then
+      Mixin(frame, addonTable.Display.CastTimeLeftTextMixin)
+    elseif details.kind == "quest" then
+      Mixin(frame, addonTable.Display.QuestTextMixin)
+    elseif details.kind == "mythicPlusForces" then
+      Mixin(frame, addonTable.Display.MythicPlusForcesTextMixin)
+    elseif details.kind == "energy" then
+      Mixin(frame, addonTable.Display.EnergyTextMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyAnchor()
+    ApplyAnchor(frame, frame.details.anchor)
+  end
+
+  function frame:ApplySize()
+  end
+
+  return frame
+end
+
+function addonTable.Display.GetHealthFillText(frame, parent)
+  frame = frame or CreateFrame("Frame", nil, parent or UIParent)
+  frame:SetSize(1, 1)
+
+  frame.mask = CreateFrame("Frame", nil, frame)
+  frame.mask:SetClipsChildren(true)
+  frame.maskAbsorb = CreateFrame("Frame", nil, frame)
+  frame.maskAbsorb:SetClipsChildren(true)
+
+  frame.statusBar = CreateFrame("StatusBar", nil, frame)
+  frame.statusBar:SetStatusBarTexture("Interface/AddOns/Platynator/Special/transparent.png")
+  frame.statusBar:SetMinMaxValues(0, 1)
+  frame.mask:SetAllPoints(frame.statusBar:GetStatusBarTexture())
+
+  frame.statusBarAbsorb = CreateFrame("StatusBar", nil, frame)
+  frame.statusBarAbsorb:SetStatusBarTexture("Interface/AddOns/Platynator/Special/transparent.png")
+  frame.maskAbsorb:SetAllPoints(frame.statusBarAbsorb:GetStatusBarTexture())
+
+  frame.foreground = frame.mask:CreateFontString(nil, nil, "GameFontNormal")
+  frame.foreground:SetPoint("CENTER", frame)
+  frame.foreground:SetText(" ")
+
+  frame.absorb = frame.maskAbsorb:CreateFontString(nil, nil, "GameFontNormal")
+  frame.absorb:SetPoint("CENTER", frame)
+  frame.absorb:SetText(" ")
+
+  frame.absorbPlacer = frame:CreateFontString(nil, nil, "GameFontNormal")
+  frame.absorbPlacer:SetPoint("LEFT", frame.statusBar:GetStatusBarTexture(), "RIGHT", -1, 0)
+  frame.absorbPlacer:SetText(" ")
+
+  frame.background = frame:CreateFontString(nil, nil, "GameFontNormal")
+  frame.background:SetPoint("CENTER", frame)
+  frame.background:SetText(" ")
+
+  frame.statusBar:SetAllPoints(frame.background)
+  frame.statusBarAbsorb:SetAllPoints(frame.absorbPlacer)
+
+  frame.texts = {frame.foreground, frame.absorb, frame.background, frame.absorbPlacer}
+
+  frame:SetAllPoints(frame.text)
+
+  function frame:Init(details)
+    if frame.Strip then
+      frame:Strip()
+    end
+
+    frame.details = details
+
+    for _, t in ipairs(frame.texts) do
+      t:SetFontObject(addonTable.CurrentFont)
+      if t ~= self.absorbPlacer then
+        t:ClearAllPoints()
+        t:SetPoint(details.anchor[1] or "CENTER", frame)
+      end
+      t:SetJustifyV("BOTTOM")
+
+      local scale = details.scale * 0.85
+      if t.SetSmoothScaling then
+        t:SetSmoothScaling(addonTable.CurrentFontUsesSmoothing)
+        t:SetScale(scale)
+      else
+        t:SetTextScale(scale)
+      end
+    end
+
+    frame.background:SetTextColor(details.background.color.r, details.background.color.g, details.background.color.b)
+    frame.absorb:SetTextColor(details.absorb.color.r, details.absorb.color.g, details.absorb.color.b)
+    frame.absorbPlacer:SetAlpha(0)
+
+    frame.maskAbsorb:SetFrameLevel(frame:GetFrameLevel() + 2)
+    frame.mask:SetFrameLevel(frame:GetFrameLevel() + 3)
+
+    if details.kind == "healthFillText" then
+      Mixin(frame, addonTable.Display.HealthFillTextBarMixin)
+    else
+      assert(false)
+    end
+
+    frame:SetScript("OnEvent", frame.OnEvent)
+
+    if frame.PostInit then
+      frame:PostInit()
+    end
+  end
+
+  function frame:ApplyAnchor()
+    ApplyAnchor(frame, frame.details.anchor)
+  end
+
+  function frame:ApplySize()
+  end
+
+  return frame
+end
+
+local livePools = {
+  healthBars = CreateFramePool("StatusBar", UIParent, nil, nil, false, addonTable.Display.GetHealthBar),
+  healthFillTextSpecialBars = CreateFramePool("Frame", UIParent, nil, nil, false, addonTable.Display.GetHealthFillText),
+  castBars = CreateFramePool("StatusBar", UIParent, nil, nil, false, addonTable.Display.GetCastBar),
+  energyBars = CreateFramePool("Frame", UIParent, nil, nil, false, addonTable.Display.GetEnergyBar),
+  texts = CreateFramePool("Frame", UIParent, nil, nil, false, addonTable.Display.GetText),
+  powerSpecialBars = CreateFramePool("Frame", UIParent, nil, nil, false, addonTable.Display.GetPower),
+  highlights = CreateFramePool("Frame", UIParent, nil, nil, false, addonTable.Display.GetHighlight),
+  animatedBorderHighlights = CreateFramePool("Frame", UIParent, nil, nil, false, addonTable.Display.GetAnimatedBorderHighlight),
+  markers = CreateFramePool("Frame", UIParent, nil, nil, false, addonTable.Display.GetMarker),
+}
+
+local editorPools = {
+  healthBars = CreateFramePool("StatusBar", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetHealthBar),
+  healthFillTextSpecialBars = CreateFramePool("Frame", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetHealthFillText),
+  castBars = CreateFramePool("StatusBar", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetCastBar),
+  energyBars = CreateFramePool("Frame", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetEnergyBar),
+  texts = CreateFramePool("Frame", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetText),
+  powerSpecialBars = CreateFramePool("Frame", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetPower),
+  highlights = CreateFramePool("Frame", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetHighlight),
+  animatedBorderHighlights = CreateFramePool("Frame", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetAnimatedBorderHighlight),
+  markers = CreateFramePool("Frame", UIParent, "PlatynatorPropagateMouseTemplate", nil, false, addonTable.Display.GetMarker),
+}
+
+local poolType = {}
+local layerStep = addonTable.Constants.LayerFrameLevelStep
+
+function addonTable.Display.LayerWidgets(widgets)
+  for _, w in ipairs(widgets) do
+    w:SetFrameLevel(w.frameLevel)
+    if w.ApplyFrameLevels then
+      w:ApplyFrameLevels()
+    end
+  end
+end
+
+function addonTable.Display.GetWidgets(design, parent, isEditor)
+  local widgets = {}
+
+  local pools = isEditor and editorPools or livePools
+
+  for index, barDetails in ipairs(design.bars) do
+    local w = pools[barDetails.kind .. "Bars"]:Acquire()
+    poolType[w] = barDetails.kind .. "Bars"
+    w:SetParent(parent)
+    w:Show()
+    w:SetFrameStrata("MEDIUM")
+    w.frameLevel = layerStep * barDetails.layer + index * 10
+    w:Init(barDetails)
+    w.kind = "bars"
+    w.kindIndex = index
+    table.insert(widgets, w)
+  end
+
+  for index, textDetails in ipairs(design.texts) do
+    local w = pools.texts:Acquire()
+    poolType[w] = "texts"
+    w:SetParent(parent)
+    w:Show()
+    w:SetFrameStrata("MEDIUM")
+    w.frameLevel = layerStep * textDetails.layer + index * 10
+    w:Init(textDetails)
+    w.kind = "texts"
+    w.kindIndex = index
+    table.insert(widgets, w)
+  end
+
+  for index, highlightDetails in ipairs(design.highlights) do
+    local w
+    if pools[highlightDetails.kind .. "Highlights"] then
+      w = pools[highlightDetails.kind .. "Highlights"]:Acquire()
+      poolType[w] = highlightDetails.kind .. "Highlights"
+    else
+      w = pools.highlights:Acquire()
+      poolType[w] = "highlights"
+    end
+    w:SetParent(parent)
+    w:Show()
+    w:SetFrameStrata("MEDIUM")
+    w.frameLevel = layerStep * highlightDetails.layer + index * 10
+    w:Init(highlightDetails)
+    w.kind = "highlights"
+    w.kindIndex = index
+    table.insert(widgets, w)
+  end
+
+  for index, specialDetails in ipairs(design.specialBars) do
+    local w = pools[specialDetails.kind .. "SpecialBars"]:Acquire()
+    poolType[w] = specialDetails.kind .. "SpecialBars"
+    w:SetParent(parent)
+    w:Show()
+    w:SetFrameStrata("MEDIUM")
+    w.frameLevel = layerStep * specialDetails.layer + index * 10
+    w:Init(specialDetails)
+    w.kind = "specialBars"
+    w.kindIndex = index
+    table.insert(widgets, w)
+  end
+
+  for index, markerDetails in ipairs(design.markers) do
+    local w = pools.markers:Acquire()
+    poolType[w] = "markers"
+    w:SetParent(parent)
+    w:Show()
+    w:SetFrameStrata("MEDIUM")
+    w.frameLevel = layerStep * markerDetails.layer + index * 10
+    w:Init(markerDetails)
+    w.kind = "markers"
+    w.kindIndex = index
+    table.insert(widgets, w)
+  end
+
+  for _, w in ipairs(widgets) do
+    w:ApplyAnchor()
+    w:ApplySize()
+    w.pixelPerfectRequired = nil
+    w:SetScript("OnShow", function()
+      if w.pixelPerfectRequired and w.unit then
+        w.pixelPerfectRequired = nil
+        w:ApplyAnchor()
+        w:ApplySize()
+      end
+    end)
+  end
+
+  return widgets
+end
+
+function addonTable.Display.ReleaseWidgets(widgets, isEditor)
+  local pools = isEditor and editorPools or livePools
+
+  for _, w in ipairs(widgets) do
+    w:Strip()
+    pools[poolType[w]]:Release(w)
+    poolType[w] = nil
+  end
+end

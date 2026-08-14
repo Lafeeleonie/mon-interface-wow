@@ -1,0 +1,4 @@
+.install-deps.*
+.libraries/
+/Libraries/*
+!/Libraries/Init.xml

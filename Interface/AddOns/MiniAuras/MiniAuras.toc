@@ -1,8 +1,8 @@
-﻿## Interface: 120100, 120007
+﻿## Interface: 120100
 ## Title: MiniAuras
 ## Notes: Shows CC and important spells on frames/nameplates/alerts in PvP.
 ## Author: Verz
-## Version: 5.0.1
+## Version: 5.12.2
 ## SavedVariables: MiniAurasDB
 ## OptionalDeps: MiniCC, ElvUI, Grid2, DandersFrames, FrameSort, Masque, TPerl, TidyPlates_ThreatPlates, VuhDo, BuzzardFrames, NDui, EllesmereUIUnitFrames
 ## IconTexture: Interface\AddOns\MiniAuras\Icon.blp
@@ -12,7 +12,6 @@ Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 Libs\LibCustomGlow-1.0\LibCustomGlow-1.0.xml
-Libs\LibRangeCheck-3.0\LibRangeCheck-3.0.lua
 Libs\LibSpecialization\LibSpecialization.lua
 Libs\MiniFramework\MiniFramework.xml
 
@@ -32,8 +31,8 @@ Locales\zhCN.lua
 Locales\zhTW.lua
 
 Utils\Units.lua
-Utils\Auras.lua
 Utils\FontUtil.lua
+Utils\IconUtil.lua
 Utils\ModuleUtil.lua
 Utils\SlotDistribution.lua
 Utils\WoWEx.lua
@@ -46,15 +45,20 @@ Core\LegacyAddon.lua
 Core\Display\Pool.lua
 Core\Display\GrowAnchors.lua
 Core\Display\GlowStyles.lua
+Core\Display\Outline.lua
 Core\Display\IconSlotContainer.lua
 Core\Display\BarTextures.lua
+Core\Display\BarSlotContainer.lua
 
 Core\Auras\AuraCategoryIds.lua
+Core\Auras\AuraTtsSounds.lua
 Core\Auras\AuraFilters.lua
 Core\Auras\SpellNameIndex.lua
 Core\Auras\SpellSearch.lua
+Core\Auras\AuraCountdownText.lua
+Core\Auras\AuraMasque.lua
+Core\Auras\AuraButtonPaint.lua
 Core\Auras\AuraContainerDisplay.lua
-Core\Auras\UnitAuraWatcher.lua
 
 Core\Kicks\KickSlot.lua
 Core\Kicks\KickData.lua
@@ -65,6 +69,7 @@ Core\Inspect\Inspector.lua
 Core\Inspect\InspectorFacade.lua
 
 Core\Frames\Frames.lua
+Core\Frames\ArenaFrames.lua
 Core\Frames\TestFrames.lua
 Core\Frames\ExternalProviders.lua
 Core\Frames\Blizzard.lua
@@ -86,13 +91,10 @@ Core\TrinketsTracker.lua
 Core\ProfileManager.lua
 Core\Sounds.lua
 Core\AuraSounds.lua
+Core\TtsPacks.lua
+Core\TtsMutes.lua
 Core\TestSpells.lua
 Core\TestModeManager.lua
-Core\Cooldowns\PvPTalentSync.lua
-Core\Cooldowns\Talents.lua
-Core\Cooldowns\Rules.lua
-Core\Cooldowns\SignatureDetector.lua
-Core\Cooldowns\Brain.lua
 
 Modules\CrowdControl\Display.lua
 Modules\CrowdControl\Module.lua
@@ -104,10 +106,8 @@ Modules\Portrait\Display.lua
 Modules\Portrait\Anchors.lua
 Modules\Portrait\Module.lua
 Modules\Alerts\Sound.lua
-Modules\Alerts\Observer.lua
 Modules\Alerts\Display.lua
 Modules\Alerts\Module.lua
-Modules\Nameplates\Observer.lua
 Modules\Nameplates\Display.lua
 Modules\Nameplates\Module.lua
 Modules\EnemyKickTracker\Observer.lua
@@ -123,16 +123,8 @@ Modules\CustomAuras\Sound.lua
 Modules\CustomAuras\Recorder.lua
 Modules\CustomAuras\Display.lua
 Modules\CustomAuras\Module.lua
-Modules\Precog\Sound.lua
-Modules\Precog\Module.lua
 Modules\Trinkets\Display.lua
 Modules\Trinkets\Module.lua
-Modules\FriendlyCooldowns\Observer.lua
-Modules\FriendlyCooldowns\Display.lua
-Modules\FriendlyCooldowns\Module.lua
-Modules\EnemyCooldowns\Observer.lua
-Modules\EnemyCooldowns\Display.lua
-Modules\EnemyCooldowns\Module.lua
 
 Api\V1.lua
 
@@ -149,11 +141,11 @@ Config\Panels\Portraits.lua
 Config\Panels\CrowdControl.lua
 Config\Panels\PetCrowdControl.lua
 Config\Panels\Healer.lua
+Config\Panels\Alerts\TtsSpells.lua
 Config\Panels\Alerts.lua
 Config\Panels\Nameplates.lua
 Config\Panels\EnemyKickTracker.lua
 Config\Panels\AllyKickTracker.lua
-Config\Panels\Precog.lua
 Config\Panels\RaidFrameAuras.lua
 Config\Panels\IconSelector.lua
 Config\Panels\CustomAuras\Shared.lua
@@ -163,11 +155,10 @@ Config\Panels\CustomAuras\GroupGrid.lua
 Config\Panels\CustomAuras\EditorFilters.lua
 Config\Panels\CustomAuras\EditorSounds.lua
 Config\Panels\CustomAuras\EditorAppearance.lua
+Config\Panels\CustomAuras\EditorLayout.lua
 Config\Panels\CustomAuras\EditorTrigger.lua
 Config\Panels\CustomAuras\Editor.lua
 Config\Panels\CustomAuras.lua
-Config\Panels\FriendlyCooldownTracker.lua
-Config\Panels\EnemyCooldownTracker.lua
 Config\Panels\Trinkets.lua
 Config\Panels\OtherAddons.lua
 Config\Panels\Miscellaneous.lua

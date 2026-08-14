@@ -87,6 +87,12 @@ local function localizedConfig(key)
         config.turnInHint = L.PVE_WEEKLY_SPARK_TURNIN_HINT
         config.doneHint = L.PVE_WEEKLY_SPARK_DONE_HINT
         config.allowTurnIn = true
+    elseif key == "trailing_xalatath" then
+        config.label = L.PVE_WEEKLY_XALATATH_LABEL
+        config.acceptHint = L.PVE_WEEKLY_XALATATH_ACCEPT_HINT
+        config.activeHint = L.PVE_WEEKLY_GENERIC_ACTIVE_HINT
+        config.turnInHint = L.PVE_WEEKLY_GENERIC_TURNIN_HINT
+        config.doneHint = L.PVE_WEEKLY_GENERIC_DONE_HINT
     elseif key == "omnium_folio" then
         config.label = L.PVE_WEEKLY_OMNIUM_LABEL
         config.acceptHint = L.PVE_WEEKLY_OMNIUM_ACCEPT_HINT
@@ -237,9 +243,12 @@ function Logic:BuildSnapshot(memory, existingSnapshot, accountState)
     end
     memory = type(memory) == "table" and memory or {}
     accountState = type(accountState) == "table" and accountState or {}
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
     local rows = {
         buildSparkRow(),
+        buildRememberedRow("trailing_xalatath", memory),
     }
     if not isOmniumFolioComplete(accountState) then
         rows[#rows + 1] = buildRememberedRow("omnium_folio", memory)

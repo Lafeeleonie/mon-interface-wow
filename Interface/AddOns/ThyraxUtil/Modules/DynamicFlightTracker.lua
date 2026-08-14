@@ -221,12 +221,33 @@ function module:CalculateSpeedPercentage(rawSpeed)
     return (rawSpeed / self.CONSTANTS.BASE_YDS_SEC) * 100
 end
 
+-- Walks the map's parent chain up to its continent entry. This replaces a
+-- former C_Map.GetFallbackWorldMapID(mapID) call: that API does not resolve
+-- the continent of the passed map (it returns the generic fallback world
+-- map), so the Dragon Isles / Khaz Algar check below never matched and the
+-- sustain marker always used old-world values. The parent walk via
+-- C_Map.GetMapInfo(...).parentMapID is the documented way to resolve a
+-- zone's continent. The loop is bounded defensively against parent cycles.
+local function GetContinentMapID(mapID)
+    if not (C_Map and C_Map.GetMapInfo) then return nil end
+    local continentType = (_G.Enum and _G.Enum.UIMapType and _G.Enum.UIMapType.Continent) or 2
+    local info = C_Map.GetMapInfo(mapID)
+    for _ = 1, 10 do
+        if not info then return nil end
+        if info.mapType == continentType then return info.mapID end
+        local parentMapID = info.parentMapID
+        if not parentMapID or parentMapID == 0 then return nil end
+        info = C_Map.GetMapInfo(parentMapID)
+    end
+    return nil
+end
+
 function module:UpdateZoneMultiplier(forcedOldWorld)
     local isOldWorld = forcedOldWorld
     if isOldWorld == nil then
         local mapID = C_Map.GetBestMapForUnit("player")
-        if mapID then
-            local continentID = C_Map.GetFallbackWorldMapID(mapID)
+        local continentID = mapID and GetContinentMapID(mapID)
+        if continentID then
             -- 1978: Dragon Isles, 2248: Khaz Algar
             isOldWorld = not (continentID == 1978 or continentID == 2248)
         else

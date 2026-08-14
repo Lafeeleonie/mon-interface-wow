@@ -4,7 +4,7 @@ local addonName, addon = ...
 -- Where MiniAuras's own sound files live. Kept here rather than read from Config because Core loads
 -- first, and the built-ins are registered with LibSharedMedia at load so they are in the list
 -- before any panel asks for it.
-local SOUND_LOCATION = "Interface\\AddOns\\" .. addonName .. "\\Sounds\\"
+local SOUND_LOCATION = "Interface\\AddOns\\" .. addonName .. "\\Sounds\\Effects\\"
 -- MiniAuras's own sounds, by the name they are offered under. The file name without its extension,
 -- so the dropdown reads as a name rather than a path. Registered with LibSharedMedia, which folds
 -- them into one list with everything else registered there and lets other addons use them too.
@@ -30,6 +30,17 @@ local LOCALE_ONLY = {
 }
 
 local DEFAULT_NAME = "Sonar"
+-- The output channels a sound can play on, in the order the game's own volume sliders list them.
+-- Each is named from Blizzard's volume label, so the picker needs no strings of ours; the English
+-- fallback is only reached on a client that has no such global.
+local CHANNELS = {
+	{ Value = "Master", Global = "MASTER_VOLUME", Fallback = "Master" },
+	{ Value = "SFX", Global = "SOUND_VOLUME", Fallback = "Sound Effects" },
+	{ Value = "Music", Global = "MUSIC_VOLUME", Fallback = "Music" },
+	{ Value = "Ambience", Global = "AMBIENCE_VOLUME", Fallback = "Ambience" },
+	{ Value = "Dialog", Global = "DIALOG_VOLUME", Fallback = "Dialog" },
+}
+local DEFAULT_CHANNEL = "Master"
 -- One table, refilled in place. Consumers hold onto it and re-ask for the contents rather than
 -- the table, because media addons register their sounds whenever they happen to load, which is
 -- routinely after a dropdown has already been built.
@@ -39,6 +50,14 @@ local nameScratch = {}
 local changeCallbacks = {}
 local subscribedToMedia = false
 local registeredBuiltIns = false
+-- CHANNELS split the two ways callers need it: the values a picker lists, and the entry for one.
+local channelValues = {}
+local channelsByValue = {}
+
+for index, entry in ipairs(CHANNELS) do
+	channelValues[index] = entry.Value
+	channelsByValue[entry.Value] = entry
+end
 
 ---@class Sounds
 local M = {}
@@ -78,7 +97,7 @@ local function EnsureBuiltInsRegistered()
 	end
 end
 
-local function OnMediaRegistered()
+local function NotifyChanged()
 	for _, fn in ipairs(changeCallbacks) do
 		fn()
 	end
@@ -87,6 +106,10 @@ end
 ---Subscribes to the media library the first time anyone asks to hear about changes. Sounds keep
 ---arriving for as long as addons keep loading, so a list built once is a list that is missing
 ---whatever loaded after it.
+---
+---The fan-out is coalesced: LibSharedMedia fires once per entry and a media pack registers its
+---whole set inside one frame, while every consumer here re-reads the sorted list. Passing the
+---burst straight through costs one full rebuild per registered sound.
 local function EnsureMediaSubscription()
 	if subscribedToMedia then
 		return
@@ -99,8 +122,11 @@ local function EnsureMediaSubscription()
 	end
 
 	subscribedToMedia = true
-	media.RegisterCallback(M, "LibSharedMedia_Registered", OnMediaRegistered)
-	media.RegisterCallback(M, "LibSharedMedia_SetGlobal", OnMediaRegistered)
+
+	local queueNotify = addon.Utils.ModuleUtil:Coalesced(NotifyChanged)
+
+	media.RegisterCallback(M, "LibSharedMedia_Registered", queueNotify)
+	media.RegisterCallback(M, "LibSharedMedia_SetGlobal", queueNotify)
 end
 
 ---The file a built-in name maps to, taking the locale-gated ones into account.
@@ -171,11 +197,14 @@ function M:Normalise(name)
 	return name
 end
 
----Resolves a saved sound name to a file path, falling back to the default whenever the name came
----from a media addon that is no longer installed.
+---The file a saved name maps to right now, or nil when nothing has registered it yet.
+---Engine-side aura sounds bake the path in at registration, so a caller doing that wants to hear
+---"not yet" rather than take the fallback: media addons register their sounds whenever they happen
+---to load, which is routinely after we have already registered, and a name that resolved to the
+---default then would keep playing the default for the rest of the session.
 ---@param name string?
----@return string
-function M:Resolve(name)
+---@return string? file
+function M:ResolveStrict(name)
 	EnsureBuiltInsRegistered()
 
 	local resolved = self:Normalise(name)
@@ -187,16 +216,44 @@ function M:Resolve(name)
 
 	local file = BuiltInFile(resolved)
 
-	if file then
-		return SOUND_LOCATION .. file
-	end
+	return file and (SOUND_LOCATION .. file) or nil
+end
 
-	return SOUND_LOCATION .. BUILT_IN[DEFAULT_NAME]
+---Resolves a saved sound name to a file path, falling back to the default whenever the name came
+---from a media addon that is no longer installed. For playing something right now, where silence
+---would read as a broken setting; registrations want ResolveStrict.
+---@param name string?
+---@return string
+function M:Resolve(name)
+	return self:ResolveStrict(name) or (SOUND_LOCATION .. BUILT_IN[DEFAULT_NAME])
 end
 
 ---@return string
 function M:GetDefaultName()
 	return DEFAULT_NAME
+end
+
+---The output channels to offer, in slider order. Shared table: read it, do not change it.
+---@return string[]
+function M:GetChannels()
+	return channelValues
+end
+
+---What a channel is called on the audio options page.
+---@param channel string?
+---@return string
+function M:ChannelText(channel)
+	local entry = channelsByValue[channel or DEFAULT_CHANNEL] or channelsByValue[DEFAULT_CHANNEL]
+
+	return _G[entry.Global] or entry.Fallback
+end
+
+---A channel the game will accept, so a saved or imported value the client has never heard of
+---plays on the master channel rather than silently going nowhere.
+---@param channel string?
+---@return string
+function M:NormaliseChannel(channel)
+	return channel and channelsByValue[channel] and channel or DEFAULT_CHANNEL
 end
 
 ---Registers a function to call when the media list changes, i.e. when GetNames would now return

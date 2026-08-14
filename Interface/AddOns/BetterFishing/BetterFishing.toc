@@ -1,8 +1,8 @@
-## Interface: 11509, 20506, 38001, 50504, 120007
+## Interface: 11509, 20506, 38002, 50504, 120100
 ## Title: |cffEEE4AEBetter Fishing|r
 ## Notes: |cff58C6FASingle Keybind/Double Click Fishing and Enhanced Sound while fishing|r|n|n|cffFFC700Slash command: /bf, /betterfishing|r
 ## Author: Yuyuli
-## Version: 60
+## Version: 61
 ## SavedVariables: BetterFishingDB
 ## IconTexture: Interface\AddOns\BetterFishing\fishingicon.blp
 

@@ -23,10 +23,6 @@ local PROFESSION_EVENTS = {
     "TRAIT_TREE_CURRENCY_INFO_UPDATED",
 }
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
@@ -43,8 +39,8 @@ function Service:GetSnapshot(characterKey)
     if type(snapshot) ~= "table" then
         return nil
     end
-    if (tonumber(snapshot.resetAt) or 0) <= now() then
-        record.snapshots.professions = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "professions", "expired")
         return nil
     end
     local runtimeState = Addon.StateStore:Get(Module.id)
@@ -76,20 +72,29 @@ local function collectProfessions()
     end
     local detectorState = Addon.DarkmoonDetector:GetState()
     local existing = getRawSnapshot(identity.key)
-    if type(existing) == "table" and (tonumber(existing.resetAt) or 0) <= now() then
+    if type(existing) == "table" and Addon.WoWApi:IsResetExpired(existing.resetAt) then
         existing = nil
     end
     local snapshot = Addon.ProfessionWeeklyLogic:BuildSnapshot(identity, existing, detectorState)
     local knowledge = Addon.ProfessionKnowledgeLogic:BuildState(knowledgeDirty)
-    record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
     if snapshot then
-        record.snapshots.professions = snapshot
+        if not Addon.Database:CommitCharacterSnapshot(identity.key, "professions", snapshot, "refresh") then
+            snapshot = existing
+        end
     end
     if knowledge then
-        record.snapshots.professionKnowledge = knowledge
-        knowledgeDirty = false
+        if Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "professionKnowledge",
+            knowledge,
+            "refresh"
+        ) then
+            knowledgeDirty = false
+        else
+            knowledge = Service:GetKnowledge(identity.key)
+        end
     else
-        knowledge = record.snapshots.professionKnowledge
+        knowledge = Service:GetKnowledge(identity.key)
     end
     return {
         characterKey = identity.key,

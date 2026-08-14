@@ -5,13 +5,26 @@ Addon.Data = Addon.Data or {}
 Addon.Data.PVE_WEEKLY = {
     spark = {
         key = "spark",
-        questPool = { 93766, 93767, 93769, 93889, 93890, 93891, 93892, 93909, 93910, 93911, 93912, 93913, 94457, 95843 },
+        questPool = {
+            93766, 93767, 93769, 93889, 93890, 93891, 93892, 93909, 93910, 93911,
+            93912, 93913, 94457, 95842, 95843, 96727, 98232,
+        },
         variantSuffix = {
             [93767] = "Arcantina",
             [93892] = "Stormarion Assault",
             [93910] = "Prey",
             [94457] = "Battlegrounds",
         },
+    },
+    trailing_xalatath = {
+        key = "trailing_xalatath",
+        memoryKey = "trailing_xalatath",
+        questPool = { 98172 },
+        fallbackNames = {
+            [98172] = "Trailing Xal'atath",
+        },
+        titlePatterns = { "trailing xal'atath", "jagd auf xal'atath" },
+        allowTurnIn = true,
     },
     omnium_folio = {
         key = "omnium_folio",

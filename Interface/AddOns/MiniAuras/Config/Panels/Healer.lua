@@ -10,6 +10,8 @@ local enabledColumnWidth
 local config = addon.Config
 local helpers = addon.Config.PanelHelpers
 local sounds = addon.Core.Sounds
+local dbDefaults = addon.Config.Defaults
+local moduleName = addon.Utils.ModuleName
 
 ---@class HealerCrowdControlConfig
 local M = {}
@@ -24,12 +26,6 @@ function M:Build(panel, options)
 	-- the same vertical lines.
 	enabledColumnWidth = mini:ColumnWidth(5, 0, 0)
 	local db = mini:GetSavedVars()
-	-- 12.1: the warning text (and its Text Size slider) is hidden - it needs the addon to know a
-	-- healer is CC'd, and aura presence is secret there. The SOUND options stay visible: the
-	-- engine plays those itself via AddAuraSound, so that feature survived. Hiding the text also
-	-- frees a column, which is why several controls below are positioned differently per path.
-	-- TEMPORARY: remove the gates with the legacy path once 12.1 is live.
-	local useAuraContainers = addon.Utils.WoWEx:UseAuraContainers()
 
 	local lines = mini:TextBlock({
 		Parent = panel,
@@ -48,7 +44,8 @@ function M:Build(panel, options)
 	enabledDivider:SetPoint("RIGHT", panel, "RIGHT")
 	enabledDivider:SetPoint("TOP", lines, "BOTTOM", 0, -verticalSpacing)
 
-	local enabledEverywhere = helpers:BuildEnableRow(panel, enabledDivider, db.Modules.HealerCCModule.Enabled)
+	local enabledEverywhere = helpers:BuildEnableRow(panel, enabledDivider, db.Modules.HealerCCModule.Enabled,
+		nil, moduleName.HealerCrowdControl)
 
 	local settingsDivider = mini:Divider({
 		Parent = panel,
@@ -67,7 +64,7 @@ function M:Build(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.Enabled = value
-			config:Apply()
+			config:Apply(moduleName.HealerCrowdControl)
 		end,
 	})
 
@@ -82,30 +79,28 @@ function M:Build(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.Glow = value
-			config:Apply()
+			config:Apply(moduleName.HealerCrowdControl)
 		end,
 	})
 
 	glowChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth, 0)
 	glowChk:SetPoint("TOP", showIconsChk, "TOP", 0, 0)
 
-	if not useAuraContainers then
-		local showTextChk = mini:Checkbox({
-			Parent = panel,
-			LabelText = L["Show warning text"],
-			Tooltip = L["Show the 'Healer in CC!' text above the icons."],
-			GetValue = function()
-				return options.ShowWarningText
-			end,
-			SetValue = function(value)
-				options.ShowWarningText = value
-				config:Apply()
-			end,
-		})
+	local showTextChk = mini:Checkbox({
+		Parent = panel,
+		LabelText = L["Show warning text"],
+		Tooltip = L["Show the 'Healer in CC!' text above the icons."],
+		GetValue = function()
+			return options.ShowWarningText
+		end,
+		SetValue = function(value)
+			options.ShowWarningText = value
+			config:Apply(moduleName.HealerCrowdControl)
+		end,
+	})
 
-		showTextChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth * 2, 0)
-		showTextChk:SetPoint("TOP", glowChk, "TOP", 0, 0)
-	end
+	showTextChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth * 2, 0)
+	showTextChk:SetPoint("TOP", glowChk, "TOP", 0, 0)
 
 	local reverseChk = mini:Checkbox({
 		Parent = panel,
@@ -116,11 +111,11 @@ function M:Build(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ReverseCooldown = value
-			config:Apply()
+			config:Apply(moduleName.HealerCrowdControl)
 		end,
 	})
 
-	reverseChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth * (useAuraContainers and 2 or 3), 0)
+	reverseChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth * 3, 0)
 	reverseChk:SetPoint("TOP", glowChk, "TOP", 0, 0)
 
 	local dispelColoursChk = mini:Checkbox({
@@ -132,11 +127,11 @@ function M:Build(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ColorByDispelType = value
-			config:Apply()
+			config:Apply(moduleName.HealerCrowdControl)
 		end,
 	})
 
-	dispelColoursChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth * (useAuraContainers and 3 or 4), 0)
+	dispelColoursChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth * 4, 0)
 	dispelColoursChk:SetPoint("TOP", glowChk, "TOP", 0, 0)
 
 	local showTooltipsChk = mini:Checkbox({
@@ -148,18 +143,11 @@ function M:Build(panel, options)
 		end,
 		SetValue = function(value)
 			options.ShowTooltips = value
-			config:Apply()
+			config:Apply(moduleName.HealerCrowdControl)
 		end,
 	})
 
-	-- 12.1 fits every checkbox on one row (no warning-text option there); legacy wraps
-	-- tooltips onto a second row.
-	if useAuraContainers then
-		showTooltipsChk:SetPoint("LEFT", panel, "LEFT", enabledColumnWidth * 4, 0)
-		showTooltipsChk:SetPoint("TOP", glowChk, "TOP", 0, 0)
-	else
-		showTooltipsChk:SetPoint("TOPLEFT", showIconsChk, "BOTTOMLEFT", 0, -verticalSpacing)
-	end
+	showTooltipsChk:SetPoint("TOPLEFT", showIconsChk, "BOTTOMLEFT", 0, -verticalSpacing)
 
 	-- On 12.1 the sound plays engine-side via C_UnitAuras.AddAuraSound (registered per healer
 	-- and per known CC spell in the module), so the option works on both paths.
@@ -176,11 +164,11 @@ function M:Build(panel, options)
 				-- Play the sound when enabled
 				PlaySoundFile(sounds:Resolve(options.Sound.File), options.Sound.Channel or "Master")
 			end
-			config:Apply()
+			config:Apply(moduleName.HealerCrowdControl)
 		end,
 	})
 
-	soundChk:SetPoint("TOPLEFT", useAuraContainers and showIconsChk or showTooltipsChk, "BOTTOMLEFT", 0, -verticalSpacing)
+	soundChk:SetPoint("TOPLEFT", showTooltipsChk, "BOTTOMLEFT", 0, -verticalSpacing)
 
 	local soundFileDropdown, soundFileModernDdl = helpers:BuildMediaDropdown({
 		Parent = panel,
@@ -193,7 +181,7 @@ function M:Build(panel, options)
 		SetValue = function(value)
 			options.Sound.File = value
 			PlaySoundFile(sounds:Resolve(value), options.Sound.Channel or "Master")
-			config:Apply()
+			config:Apply(moduleName.HealerCrowdControl)
 		end,
 	})
 
@@ -212,58 +200,51 @@ function M:Build(panel, options)
 		LabelText = L["Icon Size"],
 		Min = 10,
 		Max = 100,
-		Default = 50,
+		Default = dbDefaults.Modules.HealerCCModule.Icons.Size,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "Size",
+		SettingsKey = moduleName.HealerCrowdControl,
 	})
 
 	iconSize.Slider:SetPoint("TOPLEFT", slidersAnchor, "BOTTOMLEFT", 4, -verticalSpacing * 3)
 
-	if not useAuraContainers then
-		local fontSize = mini:Slider({
-			Parent = panel,
-			Min = 10,
-			Max = 100,
-			Width = sliderWidth,
-			Step = 1,
-			LabelText = L["Text Size"],
-			GetValue = function()
-				return options.Font.Size
-			end,
-			SetValue = function(v)
-				local newValue = mini:ClampInt(v, 10, 100, 32)
-				if options.Font.Size ~= newValue then
-					options.Font.Size = newValue
-					config:Apply()
-				end
-			end,
-		})
+	local fontSize = mini:Slider({
+		Parent = panel,
+		Min = 10,
+		Max = 100,
+		Width = sliderWidth,
+		Step = 1,
+		LabelText = L["Text Size"],
+		GetValue = function()
+			return options.Font.Size
+		end,
+		SetValue = function(v)
+			local newValue = mini:ClampInt(v, 10, 100, 32)
+			if options.Font.Size ~= newValue then
+				options.Font.Size = newValue
+				config:Apply(moduleName.HealerCrowdControl)
+			end
+		end,
+	})
 
-		fontSize.Slider:SetPoint("LEFT", panel, "LEFT", columnWidth * 2 + 4, 0)
-		fontSize.Slider:SetPoint("TOP", iconSize.Slider, "TOP", 0, 0)
-	end
+	fontSize.Slider:SetPoint("LEFT", panel, "LEFT", columnWidth * 2 + 4, 0)
+	fontSize.Slider:SetPoint("TOP", iconSize.Slider, "TOP", 0, 0)
 
 	local iconSpacing = helpers:BuildClampedSlider({
 		Parent = panel,
 		LabelText = L["Icon Padding"],
 		Min = 0,
 		Max = 20,
-		Default = 2,
-		Fallback = 2,
+		Default = dbDefaults.Modules.HealerCCModule.IconSpacing,
+		Fallback = dbDefaults.Modules.HealerCCModule.IconSpacing,
 		Width = sliderWidth,
 		Target = options,
 		Key = "IconSpacing",
+		SettingsKey = moduleName.HealerCrowdControl,
 	})
 
-	-- 12.1 has no Text Size slider, so Icon Padding takes its place beside Icon Size;
-	-- legacy keeps it on the next row.
-	if useAuraContainers then
-		iconSpacing.Slider:SetPoint("LEFT", panel, "LEFT", columnWidth * 2 + 4, 0)
-		iconSpacing.Slider:SetPoint("TOP", iconSize.Slider, "TOP", 0, 0)
-	else
-		iconSpacing.Slider:SetPoint("TOPLEFT", iconSize.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 3)
-	end
+	iconSpacing.Slider:SetPoint("TOPLEFT", iconSize.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 3)
 
 	panel:HookScript("OnShow", function()
 		panel:MiniRefresh()

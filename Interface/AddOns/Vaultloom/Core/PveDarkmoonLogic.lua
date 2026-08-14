@@ -122,7 +122,9 @@ function Logic:BuildSnapshot(detectorState, existing)
             open = open + 1
         end
     end
-    local dailySeconds, dailyResetAt = Addon.WoWApi:GetDailyResetInfo()
+    local dailySeconds, dailyResetAt = Addon.WoWApi:GetDailyResetInfo(
+        type(existing) == "table" and existing.dailyResetAt or nil
+    )
     return {
         active = true,
         generatedAt = type(time) == "function" and time() or 0,

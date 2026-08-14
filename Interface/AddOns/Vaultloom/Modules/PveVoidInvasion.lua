@@ -23,10 +23,6 @@ local VALID_DIFFICULTIES = {
     heroic = true,
 }
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
@@ -41,12 +37,11 @@ function Service:GetSnapshot(characterKey)
     local expectedVersion = tonumber(Addon.PveVoidInvasionLogic
         and Addon.PveVoidInvasionLogic.snapshotVersion)
     if expectedVersion and tonumber(snapshot.version) ~= expectedVersion then
-        record.snapshots.pveVoidInvasion = nil
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pveVoidInvasion", "version-mismatch")
         return nil
     end
-    local resetAt = tonumber(snapshot.resetAt) or 0
-    if resetAt > 0 and resetAt <= now() then
-        record.snapshots.pveVoidInvasion = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pveVoidInvasion", "expired")
         return nil
     end
     return snapshot
@@ -73,10 +68,16 @@ local function collectVoidInvasion()
     if not record then
         return nil
     end
-    local snapshot = Addon.PveVoidInvasionLogic:BuildSnapshot(Service:GetSnapshot(identity.key))
+    local existing = Service:GetSnapshot(identity.key)
+    local snapshot = Addon.PveVoidInvasionLogic:BuildSnapshot(existing)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pveVoidInvasion = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "pveVoidInvasion",
+            snapshot,
+            "refresh"
+        )
+        if not stored then snapshot = existing end
     end
     return {
         characterKey = identity.key,

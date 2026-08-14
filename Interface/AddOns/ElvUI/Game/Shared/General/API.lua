@@ -37,8 +37,7 @@ local RequestBattlefieldScoreData = RequestBattlefieldScoreData
 local UIParent = UIParent
 local UnitExists = UnitExists
 local UnitIsVisible = UnitIsVisible
-local UIParentLoadAddOn = UIParentLoadAddOn
-local UnitClassBase = UnitClassBase
+local UnitHasPowerType = UnitHasPowerType
 local UnitClassification = UnitClassification
 local UnitFactionGroup = UnitFactionGroup
 local UnitGroupRolesAssigned = UnitGroupRolesAssigned
@@ -50,11 +49,16 @@ local UnitIsPlayer = UnitIsPlayer
 local UnitSex = UnitSex
 local UnitThreatSituation = UnitThreatSituation
 local UnitSelectionType = UnitSelectionType
+local UIParentLoadAddOn = UIParentLoadAddOn
+local LoadAddOnWithErrorHandling = LoadAddOnWithErrorHandling
 
 local WorldFrame = WorldFrame
 local GetWatchedFactionInfo = GetWatchedFactionInfo
 local GetWatchedFactionData = C_Reputation.GetWatchedFactionData
 
+local IsPlayerAtEffectiveMaxLevel = IsPlayerAtEffectiveMaxLevel
+local GameRulesUtil_IsPlayerAtEffectiveMaxLevel = GameRulesUtil and GameRulesUtil.IsPlayerAtEffectiveMaxLevel
+local GameRulesUtil_GetEffectiveMaxLevelForPlayer = GameRulesUtil and GameRulesUtil.GetEffectiveMaxLevelForPlayer
 local GetAddOnRestrictionState = C_RestrictedActions and C_RestrictedActions.GetAddOnRestrictionState
 local CreateDuration = C_DurationUtil and C_DurationUtil.CreateDuration
 local CreateCurve = C_CurveUtil and C_CurveUtil.CreateCurve
@@ -79,6 +83,7 @@ local C_PvP_IsRatedBattleground = C_PvP.IsRatedBattleground
 local C_Spell_GetSpellCharges = C_Spell.GetSpellCharges
 local C_Spell_GetSpellInfo = C_Spell.GetSpellInfo
 
+local POWERTYPE_MANA = Enum.PowerType.Mana or 0
 local AddOnRestrictionType = Enum.AddOnRestrictionType or {}
 local LuaCurveTypeLinear = Enum.LuaCurveType and Enum.LuaCurveType.Linear
 local LuaCurveTypeStep = Enum.LuaCurveType and Enum.LuaCurveType.Step
@@ -87,8 +92,6 @@ local FACTION_ALLIANCE = FACTION_ALLIANCE
 local FACTION_HORDE = FACTION_HORDE
 local PLAYER_FACTION_GROUP = PLAYER_FACTION_GROUP
 
-local GameMenuButtonAddons = GameMenuButtonAddons
-local GameMenuButtonLogout = GameMenuButtonLogout
 local GameMenuFrame = GameMenuFrame
 
 -- GLOBALS: ElvDB
@@ -221,11 +224,7 @@ end
 -- the secure header is different on retail because of evokers
 -- if both are registered on non-retail, it will fire on down and up
 function E:RegisterClicks(frame)
-	if E.hasEditMode then
-		frame:RegisterForClicks('AnyDown', 'AnyUp')
-	else
-		frame:RegisterForClicks('AnyUp')
-	end
+	frame:RegisterForClicks('AnyDown', 'AnyUp')
 end
 
 function E:GetCurrencyIDFromLink(link)
@@ -252,15 +251,15 @@ function E:GetDateTime(localTime, unix)
 	end
 end
 
-function E:ClassColor(class, usePriestColor)
-	if not class then return end
+function E:ClassColor(classToken, usePriestColor)
+	if not classToken then return end
 
-	local custom = _G.CUSTOM_CLASS_COLORS and _G.CUSTOM_CLASS_COLORS[class]
+	local custom = _G.CUSTOM_CLASS_COLORS and _G.CUSTOM_CLASS_COLORS[classToken]
 	if custom then -- make sure the custom table is using ColorMixin
 		E:VerifyColorTable(custom, true)
 	end
 
-	local color = custom or _G.RAID_CLASS_COLORS[class]
+	local color = custom or _G.RAID_CLASS_COLORS[classToken]
 	if type(color) ~= 'table' then return end
 
 	if not color.colorStr then
@@ -269,7 +268,7 @@ function E:ClassColor(class, usePriestColor)
 		color.colorStr = 'ff'..color.colorStr
 	end
 
-	if usePriestColor and class == 'PRIEST' and tonumber(color.colorStr, 16) > tonumber(E.PriestColors.colorStr, 16) then
+	if (usePriestColor and classToken == 'PRIEST') and (tonumber(color.colorStr, 16) > tonumber(E.PriestColors.colorStr, 16)) then
 		return E.PriestColors
 	else
 		return color
@@ -345,7 +344,8 @@ do -- other non-english locales require this
 	end
 
 	function E:LocalizedClassName(className, unit)
-		local gender = (type(unit) == 'number' and unit) or (not unit and E.mygender) or UnitSex(unit)
+		local unitSex = UnitSex(unit)
+		local gender = (type(unit) == 'number' and unit) or (not unit and E.mygender) or (E:NotSecretValue(unitSex) and unitSex)
 		return (gender == 3 and classFemale[className]) or classMale[className]
 	end
 end
@@ -572,7 +572,7 @@ end
 
 function E:GetPlayerRole()
 	local role = E.allowRoles and UnitGroupRolesAssigned('player') or 'NONE'
-	return (role ~= 'NONE' and role) or E.myspecRole or 'NONE'
+	return E:NotSecretValue(role) and (role ~= 'NONE' and role) or E.myspecRole or 'NONE'
 end
 
 function E:CheckRole()
@@ -701,6 +701,10 @@ function E:UpdateAuraCurves()
 		end
 
 		E:UpdateAuraCurve(which, data)
+
+		if which == 'highlight' then
+			E.AuraHighlight.customDispelColorCurve = data
+		end
 	end
 end
 
@@ -852,9 +856,17 @@ do
 	end
 end
 
+function E:LoadAddon(addon)
+	if UIParentLoadAddOn then
+		return UIParentLoadAddOn(addon)
+	elseif LoadAddOnWithErrorHandling then
+		LoadAddOnWithErrorHandling(addon)
+	end
+end
+
 function E:Dump(object, inspect)
 	local debugTools = IsAddOnLoaded('Blizzard_DebugTools')
-	if not debugTools then UIParentLoadAddOn('Blizzard_DebugTools') end
+	if not debugTools then E:LoadAddon('Blizzard_DebugTools') end
 
 	if inspect then
 		local tableType = type(object)
@@ -1043,11 +1055,6 @@ function E:PLAYER_ENTERING_WORLD(_, initLogin, isReload)
 		end
 	end
 
-	if not E.MediaUpdated then
-		E:UpdateMedia()
-		E.MediaUpdated = true
-	end
-
 	local _, instanceType = IsInInstance()
 	if instanceType == 'pvp' then
 		E.BGTimer = E:ScheduleRepeatingTimer('RequestBGInfo', 5)
@@ -1105,8 +1112,20 @@ function E:XPIsTrialMax()
 	return (IsRestrictedAccount() or IsTrialAccount() or IsVeteranTrialAccount()) and (E.myLevel == 20)
 end
 
+function E:IsLevelAtEffectiveMaxLevel(level)
+	if GameRulesUtil_GetEffectiveMaxLevelForPlayer then
+		return level >= GameRulesUtil_GetEffectiveMaxLevelForPlayer()
+	elseif IsLevelAtEffectiveMaxLevel then
+		return IsLevelAtEffectiveMaxLevel(level)
+	end
+end
+
 function E:XPIsLevelMax()
-	return IsLevelAtEffectiveMaxLevel(E.mylevel) or IsXPUserDisabled() or E:XPIsTrialMax()
+	return (GameRulesUtil_IsPlayerAtEffectiveMaxLevel and GameRulesUtil_IsPlayerAtEffectiveMaxLevel())
+	or (IsPlayerAtEffectiveMaxLevel and IsPlayerAtEffectiveMaxLevel())
+	or E:IsLevelAtEffectiveMaxLevel(E.mylevel)
+	or IsXPUserDisabled()
+	or E:XPIsTrialMax()
 end
 
 function E:GetUnitBattlefieldFaction(unit)
@@ -1139,44 +1158,26 @@ function E:PLAYER_LEVEL_UP(_, level)
 end
 
 function E:PositionGameMenuButton()
-	if E.hasEditMode then
-		if E.private.skins.blizzard.enable and E.private.skins.blizzard.misc then
-			GameMenuFrame.Header.Text:SetTextColor(unpack(E.media.rgbvaluecolor))
-		end
+	if E.private.skins.blizzard.enable and E.private.skins.blizzard.misc then
+		GameMenuFrame.Header.Text:SetTextColor(unpack(E.media.rgbvaluecolor))
+	end
 
-		GameMenuFrame:Height(GameMenuFrame:GetHeight() + 10)
+	GameMenuFrame:Height(GameMenuFrame:GetHeight() + 10)
 
-		for button in GameMenuFrame.buttonPool:EnumerateActive() do
-			local text = button:GetText()
+	for button in GameMenuFrame.buttonPool:EnumerateActive() do
+		local text = button:GetText()
 
-			if text and (text == _G.LOGOUT or text == _G.LOG_OUT or text == _G.EXIT_GAME or text == _G.RETURN_TO_GAME) then
-				button:NudgePoint(nil, E.Retail and -25 or -20)
-			else
-				if text == _G.MACROS then
-					GameMenuFrame.ElvUI:Point('TOPLEFT', button, 'BOTTOMLEFT')
-				end
+		if text and (text == _G.LOGOUT or text == _G.LOG_OUT or text == _G.EXIT_GAME or text == _G.RETURN_TO_GAME) then
+			button:NudgePoint(nil, E.Retail and -25 or -20)
+		else
+			if text == _G.MACROS then
+				GameMenuFrame.ElvUI:Point('TOPLEFT', button, 'BOTTOMLEFT')
+			end
 
-				if E.Retail then
-					button:NudgePoint(nil, 10)
-				end
+			if E.Retail then
+				button:NudgePoint(nil, 10)
 			end
 		end
-	else
-		local button = GameMenuFrame.ElvUI
-		if button then
-			button:SetFormattedText('%sElvUI|r', E.media.hexvaluecolor)
-
-			local _, relTo, _, _, offY = GameMenuButtonLogout:GetPoint()
-			if relTo ~= button then
-				button:ClearAllPoints()
-				button:Point('TOPLEFT', relTo, 'BOTTOMLEFT', 0, -1)
-
-				GameMenuButtonLogout:ClearAllPoints()
-				GameMenuButtonLogout:Point('TOPLEFT', button, 'BOTTOMLEFT', 0, offY)
-			end
-		end
-
-		GameMenuFrame:Height(GameMenuFrame:GetHeight() + GameMenuButtonLogout:GetHeight() - 4)
 	end
 
 	if GameMenuFrame.ElvUI then
@@ -1199,33 +1200,23 @@ end
 function E:SetupGameMenu()
 	if GameMenuFrame.ElvUI then return end
 
-	if E.hasEditMode then
-		local button = CreateFrame('Button', 'ElvUI_GameMenuButton', GameMenuFrame, 'MainMenuFrameButtonTemplate')
-		button:SetScript('OnClick', E.ClickGameMenu)
+	local button = CreateFrame('Button', 'ElvUI_GameMenuButton', GameMenuFrame, 'MainMenuFrameButtonTemplate')
+	button:SetScript('OnClick', E.ClickGameMenu)
 
-		if E.Retail then
-			button:Size(200, 35)
-		else
-			button:Size(144, 21)
-		end
-
-		GameMenuFrame.ElvUI = button
-		GameMenuFrame.MenuButtons = {}
-
-		if E.Retail then
-			E:ScaleGameMenu()
-		end
-
-		hooksecurefunc(GameMenuFrame, 'Layout', E.PositionGameMenuButton)
+	if E.Retail then
+		button:Size(200, 35)
 	else
-		local button = CreateFrame('Button', nil, GameMenuFrame, 'GameMenuButtonTemplate')
-		button:SetScript('OnClick', E.ClickGameMenu)
-		GameMenuFrame.ElvUI = button
-
-		button:Size(GameMenuButtonLogout:GetSize())
-		button:Point('TOPLEFT', GameMenuButtonAddons, 'BOTTOMLEFT', 0, -1)
-		hooksecurefunc('GameMenuFrame_UpdateVisibleButtons', E.PositionGameMenuButton)
+		button:Size(144, 21)
 	end
+
+	GameMenuFrame.ElvUI = button
+	GameMenuFrame.MenuButtons = {}
+
+	if E.Retail then
+		E:ScaleGameMenu()
+	end
+
+	hooksecurefunc(GameMenuFrame, 'Layout', E.PositionGameMenuButton)
 end
 
 function E:CompatibleTooltip(tt) -- knock off compatibility
@@ -1383,7 +1374,7 @@ function E:GROUP_ROSTER_UPDATE()
 	for i = 1, (isInRaid and GetNumGroupMembers()) or GetNumSubgroupMembers() do
 		local unit = group..i
 		local role = not E.allowRoles and (GetPartyAssignment('MAINTANK', unit) and 'TANK' or 'NONE') or UnitGroupRolesAssigned(unit)
-		if role then
+		if E:NotSecretValue(role) and role then
 			if E:UnitIsUnit(unit, 'player') then
 				unit = 'player'
 			end
@@ -1417,13 +1408,13 @@ end
 function E:GetClassificationType(unit)
 	if UnitIsPlayer(unit) then return end
 
-	local baseClass = UnitClassBase(unit)
 	local _, instanceType = IsInInstance()
+	local hasMana = UnitHasPowerType(unit, POWERTYPE_MANA)
 	local classification = UnitClassification(unit)
 	local unitLevel = E:UnitEffectiveLevel(unit)
 	local maxLevel = E.expansionLevelMax
 
-	if instanceType == 'party' and baseClass == 'PALADIN' then
+	if instanceType == 'party' and hasMana then
 		return 'caster' -- In dungeons, check caster first so elite casters aren't missed
 	elseif classification == 'worldboss' or classification == 'rareelite' or classification == 'rare' then
 		return classification
@@ -1431,7 +1422,7 @@ function E:GetClassificationType(unit)
 		return 'eliteBoss'
 	elseif classification == 'elite' and (unitLevel >= (maxLevel + 1)) then
 		return 'eliteMini'
-	elseif baseClass == 'PALADIN' then
+	elseif hasMana then
 		return 'caster'
 	end
 end
@@ -1455,8 +1446,16 @@ function E:CheckRestrictionState(which)
 	return state
 end
 
+function E:IsInRestrictionState(which)
+	return E:CheckRestrictionState(which) > 1
+end
+
+function E:IsPvPMatchRestricted()
+	return GetCVarBool('addonPvPMatchRestrictionsForced') or E:IsInRestrictionState('PvPMatch')
+end
+
 function E:IsChatRestricted()
-	return GetCVarBool('addonChatRestrictionsForced') or (E:CheckRestrictionState('ChallengeMode') > 1 or E:CheckRestrictionState('Encounter') > 1)
+	return GetCVarBool('addonChatRestrictionsForced') or (E:IsInRestrictionState('ChallengeMode') or E:IsInRestrictionState('Encounter'))
 end
 
 function E:LoadAPI()
@@ -1470,7 +1469,7 @@ function E:LoadAPI()
 
 	E:GROUP_ROSTER_UPDATE()
 	E:SetupGameMenu()
-	E:UpdateTexCoords() -- update cropIcon texCoords
+	E:UpdateTexCoords()
 
 	if E.Retail or E.Mists then
 		E:PopulateSpecInfo()
@@ -1487,14 +1486,16 @@ function E:LoadAPI()
 	E.ScanTooltip.GetHyperlinkInfo = E.ScanTooltip_HyperlinkInfo
 	E.ScanTooltip.GetInventoryInfo = E.ScanTooltip_InventoryInfo
 
-	if E.Retail or E.Mists then
+	if C_MountJournal_GetMountIDs then
 		for _, mountID in next, C_MountJournal_GetMountIDs() do
 			local _, _, sourceText = C_MountJournal_GetMountInfoExtraByID(mountID)
 			local _, spellID = C_MountJournal_GetMountInfoByID(mountID)
 			E.MountIDs[spellID] = mountID
 			E.MountText[mountID] = sourceText
 		end
+	end
 
+	if E.Retail or E.Mists then
 		E:RegisterEvent('NEUTRAL_FACTION_SELECT_RESULT')
 		E:RegisterEvent('PLAYER_SPECIALIZATION_CHANGED', 'CheckRole')
 		E:RegisterEvent('PET_BATTLE_CLOSE', 'AddNonPetBattleFrames')

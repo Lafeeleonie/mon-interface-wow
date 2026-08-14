@@ -6,6 +6,7 @@ Addon.FocusLogic = Logic
 
 local SECTION_SOURCES = {
     { key = "pve_weekly", group = function() return L.SCREEN_PVE .. " / " .. L.PVE_TAB_WEEKLY end, service = "PveWeekly" },
+    { key = "pve_coiled_isle", group = function() return L.SCREEN_PVE .. " / " .. L.PVE_TAB_COILED_ISLE end, service = "PveCoiledIsle" },
     { key = "pve_void_invasion", group = function() return L.SCREEN_PVE .. " / " .. L.PVE_TAB_VOID_INVASION end, service = "PveVoidInvasion" },
     { key = "pve_daily", group = function() return L.SCREEN_PVE .. " / " .. L.PVE_TAB_DAILY end, service = "PveDaily" },
     { key = "pve_events", group = function() return L.SCREEN_PVE .. " / " .. L.PVE_TAB_EVENTS end, service = "PveEvents" },

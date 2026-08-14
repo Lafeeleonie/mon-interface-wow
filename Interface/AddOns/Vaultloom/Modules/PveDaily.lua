@@ -8,6 +8,8 @@ local Module = {
 local Service = {}
 Addon.PveDaily = Service
 
+local BOUNTIFUL_MEMORY_VERSION = 2
+
 local REFRESH_EVENTS = {
     "PLAYER_ENTERING_WORLD",
     "QUEST_LOG_UPDATE",
@@ -16,10 +18,6 @@ local REFRESH_EVENTS = {
     "QUEST_TURNED_IN",
     "AREA_POIS_UPDATED",
 }
-
-local function now()
-    return type(time) == "function" and time() or 0
-end
 
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
@@ -32,9 +30,8 @@ function Service:GetSnapshot(characterKey)
     if type(snapshot) ~= "table" then
         return nil
     end
-    local resetAt = tonumber(snapshot.resetAt) or 0
-    if resetAt > 0 and resetAt <= now() then
-        record.snapshots.pveDaily = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pveDaily", "expired")
         record.dailyQuestMemory = nil
         return nil
     end
@@ -44,9 +41,8 @@ end
 local function getMemory(record, resetAt)
     local memory = type(record.dailyQuestMemory) == "table" and record.dailyQuestMemory or nil
     local savedResetAt = memory and tonumber(memory.resetAt) or 0
-    local expired = savedResetAt > 0 and savedResetAt <= now()
-    local movedToDifferentReset = resetAt > 0 and savedResetAt > 0 and math.abs(savedResetAt - resetAt) > 120
-    if not memory or expired or movedToDifferentReset then
+    local expired = Addon.WoWApi:IsResetExpired(savedResetAt)
+    if not memory or expired then
         memory = {
             resetAt = resetAt,
             bountiful = {},
@@ -57,6 +53,13 @@ local function getMemory(record, resetAt)
     memory.bountiful = type(memory.bountiful) == "table" and memory.bountiful or {}
     memory.wanted = type(memory.wanted) == "table" and memory.wanted or {}
     memory.wanted.discoveredIDs = type(memory.wanted.discoveredIDs) == "table" and memory.wanted.discoveredIDs or {}
+    if tonumber(memory.bountiful.version) ~= BOUNTIFUL_MEMORY_VERSION then
+        -- Older builds interpreted "no Bountiful POI visible" as 4/4 and
+        -- persisted that false completion for the rest of the day. That old
+        -- value has no reliable provenance, so discard it once on upgrade.
+        memory.bountiful.completed = 0
+        memory.bountiful.version = BOUNTIFUL_MEMORY_VERSION
+    end
     if resetAt > 0 then
         memory.resetAt = resetAt
     end
@@ -109,8 +112,13 @@ local function collectDaily()
     local _, resetAt = Addon.WoWApi:GetDailyResetInfo()
     local snapshot = Addon.PveDailyLogic:BuildSnapshot(getMemory(record, resetAt), existing, identity)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pveDaily = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "pveDaily",
+            snapshot,
+            "refresh"
+        )
+        if not stored then snapshot = existing end
     end
     return {
         characterKey = identity.key,

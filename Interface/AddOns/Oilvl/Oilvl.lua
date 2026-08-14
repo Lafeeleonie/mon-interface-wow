@@ -236,7 +236,7 @@ local bagilvltime=0
 local CNname, _, _, _, _, _, _ = EJ_GetInstanceInfo(1307); -- The Voidspire
 local CNname2, _, _, _, _, _, _ = EJ_GetInstanceInfo(1314); -- The Dreamrift
 local CNname3, _, _, _, _, _, _ = EJ_GetInstanceInfo(1308); -- March on Quel'Danas
-local CNname4, _, _, _, _, _, _ = EJ_GetInstanceInfo(1305); -- Sporefall
+local CNname4, _, _, _, _, _, _ = EJ_GetInstanceInfo(1320); -- The Venomous Abyss
 
 -- Each raid has its own entry,
 -- 1-4 are Raid Finder, Normal, Heroic, and Mythic kills statistic ID
@@ -260,7 +260,14 @@ local OSTATCN3 = {
 }
 
 local OSTATCN4 = {
-	{63233,63234,63235,63236}
+	{63533,63534,63535,63536},
+	{63537,63538,63539,63540},
+	{63541,63552,63553,63554},
+	{63547,63555,63556,63557},
+	{63548,63558,63559,63560},
+	{63549,63561,63562,63563},
+	{63550,63564,63565,63566},
+	{63551,63567,63568,63569},
 }
 
 local targetilvl = ""
@@ -2814,7 +2821,7 @@ function oilvlSetOSTATCN()
 	for i = 1,2 do
 		OSTATCN3[i][5] = select(2,GetAchievementInfo(OSTATCN3[i][1])):gsub(" %(.*%)","")..""
 	end
-	for i = 1,1 do
+	for i = 1,8 do
 		OSTATCN4[i][5] = select(2,GetAchievementInfo(OSTATCN4[i][1])):gsub(" %(.*%)","")..""
 	end
 end
@@ -3019,7 +3026,9 @@ local function SaveAOTCCE(tt,...)
 		for i = 1, 4 do tt[#tt+1] = temp[i] end
 		tt[#tt+1] = temp2
 		if temp[1] then
-			_, cunitid = OilvlTooltip:GetUnit();
+			--_, cunitid = OilvlTooltip:GetUnit();
+			cunitid = rpdounit;
+			if not cunitid then cunitid = otooltip6rpdunit end
 			local clink = GetAchievementLink(an[j]):gsub(UnitGUID("player"):gsub("-","%%-"),UnitGUID(cunitid):gsub("-","%%-"))
 			local cdate = temp[2]..":"..temp[3]..":"..temp[4]
 			if GetAchievementLink(an[j]):match(UnitGUID("player"):gsub("-","%%-")..":1:(%d+:%d+:%d+)") then
@@ -3206,7 +3215,7 @@ function OGetRaidProgression2(RaidName, OSTAT, NumRaidBosses, Faction)
 	bigorp[CNname] = Save_orp(CNname, OSTATCN,6)
 	bigorp[CNname2] = Save_orp(CNname2, OSTATCN2, 1)
 	bigorp[CNname3] = Save_orp(CNname3, OSTATCN3, 2)
-	bigorp[CNname4] = Save_orp(CNname4, OSTATCN4, 1)
+	bigorp[CNname4] = Save_orp(CNname4, OSTATCN4, 8)
 
 	local function Save_orp_vars(raidname3)
 		OSTAT, NumRaidBosses, twohighest, progression, orp["raidname"], orp["progression"], orp["LFR"], orp["Normal"], orp["Heroic"], orp["Mythic"] = bigorp[raidname3][1],bigorp[raidname3][2],bigorp[raidname3][3],bigorp[raidname3][4],bigorp[raidname3][5],bigorp[raidname3][6],bigorp[raidname3][7],bigorp[raidname3][8],bigorp[raidname3][9],bigorp[raidname3][10]
@@ -3228,10 +3237,12 @@ function OGetRaidProgression2(RaidName, OSTAT, NumRaidBosses, Faction)
 	RaidAchiv[CNname] ={}
 	RaidAchiv[CNname2] ={}
 	RaidAchiv[CNname3] ={}
+	RaidAchiv[CNname4] ={}
 
 	SaveAOTCCE(RaidAchiv[CNname],61624,61625)
 	SaveAOTCCE(RaidAchiv[CNname2],61491,61492)
 	SaveAOTCCE(RaidAchiv[CNname3],61626,61627)
+	SaveAOTCCE(RaidAchiv[CNname4],6163650,63651)
 	
 	local oilvltooltiptexts = {}
 	for i = 1, OilvlTooltip:NumLines() do
@@ -3471,8 +3482,11 @@ function OGetRaidProgression3(RaidName, OSTAT, NumRaidBosses, Faction)
 	orp["Normal"]={};
 	orp["Heroic"]={};
 	orp["Mythic"]={};
-	orp["unitname"], orp["unitid"] = OilvlTooltip:GetUnit();
+	--orp["unitname"], orp["unitid"] = OilvlTooltip:GetUnit();
+	orp["unitname"] = UnitName(otooltip6rpdunit);
+	orp["unitid"] = otooltip6rpdunit;
 	orp["oframe"] = OilvlTooltip:GetOwner();
+	--print(orp["unitname"], orp["unitid"], orp["oframe"])
 	if orp["oframe"] == nil then
 		OILVL:UnregisterEvent("INSPECT_ACHIEVEMENT_READY");
 		--ClearAchievementComparisonUnit();
@@ -3572,11 +3586,11 @@ function OGetRaidProgression3(RaidName, OSTAT, NumRaidBosses, Faction)
 		otooltip6rpdunit=nil;
 		otooltip6rpdid=nil;
 		return -1;
-	end
+	end	
 	local nn = oicomp[GetMouseFoci()[1]._line-4].id
 	orp["spec"] = ospec[oilvlframedata.spec[nn]];
 	orp["class"], _ =  UnitClass(orp["unitid"]);
-	if not orp["spec"] or not orp["class"] then
+	if not orp["spec"] or not orp["class"] then		
 		OILVL:UnregisterEvent("INSPECT_ACHIEVEMENT_READY");
 		rpsw=false;
 		rpunit="";
@@ -3587,7 +3601,7 @@ function OGetRaidProgression3(RaidName, OSTAT, NumRaidBosses, Faction)
 		otooltip6rpdid=nil;
 		--ClearAchievementComparisonUnit();
 		return -1;
-	end
+	end	
 	orp["ilvl"] = string.format("%d", oilvlframedata.ilvl[nn][1]);
 	orp["raidname"]=RaidName;
 	orp["progression"]="";
@@ -3645,8 +3659,7 @@ function OGetRaidProgression3(RaidName, OSTAT, NumRaidBosses, Faction)
 	bigorp[CNname] = Save_orp(CNname, OSTATCN, 6)
 	bigorp[CNname2] = Save_orp(CNname2, OSTATCN2, 1)
 	bigorp[CNname3] = Save_orp(CNname3, OSTATCN3, 2)
-	bigorp[CNname4] = Save_orp(CNname4, OSTATCN4, 1)
-
+	bigorp[CNname4] = Save_orp(CNname4, OSTATCN4, 8)	
 	local function Save_orp_vars(raidname3)
 		OSTAT, NumRaidBosses, twohighest, progression, orp["raidname"], orp["progression"], orp["LFR"], orp["Normal"], orp["Heroic"], orp["Mythic"] = bigorp[raidname3][1],bigorp[raidname3][2],bigorp[raidname3][3],bigorp[raidname3][4],bigorp[raidname3][5],bigorp[raidname3][6],bigorp[raidname3][7],bigorp[raidname3][8],bigorp[raidname3][9],bigorp[raidname3][10]
 	end
@@ -3661,16 +3674,15 @@ function OGetRaidProgression3(RaidName, OSTAT, NumRaidBosses, Faction)
 			_G["OilvlTooltipTextLeft"..matchi]:SetText(progression);
 		end
 	end
-
 	local RaidAchiv = {}
 	RaidAchiv[CNname] ={}
 	RaidAchiv[CNname2] ={}
 	RaidAchiv[CNname3] ={}
-
+	RaidAchiv[CNname4] ={}
 	SaveAOTCCE(RaidAchiv[CNname],61624,61625)
 	SaveAOTCCE(RaidAchiv[CNname2],61491,61492)
 	SaveAOTCCE(RaidAchiv[CNname3],61626,61627)
-
+	SaveAOTCCE(RaidAchiv[CNname4],63650,63651)
 	local oilvltooltiptexts = {}
 	for i = 1, OilvlTooltip:NumLines() do
 		if i > 1 and i < 5 then
@@ -3680,7 +3692,7 @@ function OGetRaidProgression3(RaidName, OSTAT, NumRaidBosses, Faction)
 		end
 	end
 
-	OILVL:UnregisterEvent("INSPECT_ACHIEVEMENT_READY");
+	OILVL:UnregisterEvent("INSPECT_ACHIEVEMENT_READY");	
 	--ClearAchievementComparisonUnit();
 	rpsw=false;
 	rpunit="";
@@ -4383,7 +4395,7 @@ function otooltip6func()
 					OilvlTooltip:AddLine(L["Low level socketed"]..":\n|cFF00FF00"..oilvlframedata.mg[i][2]);
 				end
 				--OilvlTooltip:SetHeight(GameTooltip:GetHeight()+15);
-				OilvlTooltip:AddLine(L["Raid Progression Details"]..":\n|cFF00FF00"..ERR_OUT_OF_RANGE);
+				--OilvlTooltip:AddLine(L["Raid Progression Details"]..":\n|cFF00FF00"..ERR_OUT_OF_RANGE);
 				OilvlTooltip:Show()
 				if UnitExists(ounit) and cfg.oilvlms then
 					Omover2=2;
@@ -5328,7 +5340,7 @@ function events:INSPECT_ACHIEVEMENT_READY(...)
 					if cfg.raidmenuid == 1 then OGetRaidProgression2(CNname, OSTATCN, 6, UnitFactionGroup(rpunit)); end
 					if cfg.raidmenuid == 2 then OGetRaidProgression2(CNname2, OSTATCN2, 1, UnitFactionGroup(rpunit)); end
 					if cfg.raidmenuid == 3 then OGetRaidProgression2(CNname3, OSTATCN3, 2, UnitFactionGroup(rpunit)); end
-					if cfg.raidmenuid == 4 then OGetRaidProgression2(CNname4, OSTATCN4, 1, UnitFactionGroup(rpunit)); end
+					if cfg.raidmenuid == 4 then OGetRaidProgression2(CNname4, OSTATCN4, 8, UnitFactionGroup(rpunit)); end
 				else
 					--ClearAchievementComparisonUnit();
 					rpsw=false;
@@ -5340,7 +5352,7 @@ function events:INSPECT_ACHIEVEMENT_READY(...)
 					if cfg.raidmenuid == 1 then OGetRaidProgression3(CNname, OSTATCN, 6, UnitFactionGroup(rpunit)); end
 					if cfg.raidmenuid == 2 then OGetRaidProgression3(CNname2, OSTATCN2, 1, UnitFactionGroup(rpunit)); end
 					if cfg.raidmenuid == 3 then OGetRaidProgression3(CNname3, OSTATCN3, 2, UnitFactionGroup(rpunit)); end
-					if cfg.raidmenuid == 4 then OGetRaidProgression3(CNname4, OSTATCN4, 1, UnitFactionGroup(rpunit)); end
+					if cfg.raidmenuid == 4 then OGetRaidProgression3(CNname4, OSTATCN4, 8, UnitFactionGroup(rpunit)); end
 				else
 					--ClearAchievementComparisonUnit();
 					rpsw=false;
@@ -5352,7 +5364,7 @@ function events:INSPECT_ACHIEVEMENT_READY(...)
 					if cfg.raidmenuid == 1 then OGetRaidProgression(CNname, OSTATCN, 6); end
 					if cfg.raidmenuid == 2 then OGetRaidProgression(CNname2, OSTATCN2, 1); end
 					if cfg.raidmenuid == 3 then OGetRaidProgression(CNname3, OSTATCN3, 2); end
-					if cfg.raidmenuid == 4 then OGetRaidProgression(CNname4, OSTATCN4, 1); end
+					if cfg.raidmenuid == 4 then OGetRaidProgression(CNname4, OSTATCN4, 8); end
 				else
 					--ClearAchievementComparisonUnit();
 					rpsw=false;

@@ -1,15 +1,13 @@
-## Interface: 120005, 120007
+## Interface: 120100
 ## Title: O Item Level|cff00ccff(OiLvL)|r
 ## Author: OlzenKhaw, Teece
-## Version: 12.0.23
+## Version: 12.1.0
 ## Notes: Shows Item Level of raiders in party / raid. Shows Item Level and raid progression on tooltips.
 ## SavedVariables: Oilvl_Settings
 ## OptionalDeps: LibStub, LibUIDropDownMenu
 
 embeds.xml
-
 localization.lua
-
 libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
 libs\AceAddon-3.0\AceAddon-3.0.xml
 libs\AceTimer-3.0\AceTimer-3.0.xml

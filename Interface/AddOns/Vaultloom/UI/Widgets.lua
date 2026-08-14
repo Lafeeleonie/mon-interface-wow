@@ -7,16 +7,8 @@ Addon.Widgets = Widgets
 
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 local WHITE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
-local BLIZZARD_INNER_BORDER = "Interface\\Tooltips\\UI-Tooltip-Border"
-local TEXTURED_PANEL_STYLES = {
-    card = true,
-    content = true,
-    hero = true,
-    inset = true,
-    sectionInset = true,
-    sidebar = true,
-    utility = true,
-}
+local COLOR_BORDER_EDGE_SIZE = 4
+local STRUCTURAL_COLOR_BORDER_EDGE_SIZE = 2
 local BUTTON_CAP_WIDTH = 10
 local BUTTON_MIN_MIDDLE_WIDTH = 8
 local BUTTON_LONG_MIDDLE_THRESHOLD = 96
@@ -139,20 +131,19 @@ local function getRestingButtonState(button, hovered)
     return "normal"
 end
 
-function Widgets:ApplyStandardGoldFrame(frame, backgroundTexture, borderColor, texturedBorder)
+function Widgets:ApplyStandardGoldFrame(frame, backgroundTexture, borderColor, structural)
     if not frame or type(frame.SetBackdrop) ~= "function" then
         return
     end
 
-    local borderInset = texturedBorder and 2 or 0
     local backdrop = {
-        edgeFile = texturedBorder and BLIZZARD_INNER_BORDER or WHITE_TEXTURE,
-        edgeSize = texturedBorder and 8 or 1,
+        edgeFile = Assets.roundedColorBorder,
+        edgeSize = structural and STRUCTURAL_COLOR_BORDER_EDGE_SIZE or COLOR_BORDER_EDGE_SIZE,
         insets = {
-            left = borderInset,
-            right = borderInset,
-            top = borderInset,
-            bottom = borderInset,
+            left = 1,
+            right = 1,
+            top = 1,
+            bottom = 1,
         },
     }
     if backgroundTexture then
@@ -186,12 +177,45 @@ function Widgets:ApplyPanelStyle(frame, style)
     elseif style == "hero" then
         backgroundTexture = Assets.heroPlate
     end
-    self:ApplyStandardGoldFrame(
-        frame,
-        backgroundTexture,
-        border,
-        TEXTURED_PANEL_STYLES[style] == true
-    )
+    local structural = style == "sidebar" or style == "utility"
+        or style == "content" or style == "hero"
+    self:ApplyStandardGoldFrame(frame, backgroundTexture, border, structural)
+end
+
+local function addTextureMask(owner, texture, maskTexture)
+    if not owner or not texture
+        or type(owner.CreateMaskTexture) ~= "function"
+        or type(texture.AddMaskTexture) ~= "function"
+    then
+        return nil
+    end
+    local mask = owner:CreateMaskTexture(nil, "ARTWORK")
+    mask:SetTexture(maskTexture, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(texture)
+    texture:AddMaskTexture(mask)
+    return mask
+end
+
+function Widgets:AddRoundedIconMask(owner, texture)
+    return addTextureMask(owner, texture, Assets.roundedIconMask)
+end
+
+function Widgets:AddRoundedStatusLineMask(owner, texture)
+    return addTextureMask(owner, texture, Assets.roundedStatusLineMask)
+end
+
+function Widgets:CreateRoundedIconBorder(parent, texture, padding, borderColor)
+    if not parent or not texture then
+        return nil
+    end
+    padding = math.max(0, tonumber(padding) or 0)
+    local border = CreateFrame("Frame", nil, parent, BACKDROP_TEMPLATE)
+    border:SetPoint("TOPLEFT", texture, "TOPLEFT", -padding, padding)
+    border:SetPoint("BOTTOMRIGHT", texture, "BOTTOMRIGHT", padding, -padding)
+    border:SetFrameLevel(parent:GetFrameLevel() + 1)
+    border:EnableMouse(false)
+    self:ApplyStandardGoldFrame(border, nil, borderColor)
+    return border
 end
 
 function Widgets:CreatePanel(parent, style)
@@ -222,19 +246,31 @@ function Widgets:RefreshSimpleGoldButton(button)
         or Theme.colors.panelInset
     local border = (button.active or button.vaultloomHovered)
         and Theme.colors.gold or Theme.colors.goldDim
-    button:SetBackdropColor(unpackColor(background))
+    if button.vaultloomSimpleGoldBackgroundTexture then
+        if button.vaultloomPressed or button.active then
+            button:SetBackdropColor(1.00, 0.86, 0.58, 1)
+        elseif button.vaultloomHovered then
+            button:SetBackdropColor(1.00, 0.94, 0.78, 1)
+        else
+            button:SetBackdropColor(1, 1, 1, 1)
+        end
+    else
+        button:SetBackdropColor(unpackColor(background))
+    end
     button:SetBackdropBorderColor(unpackColor(border))
 end
 
-function Widgets:CreateSimpleGoldButton(parent, text, width, height)
+function Widgets:CreateSimpleGoldButton(parent, text, width, height, backgroundTexture)
     local button = CreateFrame("Button", nil, parent, BACKDROP_TEMPLATE)
     button:SetSize(width or 24, height or 24)
     button:SetBackdrop({
-        bgFile = WHITE_TEXTURE,
-        edgeFile = WHITE_TEXTURE,
-        edgeSize = 1,
+        bgFile = backgroundTexture or WHITE_TEXTURE,
+        edgeFile = Assets.roundedColorBorder,
+        edgeSize = COLOR_BORDER_EDGE_SIZE,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     button.vaultloomSimpleGoldButton = true
+    button.vaultloomSimpleGoldBackgroundTexture = backgroundTexture
     if type(text) == "string" and text ~= "" then
         button.label = self:CreateLabel(button, "GameFontHighlightSmall", "CENTER")
         button.label:SetAllPoints(button)
@@ -274,8 +310,9 @@ function Widgets:CreateButton(parent, text, width, height, style)
     if button.skinStyle == "row" then
         button:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
+            edgeFile = Assets.roundedColorBorder,
+            edgeSize = COLOR_BORDER_EDGE_SIZE,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 },
         })
         button:SetBackdropColor(0, 0, 0, 0)
         button:SetBackdropBorderColor(unpackColor(Theme.colors.goldDim))
@@ -285,7 +322,8 @@ function Widgets:CreateButton(parent, text, width, height, style)
 
     button.skin = button:CreateTexture(nil, "BACKGROUND")
     if button.skinStyle == "row" then
-        button.skin:SetAllPoints(button)
+        button.skin:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
+        button.skin:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
     else
         button.skinCapWidth = getButtonCapWidth(buttonWidth)
         button.skinLeft = button:CreateTexture(nil, "BACKGROUND")

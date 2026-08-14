@@ -7,6 +7,7 @@ local SOURCE_KEYS = {
     "bags",
     "bank",
     "reagents",
+    "mail",
     "equipped",
 }
 
@@ -74,6 +75,7 @@ local function ensureCharacter(entry, characterKey, metadata)
                 bags = 0,
                 bank = 0,
                 reagents = 0,
+                mail = 0,
                 equipped = 0,
             },
         }
@@ -123,6 +125,24 @@ local function addEquipment(index, characterKey, metadata, equipment)
     end
 end
 
+local function addMailSnapshot(index, characterKey, metadata, snapshot)
+    for _, message in ipairs(type(snapshot and snapshot.messages) == "table" and snapshot.messages or {}) do
+        for _, item in ipairs(type(message and message.attachments) == "table" and message.attachments or {}) do
+            if type(item) == "table" and item.isCurrency ~= true then
+                addCharacterCount(index, characterKey, metadata, item, "mail", item.count or 1)
+            end
+        end
+    end
+end
+
+local function includeMailInventory(database)
+    local features = type(database and database.features) == "table" and database.features or nil
+    local states = features and type(features.states) == "table" and features.states or nil
+    local state = states and type(states.mailbox) == "table" and states.mailbox or nil
+    local settings = state and type(state.settings) == "table" and state.settings or nil
+    return settings == nil or settings.include_inventory ~= false
+end
+
 local function addWarbandSnapshot(index, snapshot)
     for _, container in ipairs(type(snapshot and snapshot.containers) == "table" and snapshot.containers or {}) do
         for _, item in pairs(type(container and container.items) == "table" and container.items or {}) do
@@ -148,6 +168,7 @@ function Logic:BuildIndex(database, currentCharacterKey)
             bagsKnown = 0,
             banksKnown = 0,
             equipmentKnown = 0,
+            mailsKnown = 0,
             warbandKnown = false,
         },
     }
@@ -182,6 +203,13 @@ function Logic:BuildIndex(database, currentCharacterKey)
             addEquipment(index, characterKey, metadata, arsenal.equipment)
             addContainerSnapshot(index, characterKey, metadata, arsenal.bags, "bags")
             addContainerSnapshot(index, characterKey, metadata, arsenal.bank, "bank")
+            local mailSnapshot = type(database.mailbox) == "table"
+                and type(database.mailbox.snapshots) == "table"
+                and database.mailbox.snapshots[characterKey] or nil
+            if includeMailInventory(database) and type(mailSnapshot) == "table" then
+                index.coverage.mailsKnown = index.coverage.mailsKnown + 1
+                addMailSnapshot(index, characterKey, metadata, mailSnapshot)
+            end
         end
     end
 
@@ -259,6 +287,7 @@ function Logic:GetItemView(index, itemID, options)
                     bags = normalizeCount(character.sources.bags),
                     bank = normalizeCount(character.sources.bank),
                     reagents = normalizeCount(character.sources.reagents),
+                    mail = normalizeCount(character.sources.mail),
                     equipped = includeEquipped and normalizeCount(character.sources.equipped) or 0,
                 },
                 total = rowTotal,
@@ -294,6 +323,8 @@ local SharedIndex = {
     index = nil,
     arsenalVersion = -1,
     rosterVersion = -1,
+    mailboxVersion = -1,
+    mailInventoryEnabled = nil,
     currentCharacterKey = nil,
     mainCharacterKey = nil,
     buildCount = 0,
@@ -313,24 +344,32 @@ function SharedIndex:Invalidate()
     self.index = nil
     self.arsenalVersion = -1
     self.rosterVersion = -1
+    self.mailboxVersion = -1
+    self.mailInventoryEnabled = nil
 end
 
 function SharedIndex:GetIndex()
     local arsenalVersion = Addon.StateStore:GetVersion("arsenal.snapshots")
     local rosterVersion = Addon.StateStore:GetVersion("warband.roster")
+    local mailboxVersion = Addon.StateStore:GetVersion("mailbox.snapshots")
     local database = Addon.Database:Get()
+    local mailInventoryEnabled = includeMailInventory(database)
     local currentCharacterKey = getCurrentCharacterKey()
     local mainCharacterKey = database.mainCharacterKey
 
     if type(self.index) ~= "table"
         or self.arsenalVersion ~= arsenalVersion
         or self.rosterVersion ~= rosterVersion
+        or self.mailboxVersion ~= mailboxVersion
+        or self.mailInventoryEnabled ~= mailInventoryEnabled
         or self.currentCharacterKey ~= currentCharacterKey
         or self.mainCharacterKey ~= mainCharacterKey
     then
         self.index = Logic:BuildIndex(database, currentCharacterKey)
         self.arsenalVersion = arsenalVersion
         self.rosterVersion = rosterVersion
+        self.mailboxVersion = mailboxVersion
+        self.mailInventoryEnabled = mailInventoryEnabled
         self.currentCharacterKey = currentCharacterKey
         self.mainCharacterKey = mainCharacterKey
         self.buildCount = self.buildCount + 1
@@ -355,6 +394,7 @@ function SharedIndex:GetCoverage()
         bagsKnown = math.max(0, tonumber(coverage.bagsKnown) or 0),
         banksKnown = math.max(0, tonumber(coverage.banksKnown) or 0),
         equipmentKnown = math.max(0, tonumber(coverage.equipmentKnown) or 0),
+        mailsKnown = math.max(0, tonumber(coverage.mailsKnown) or 0),
         warbandKnown = coverage.warbandKnown == true,
     }
 end

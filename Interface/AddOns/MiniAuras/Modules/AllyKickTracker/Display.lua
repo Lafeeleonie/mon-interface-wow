@@ -1,9 +1,13 @@
 ---@type string, Addon
 local _, addon = ...
 
+local iconUtil = addon.Utils.IconUtil
+
 addon.Modules.AllyKickTracker = addon.Modules.AllyKickTracker or {}
 
-local FONT_FILE = "Fonts\\FRIZQT__.TTF"
+-- Resolved from the client's own font object on first layout: non-Latin locales substitute a
+-- file that actually has their glyphs, where a hardcoded western Friz Quadrata renders boxes.
+local fontFile
 local FONT_FLAGS = "OUTLINE"
 -- Everything inside a bar is derived from its height, so one slider sizes the whole thing: the
 -- name font is a fraction of it, the countdown is a touch larger again, and the icon column is
@@ -14,7 +18,6 @@ local ICON_PADDING_FACTOR = 1 / 10
 local TEXT_INSET = 4
 -- Icon art carries a transparent border; trimming it by the same amount the config previews do
 -- squares the icon up with the bar's edges.
-local ICON_TRIM = 0.08
 -- Below this the countdown reads better with a decimal, above it whole seconds are enough - the
 -- same threshold the icon cooldowns use for their own millisecond text.
 local MILLISECONDS_THRESHOLD = 3
@@ -112,7 +115,7 @@ local function LayoutBar(bar, options)
 	bar.Icon:ClearAllPoints()
 	bar.Icon:SetPoint("TOPLEFT", bar.Frame, "TOPLEFT", markerWidth, 0)
 	bar.Icon:SetSize(height, height)
-	bar.Icon:SetTexCoord(ICON_TRIM, 1 - ICON_TRIM, ICON_TRIM, 1 - ICON_TRIM)
+	bar.Icon:SetTexCoord(iconUtil:TexCoord())
 
 	bar.Bar:ClearAllPoints()
 	bar.Bar:SetPoint("TOPLEFT", bar.Frame, "TOPLEFT", markerWidth + height, 0)
@@ -121,8 +124,9 @@ local function LayoutBar(bar, options)
 
 	local nameSize = math.max(6, math.floor(height * NAME_FONT_COEFFICIENT))
 
-	bar.Name:SetFont(FONT_FILE, nameSize, FONT_FLAGS)
-	bar.Time:SetFont(FONT_FILE, math.floor(nameSize * COUNTDOWN_FONT_SCALE), FONT_FLAGS)
+	fontFile = fontFile or (GameFontNormal and GameFontNormal:GetFont()) or "Fonts\\FRIZQT__.TTF"
+	bar.Name:SetFont(fontFile, nameSize, FONT_FLAGS)
+	bar.Time:SetFont(fontFile, math.floor(nameSize * COUNTDOWN_FONT_SCALE), FONT_FLAGS)
 end
 
 ---@param parent table

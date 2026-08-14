@@ -3,6 +3,15 @@ local _, Addon = ...
 local WoWApi = {}
 Addon.WoWApi = WoWApi
 
+WoWApi.RESET_ACTIVE = "active"
+WoWApi.RESET_EXPIRED = "expired"
+WoWApi.RESET_UNKNOWN = "unknown"
+
+local resetInfoCache = {
+    daily = 0,
+    weekly = 0,
+}
+
 local function safeText(value, fallback)
     if type(value) ~= "string" or value == "" then
         return fallback or ""
@@ -98,6 +107,42 @@ function WoWApi:IsAddOnLoaded(addonName)
     return false
 end
 
+function WoWApi:GetCurrentSpecialization()
+    local specializationIndex
+    if C_SpecializationInfo and type(C_SpecializationInfo.GetSpecialization) == "function" then
+        local ok, value = pcall(C_SpecializationInfo.GetSpecialization)
+        if ok then specializationIndex = tonumber(value) end
+    elseif type(GetSpecialization) == "function" then
+        local ok, value = pcall(GetSpecialization)
+        if ok then specializationIndex = tonumber(value) end
+    end
+    if not specializationIndex or specializationIndex < 1 then
+        return nil
+    end
+
+    local getSpecializationInfo = C_SpecializationInfo
+        and C_SpecializationInfo.GetSpecializationInfo or GetSpecializationInfo
+    if type(getSpecializationInfo) ~= "function" then
+        return nil
+    end
+
+    local ok, specializationID, name, _, icon, role = pcall(
+        getSpecializationInfo,
+        specializationIndex
+    )
+    specializationID = ok and tonumber(specializationID) or nil
+    if not specializationID or specializationID < 1 then
+        return nil
+    end
+    return {
+        id = specializationID,
+        index = specializationIndex,
+        name = type(name) == "string" and name ~= "" and name or nil,
+        icon = icon,
+        role = type(role) == "string" and role or nil,
+    }
+end
+
 function WoWApi:GetCurrentCharacterIdentity()
     local name = type(UnitName) == "function" and UnitName("player") or nil
     local realm = type(GetRealmName) == "function" and GetRealmName() or nil
@@ -118,6 +163,7 @@ function WoWApi:GetCurrentCharacterIdentity()
     local displayID = type(UnitCreatureDisplayID) == "function"
         and tonumber(UnitCreatureDisplayID("player")) or nil
     local timestamp = type(time) == "function" and time() or 0
+    local specialization = self:GetCurrentSpecialization()
 
     name = safeText(name, Addon.L.UNKNOWN or "Unknown")
     realm = safeText(realm, Addon.L.UNKNOWN or "Unknown")
@@ -129,6 +175,11 @@ function WoWApi:GetCurrentCharacterIdentity()
         realm = realm,
         className = safeText(className, Addon.L.UNKNOWN or "Unknown"),
         classFile = safeText(classFile, "PRIEST"),
+        specID = specialization and specialization.id or nil,
+        specIndex = specialization and specialization.index or nil,
+        specName = specialization and specialization.name or nil,
+        specIcon = specialization and specialization.icon or nil,
+        specRole = specialization and specialization.role or nil,
         level = math.max(0, tonumber(level) or 0),
         itemLevel = itemLevel,
         money = tonumber(money),
@@ -249,34 +300,84 @@ function WoWApi:IsInCombatLockdown()
     return type(InCombatLockdown) == "function" and InCombatLockdown() == true
 end
 
-function WoWApi:GetWeeklyResetInfo()
-    local seconds = 0
-    local resetKnown = false
-    if C_DateAndTime and type(C_DateAndTime.GetSecondsUntilWeeklyReset) == "function" then
-        local ok, value = pcall(C_DateAndTime.GetSecondsUntilWeeklyReset)
-        if ok and tonumber(value) then
-            seconds = math.max(0, tonumber(value) or 0)
-            resetKnown = true
-        end
+local function finiteNumber(value)
+    value = tonumber(value)
+    if not value or value ~= value or value == math.huge or value == -math.huge then
+        return nil
     end
-
-    local now = type(time) == "function" and time() or 0
-    return seconds, resetKnown and (now + seconds) or 0
+    return value
 end
 
-function WoWApi:GetDailyResetInfo()
-    local seconds = 0
-    local resetKnown = false
-    if C_DateAndTime and type(C_DateAndTime.GetSecondsUntilDailyReset) == "function" then
-        local ok, value = pcall(C_DateAndTime.GetSecondsUntilDailyReset)
-        if ok and tonumber(value) then
-            seconds = math.max(0, tonumber(value) or 0)
-            resetKnown = true
+local function currentTimestamp()
+    local value = type(time) == "function" and finiteNumber(time()) or nil
+    return value and value > 0 and value or 0
+end
+
+function WoWApi:GetResetState(resetAt, currentTime)
+    resetAt = finiteNumber(resetAt)
+    currentTime = currentTime == nil and currentTimestamp() or finiteNumber(currentTime)
+    if not resetAt or resetAt <= 0 or not currentTime or currentTime <= 0 then
+        return self.RESET_UNKNOWN
+    end
+    return resetAt <= currentTime and self.RESET_EXPIRED or self.RESET_ACTIVE
+end
+
+function WoWApi:IsResetExpired(resetAt, currentTime)
+    return self:GetResetState(resetAt, currentTime) == self.RESET_EXPIRED
+end
+
+function WoWApi:ClearResetInfoCache(period)
+    if period == "daily" or period == "weekly" then
+        resetInfoCache[period] = 0
+        return
+    end
+    resetInfoCache.daily = 0
+    resetInfoCache.weekly = 0
+end
+
+local function getResetInfo(period, apiName, fallbackResetAt)
+    local currentTime = currentTimestamp()
+    local api = C_DateAndTime and C_DateAndTime[apiName] or nil
+    if type(api) == "function" then
+        local ok, value = pcall(api)
+        local seconds = ok and finiteNumber(value) or nil
+        -- Zero is ambiguous at the boundary and must never be treated as proof
+        -- that a reset expired. Only a positive relative duration is authoritative.
+        if seconds and seconds > 0 then
+            seconds = math.floor(seconds)
+            if seconds > 0 and currentTime > 0 then
+                local resetAt = finiteNumber(currentTime + seconds)
+                if resetAt then
+                    resetInfoCache[period] = resetAt
+                    return seconds, resetAt, WoWApi.RESET_ACTIVE, "live"
+                end
+            elseif seconds > 0 then
+                return seconds, 0, WoWApi.RESET_UNKNOWN, "live-relative"
+            end
         end
     end
 
-    local currentTime = type(time) == "function" and time() or 0
-    return seconds, resetKnown and (currentTime + seconds) or 0
+    local cachedResetAt = resetInfoCache[period]
+    if WoWApi:GetResetState(cachedResetAt, currentTime) == WoWApi.RESET_ACTIVE then
+        return math.max(0, cachedResetAt - currentTime), cachedResetAt,
+            WoWApi.RESET_ACTIVE, "cache"
+    end
+    resetInfoCache[period] = 0
+
+    fallbackResetAt = finiteNumber(fallbackResetAt) or 0
+    if WoWApi:GetResetState(fallbackResetAt, currentTime) == WoWApi.RESET_ACTIVE then
+        return math.max(0, fallbackResetAt - currentTime), fallbackResetAt,
+            WoWApi.RESET_ACTIVE, "snapshot"
+    end
+    return 0, 0, WoWApi.RESET_UNKNOWN, "unavailable"
+end
+
+function WoWApi:GetWeeklyResetInfo(fallbackResetAt)
+    return getResetInfo("weekly", "GetSecondsUntilWeeklyReset", fallbackResetAt)
+end
+
+function WoWApi:GetDailyResetInfo(fallbackResetAt)
+    return getResetInfo("daily", "GetSecondsUntilDailyReset", fallbackResetAt)
 end
 
 function WoWApi:GetMapName(mapID)

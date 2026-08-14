@@ -16,10 +16,6 @@ local REFRESH_EVENTS = {
     "QUEST_DATA_LOAD_RESULT",
 }
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
@@ -31,8 +27,8 @@ function Service:GetSnapshot(characterKey)
     if type(snapshot) ~= "table" then
         return nil
     end
-    if (tonumber(snapshot.resetAt) or 0) <= now() then
-        record.snapshots.pvpWeekly = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pvpWeekly", "expired")
         return nil
     end
     return snapshot
@@ -47,8 +43,13 @@ local function collectWeekly()
     local existing = Service:GetSnapshot(identity.key)
     local snapshot = Addon.PvpWeeklyLogic:BuildSnapshot(existing)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pvpWeekly = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "pvpWeekly",
+            snapshot,
+            "refresh"
+        )
+        if not stored then snapshot = existing end
     end
     return {
         characterKey = identity.key,

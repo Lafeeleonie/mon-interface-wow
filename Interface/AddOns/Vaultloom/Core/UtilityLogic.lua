@@ -41,6 +41,7 @@ function Logic:BuildCurrencyRecord(currencyID)
         name = info.name or ("Currency " .. tostring(currencyID)),
         icon = info.iconFileID or info.icon,
         quantity = math.max(0, math.floor(tonumber(info.quantity) or 0)),
+        quality = tonumber(info.quality),
     }
 end
 
@@ -52,11 +53,13 @@ function Logic:BuildItemRecord(itemID)
 
     local name = C_Item and safeCall(C_Item.GetItemNameByID, itemID) or nil
     local icon = C_Item and safeCall(C_Item.GetItemIconByID, itemID) or nil
+    local quality = C_Item and safeCall(C_Item.GetItemQualityByID, itemID) or nil
     local quantity = C_Item and safeCall(C_Item.GetItemCount, itemID, true, false, true, true) or 0
     return {
         itemID = itemID,
         name = name or ("Item " .. tostring(itemID)),
         icon = icon,
+        quality = tonumber(quality),
         quantity = math.max(0, math.floor(tonumber(quantity) or 0)),
     }
 end
@@ -127,6 +130,9 @@ function Logic:Scan()
     for _, currencyID in ipairs(Addon.Data.MID_UTILITY_UPGRADE_CRESTS or {}) do
         upgradeCurrencies[math.floor(tonumber(currencyID) or 0)] = true
     end
+    for _, currencyID in ipairs(Addon.Data.MID_UTILITY_RETIRED_UPGRADE_CRESTS or {}) do
+        upgradeCurrencies[math.floor(tonumber(currencyID) or 0)] = true
+    end
     for _, entry in ipairs(Addon.Data.MID_UTILITY_RESOURCE_ENTRIES or {}) do
         local entryKey = self:GetEntryKey(entry)
         if entryKey then
@@ -157,29 +163,60 @@ local function copyDisplayRecord(record, fallback, definition)
         itemID = definition.itemID,
         name = preview and preview.name or "...",
         icon = preview and preview.icon or UNKNOWN_ICON,
+        quality = preview and tonumber(preview.quality) or nil,
         quantity = source and math.max(0, math.floor(tonumber(source.quantity) or 0)) or nil,
         available = source ~= nil,
     }
 end
 
-function Logic:BuildView(snapshot, fallbackSnapshot, hiddenResources)
+function Logic:BuildView(snapshot, fallbackSnapshot, hiddenResources, settings)
     snapshot = type(snapshot) == "table" and snapshot or nil
     fallbackSnapshot = type(fallbackSnapshot) == "table" and fallbackSnapshot or nil
     hiddenResources = type(hiddenResources) == "table" and hiddenResources or {}
+    settings = type(settings) == "table" and settings or {}
+    local showUpgradeSection = settings.showUpgradeSection ~= false
+    local showPvpSection = settings.showPvpSection ~= false
 
     local view = {
         available = snapshot ~= nil,
         updatedAt = snapshot and tonumber(snapshot.updatedAt) or 0,
+        showUpgradeSection = showUpgradeSection,
+        showPvpSection = showPvpSection,
         upgrades = {},
+        pvp = {},
         resources = {},
         hiddenCount = 0,
     }
 
+    local upgradeDefinitions = {}
+    local upgradeKeys = {}
     for _, currencyID in ipairs(Addon.Data.MID_UTILITY_UPGRADE_CRESTS or {}) do
         local key = tostring(currencyID)
+        local entryKey = "currency:" .. key
         local record = snapshot and snapshot.upgrades and snapshot.upgrades[key] or nil
         local fallback = fallbackSnapshot and fallbackSnapshot.upgrades and fallbackSnapshot.upgrades[key] or nil
-        view.upgrades[#view.upgrades + 1] = copyDisplayRecord(record, fallback, { currencyID = currencyID })
+        local definition = { currencyID = currencyID }
+        upgradeDefinitions[#upgradeDefinitions + 1] = definition
+        upgradeKeys[entryKey] = true
+        if showUpgradeSection then
+            local display = copyDisplayRecord(record, fallback, definition)
+            display.entryKey = entryKey
+            view.upgrades[#view.upgrades + 1] = display
+        end
+    end
+
+    local pvpKeys = {}
+    for _, currencyID in ipairs(Addon.Data.MID_UTILITY_PVP_CURRENCIES or {}) do
+        local entryKey = "currency:" .. tostring(currencyID)
+        pvpKeys[entryKey] = true
+        if showPvpSection then
+            local record = snapshot and snapshot.resources and snapshot.resources[entryKey] or nil
+            local fallback = fallbackSnapshot and fallbackSnapshot.resources
+                and fallbackSnapshot.resources[entryKey] or nil
+            local display = copyDisplayRecord(record, fallback, { currencyID = currencyID })
+            display.entryKey = entryKey
+            view.pvp[#view.pvp + 1] = display
+        end
     end
 
     local definitions = {}
@@ -220,14 +257,25 @@ function Logic:BuildView(snapshot, fallbackSnapshot, hiddenResources)
     for _, definition in ipairs(dynamicDefinitions) do
         appendDefinition(definition)
     end
+    if not showUpgradeSection then
+        for _, definition in ipairs(upgradeDefinitions) do appendDefinition(definition) end
+    end
 
     for _, definition in ipairs(definitions) do
         local entryKey = self:GetEntryKey(definition)
-        if entryKey and hiddenResources[entryKey] == true then
+        if entryKey and showPvpSection and pvpKeys[entryKey] then
+            -- Rendered in the compact PvP section above.
+        elseif entryKey and hiddenResources[entryKey] == true then
             view.hiddenCount = view.hiddenCount + 1
         elseif entryKey then
-            local record = snapshot and snapshot.resources and snapshot.resources[entryKey] or nil
-            local fallback = fallbackSnapshot and fallbackSnapshot.resources and fallbackSnapshot.resources[entryKey] or nil
+            local isUpgrade = upgradeKeys[entryKey] == true
+            local upgradeKey = tostring(definition.currencyID or "")
+            local record = isUpgrade
+                and snapshot and snapshot.upgrades and snapshot.upgrades[upgradeKey]
+                or snapshot and snapshot.resources and snapshot.resources[entryKey] or nil
+            local fallback = isUpgrade
+                and fallbackSnapshot and fallbackSnapshot.upgrades and fallbackSnapshot.upgrades[upgradeKey]
+                or fallbackSnapshot and fallbackSnapshot.resources and fallbackSnapshot.resources[entryKey] or nil
             local display = copyDisplayRecord(record, fallback, definition)
             display.entryKey = entryKey
             view.resources[#view.resources + 1] = display

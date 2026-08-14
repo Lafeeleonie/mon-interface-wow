@@ -196,9 +196,21 @@ local definitions = {
         details = localized("FEATURE_STAT_FOCUS_DETAILS"),
         status = "available",
         settings = {
-            runtimeBooleanSetting("tooltip_text", "FEATURE_SETTING_STAT_TOOLTIP_TEXT", true),
+            runtimeSelectSetting("tooltip_text_style", "FEATURE_SETTING_STAT_TOOLTIP_STYLE", "full", {
+                option("clean", "FEATURE_VALUE_STAT_TOOLTIP_CLEAN"),
+                option("full", "FEATURE_VALUE_STAT_TOOLTIP_FULL"),
+            }),
             runtimeBooleanSetting("stat_colors", "FEATURE_SETTING_STAT_COLORS", false),
             runtimeBooleanSetting("stat_dots", "FEATURE_SETTING_STAT_DOTS", false),
+            runtimeSelectSetting("content_profile", "FEATURE_SETTING_STAT_CONTENT_PROFILE", "solo", {
+                option("solo", "FEATURE_VALUE_STAT_SOLO"),
+                option("delve", "FEATURE_VALUE_STAT_DELVE"),
+                option("raid", "FEATURE_VALUE_STAT_RAID"),
+                option("mythicplus", "FEATURE_VALUE_STAT_MYTHIC_PLUS"),
+            }),
+            runtimeSelectSetting("build_profile", "FEATURE_SETTING_STAT_BUILD_PROFILE", "standard", {
+                option("standard", "FEATURE_VALUE_STAT_STANDARD_BUILD"),
+            }),
             runtimeSelectSetting("priority_mode", "FEATURE_SETTING_PRIORITY_MODE", "preset", {
                 option("preset", "FEATURE_VALUE_PRESET"),
                 option("custom", "FEATURE_VALUE_CUSTOM"),
@@ -220,6 +232,28 @@ local definitions = {
             }),
             booleanSetting("warband_bank", "FEATURE_SETTING_WARBAND_BANK", true),
             booleanSetting("equipped_items", "FEATURE_SETTING_EQUIPPED_ITEMS", true),
+        },
+    },
+    {
+        id = "mailbox",
+        category = "inventory",
+        title = localized("FEATURE_MAILBOX"),
+        description = localized("FEATURE_MAILBOX_DESC"),
+        details = localized("FEATURE_MAILBOX_DETAILS"),
+        status = "available",
+        settings = {
+            rangeSetting("keep_free_slots", "FEATURE_SETTING_MAILBOX_FREE_SLOTS", 1, 0, 10, 1),
+            rangeSetting("expiry_warning_days", "FEATURE_SETTING_MAILBOX_EXPIRY_DAYS", 3, 1, 14, 1),
+            booleanSetting("include_inventory", "FEATURE_SETTING_MAILBOX_INVENTORY", true),
+            booleanSetting("login_alerts", "FEATURE_SETTING_MAILBOX_ALERTS", true),
+            booleanSetting("show_summary", "FEATURE_SETTING_MAILBOX_SUMMARY", true),
+            booleanSetting("remember_recipients", "FEATURE_SETTING_MAILBOX_RECIPIENTS", true),
+            booleanSetting("protect_equipment", "FEATURE_SETTING_MAILBOX_PROTECT_GEAR", true),
+            selectSetting("send_pace", "FEATURE_SETTING_MAILBOX_SEND_PACE", "normal", {
+                option("safe", "FEATURE_VALUE_MAILBOX_SEND_SAFE"),
+                option("normal", "FEATURE_VALUE_MAILBOX_SEND_NORMAL"),
+                option("fast", "FEATURE_VALUE_MAILBOX_SEND_FAST"),
+            }),
         },
     },
     {
@@ -285,6 +319,16 @@ local definitions = {
                 option("alt_shift", "FEATURE_VALUE_ALT_SHIFT"),
                 option("alt_ctrl", "FEATURE_VALUE_ALT_CTRL"),
             }),
+            runtimeBooleanSetting(
+                "animated_glow",
+                "FEATURE_SETTING_ONE_CLICK_ANIMATION",
+                true
+            ),
+            runtimeBooleanSetting(
+                "consumable_keys",
+                "FEATURE_SETTING_ONE_CLICK_KEYS",
+                false
+            ),
             booleanSetting(
                 "disenchant_rare_epic",
                 "FEATURE_SETTING_ONE_CLICK_RARE_EPIC",
@@ -494,24 +538,6 @@ local definitions = {
         },
     },
     {
-        id = "map_coordinates",
-        category = "world_map",
-        title = localized("FEATURE_MAP_COORDINATES"),
-        description = localized("FEATURE_MAP_COORDINATES_DESC"),
-        details = localized("FEATURE_MAP_COORDINATES_DETAILS"),
-        status = "available",
-        settings = {
-            booleanSetting("minimap", "FEATURE_SETTING_MAP_COORDINATES_MINIMAP", true),
-            booleanSetting("world_map", "FEATURE_SETTING_MAP_COORDINATES_WORLD_MAP", true),
-            booleanSetting("world_map_frame", "FEATURE_SETTING_MAP_COORDINATES_FRAME", true),
-            selectSetting("precision", "FEATURE_SETTING_MAP_COORDINATES_PRECISION", "one", {
-                option("zero", "FEATURE_VALUE_MAP_COORDINATES_ZERO"),
-                option("one", "FEATURE_VALUE_MAP_COORDINATES_ONE"),
-                option("two", "FEATURE_VALUE_MAP_COORDINATES_TWO"),
-            }),
-        },
-    },
-    {
         id = "gathering_nodes",
         category = "world_map",
         status = "available",
@@ -595,24 +621,23 @@ local definitions = {
         status = "available",
         settings = {
             runtimeSelectSetting("loot_window_mode", "FEATURE_SETTING_LOOT_WINDOW_MODE", "compact", {
-                option("compact", "FEATURE_VALUE_COMPACT_WINDOW"),
+                option("compact", "FEATURE_VALUE_VAULTLOOM"),
                 option("blizzard", "FEATURE_VALUE_BLIZZARD"),
             }),
             runtimeSelectSetting("loot_alert_mode", "FEATURE_SETTING_LOOT_ALERT_MODE", "compact", {
-                option("compact", "FEATURE_VALUE_COMPACT"),
-                option("hidden", "FEATURE_VALUE_HIDDEN"),
+                option("compact", "FEATURE_VALUE_VAULTLOOM"),
                 option("blizzard", "FEATURE_VALUE_BLIZZARD"),
+                option("hidden", "FEATURE_VALUE_OFF"),
             }),
             runtimeSelectSetting("boss_alert_mode", "FEATURE_SETTING_BOSS_ALERT_MODE", "compact", {
-                option("compact", "FEATURE_VALUE_COMPACT"),
-                option("hidden", "FEATURE_VALUE_HIDDEN"),
+                option("compact", "FEATURE_VALUE_VAULTLOOM"),
                 option("blizzard", "FEATURE_VALUE_BLIZZARD"),
+                option("hidden", "FEATURE_VALUE_OFF"),
             }),
-            runtimeSelectSetting("visual_style", "FEATURE_SETTING_QUIET_STYLE", "warcraft", {
-                option("warcraft", "FEATURE_VALUE_WARCRAFT"),
-                option("clean", "FEATURE_VALUE_MINIMAL"),
-                option("runic", "FEATURE_VALUE_RUNIC_PLATE"),
-                option("quality", "FEATURE_VALUE_QUALITY_STRIP"),
+            runtimeSelectSetting("visual_style", "FEATURE_SETTING_QUIET_STYLE", "standard", {
+                option("clean", "FEATURE_VALUE_LOOT_STYLE_CLEAN"),
+                option("standard", "FEATURE_VALUE_LOOT_STYLE_STANDARD"),
+                option("round", "FEATURE_VALUE_LOOT_STYLE_ROUND"),
             }),
             runtimeRangeSetting(
                 "background_opacity_percent",

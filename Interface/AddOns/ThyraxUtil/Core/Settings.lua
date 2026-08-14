@@ -9,9 +9,9 @@ local DEFAULTS = {
     global = {
         enabled = true,
     },
-    -- Module registrieren ihre eigenen Defaults via RegisterModuleDefaults().
-    -- Dieser Table wird zur Laufzeit befüllt; er bleibt hier leer damit
-    -- MergeDefaults() korrekt arbeitet, auch wenn kein Modul geladen ist.
+    -- Modules register their own defaults via RegisterModuleDefaults().
+    -- This table is populated at runtime; it stays empty here so that
+    -- MergeDefaults() works correctly even when no module is loaded.
     modules = {},
     theme = "Modern",
     accentPreset = "Gold",
@@ -166,7 +166,7 @@ function Settings:Migrate(fromVersion)
 
         local darkness = self.db.modules.darkness_announcer
         if type(darkness) == "table" then
-            -- New option: onlyInGroup – default is false (existing users should not see a behaviour change).
+            -- New option: onlyInGroup -- default is false (existing users should not see a behaviour change).
             if darkness.onlyInGroup == nil then
                 darkness.onlyInGroup = false
             end
@@ -288,8 +288,8 @@ function Settings:Initialize()
     self.db.schemaVersion = SCHEMA_VERSION
 end
 
--- Wird von ModuleRegistry:Register() aufgerufen, sobald ein Modul seine
--- Defaults anmeldet. Funktioniert sowohl vor als auch nach Initialize().
+-- Called by ModuleRegistry:Register() as soon as a module registers its
+-- defaults. Works both before and after Initialize().
 function Settings:RegisterModuleDefaults(moduleID, defaults)
     if type(moduleID) ~= "string" or moduleID == "" then
         return
@@ -298,14 +298,14 @@ function Settings:RegisterModuleDefaults(moduleID, defaults)
         return
     end
 
-    -- In den statischen DEFAULTS-Table mergen (für neue Chars / Reset).
+    -- Merge into the static DEFAULTS table (for new characters / reset).
     if not DEFAULTS.modules[moduleID] then
         DEFAULTS.modules[moduleID] = {}
     end
     MergeDefaults(DEFAULTS.modules[moduleID], defaults)
 
-    -- Auch live in die bereits geladene DB mergen falls Initialize() schon
-    -- gelaufen ist (Sub-Modul lädt nach Core).
+    -- Also merge live into the already-loaded DB in case Initialize() has
+    -- already run (sub-module loading after core).
     if self.db and type(self.db.modules) == "table" then
         if not self.db.modules[moduleID] then
             self.db.modules[moduleID] = {}

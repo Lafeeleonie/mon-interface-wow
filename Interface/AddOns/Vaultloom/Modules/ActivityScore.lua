@@ -20,6 +20,8 @@ local DEPENDENCY_SLICES = {
     "systems.professions",
 }
 
+local DEPENDENCY_REFRESH_DELAY = 0.01
+
 local function collectScores()
     local scores = {}
     for characterKey, record in pairs(Addon.Database:Get().characters or {}) do
@@ -55,7 +57,9 @@ function Module:OnEnable()
     Addon.RefreshScheduler:Register(self.id, self, collectScores)
     for _, sliceID in ipairs(DEPENDENCY_SLICES) do
         Addon.StateStore:Subscribe(sliceID, self, function()
-            Addon.RefreshScheduler:Invalidate(Module.id, 0)
+            -- Several source slices can change in the same event burst. Keep one
+            -- pending score rebuild until WoW reaches the next frame.
+            Addon.RefreshScheduler:Invalidate(Module.id, DEPENDENCY_REFRESH_DELAY)
         end)
     end
     Addon.RefreshScheduler:Invalidate(self.id, 0)

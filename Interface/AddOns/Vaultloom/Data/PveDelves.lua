@@ -3,7 +3,7 @@ local _, Addon = ...
 Addon.Data = Addon.Data or {}
 
 Addon.Data.PVE_DELVES = {
-    trovehuntersBountyItemID = 252415,
+    trovehuntersBountyItemID = 274374,
     trovehuntersBountyFlagQuestID = 86371,
     trovehuntersUnlockFactionID = 2722,
     trovehuntersUnlockRenown = 2,

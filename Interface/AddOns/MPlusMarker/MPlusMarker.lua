@@ -33,6 +33,7 @@ local MACRO_FOCUS_NAME = "MPlusFocus"
 local MACRO_KICK_NAME = "MPlusKick"
 local MACRO_KICK_AUTO_NAME = "MPlusKickAuto"
 local MACRO_AVENGERS_NAME = "MPlusAvengers"
+local MACRO_AVENGERS_AUTO_NAME = "MPlusAvengersAuto"
 local MACRO_STOP_NAME = "MPlusStop"
 
 local pendingMacroUpdate = false
@@ -203,14 +204,34 @@ end
 
 -- Stable English keys for SavedVariables (display names use L.* via GetGroupDisplayName)
 local GROUP_S1 = "Midnight Season 1"
+local GROUP_S2 = "Midnight Season 2"
 local GROUP_M0 = "Midnight M0's"
 local GROUP_NS = "Non Seasonal Instances"
 
 local function GetGroupDisplayName(gName)
     if gName == GROUP_S1 then return L.GROUP_MIDNIGHT_S1 end
+    if gName == GROUP_S2 then return L.GROUP_MIDNIGHT_S2 end
     if gName == GROUP_M0 then return L.GROUP_MIDNIGHT_M0 end
     if gName == GROUP_NS then return L.GROUP_NON_SEASONAL end
     return gName
+end
+
+--- UI/chat label for a zone. Default dungeons use L.ZONE_<id> so translators edit Locales.lua only.
+--- SavedVariables keep English DefaultZones names as stable keys.
+local function GetZoneDisplayName(instanceID, fallback)
+    local key = "ZONE_" .. tostring(instanceID)
+    local loc = L[key]
+    if loc and loc ~= key then
+        return loc
+    end
+    if fallback and fallback ~= "" then
+        return fallback
+    end
+    local data = MPlusMarkerDB and MPlusMarkerDB[instanceID]
+    if data and data.name and data.name ~= "" then
+        return data.name
+    end
+    return string.format(L.ZONE_FALLBACK_PREFIX, tostring(instanceID))
 end
 
 -- Default Data (Only used to initialize the database on first load). Dungeon names use C_Map when available.
@@ -234,7 +255,7 @@ local DefaultZones = {
     [2811] = { name = "Magisters' Terrace", group = GROUP_S1, mobs = {
         { name = "Blazing Pyromancer", npcId = 251861, marker = 2, backupMarker = 0 },
         { name = "Arcane Magister", npcId = 232369, marker = 4, backupMarker = 0 },
-        { name = "Void Terror", marker = 8, backupMarker = 0 },
+        { name = "Void Terror", npcId = 249086, marker = 8, backupMarker = 0 }, -- MDT: Void Infuser
     } },
     [1209] = { name = "Skyreach", group = GROUP_S1, mobs = {
         { name = "Blinding Sun Priestess", npcId = 79462, marker = 3, backupMarker = 0 },
@@ -257,27 +278,49 @@ local DefaultZones = {
         { name = "Corrupted Manafiend", npcId = 196045, marker = 7, backupMarker = 0 },
     } },
 
-    [2825] = { name = "Den of Nalorakk", group = GROUP_M0, mobs = {
-        { name = "Magma Totem", marker = 7, backupMarker = 0 },
-        { name = "Keen-Eyed Screecher", marker = 1, backupMarker = 0 },
-        { name = "starvation effigy", marker = 2, backupMarker = 0 },
-        { name = "Frigid Mauler", marker = 3, backupMarker = 0 },
-        { name = "Ruthless totemcaller", marker = 4, backupMarker = 0 },
+    -- Midnight Season 2
+    [2993] = { name = "Altar of Fangs", group = GROUP_S2, mobs = {
+        { name = "Ritual Chieftain", marker = 1, backupMarker = 0 },
+        { name = "Venom Leech", marker = 2, backupMarker = 0 },
+        { name = "Ascendant Serpent", marker = 3, backupMarker = 0 },
     } },
-    [2813] = { name = "Murder Row", group = GROUP_M0, mobs = {
+    [2813] = { name = "Murder Row", group = GROUP_S2, mobs = {
         { name = "Street Sneak", marker = 1, backupMarker = 0 },
         { name = "Felonious mage", marker = 2, backupMarker = 0 },
         { name = "Seductive Sayaad", marker = 3, backupMarker = 0 },
     } },
-    [2859] = { name = "The Blinding Vale", group = GROUP_M0, mobs = {
+    [1762] = { name = "King's Rest", group = GROUP_S2, mobs = {
+        { name = "Spectral Hex Priest", npcId = 136974, marker = 1, backupMarker = 0 },
+        { name = "Spectral Witch Doctor", npcId = 136977, marker = 2, backupMarker = 0 },
+        { name = "Spectral Beastmaster", npcId = 136984, marker = 7, backupMarker = 0 },
+    } },
+    [2521] = { name = "Ruby Life Pools", group = GROUP_S2, mobs = {
+        { name = "Flashfrost Chillweaver", npcId = 188244, marker = 1, backupMarker = 0 },
+        { name = "Primalist Icecaller", npcId = 188197, marker = 2, backupMarker = 0 },
+        { name = "Defier Draghar", npcId = 188302, marker = 7, backupMarker = 0 },
+    } },
+    [1877] = { name = "Temple of Sethraliss", group = GROUP_S2, mobs = {
+        { name = "Faithless Tender", npcId = 134691, marker = 1, backupMarker = 0 },
+        { name = "Sandfury Soul Eater", npcId = 134703, marker = 2, backupMarker = 0 },
+        { name = "Sethrak Venomcaller", npcId = 134704, marker = 7, backupMarker = 0 },
+    } },
+    [2825] = { name = "Den of Nalorakk", group = GROUP_S2, mobs = {
+        { name = "Magma Totem", marker = 7, backupMarker = 0 },
+        { name = "Keen-Eyed Screecher", npcId = 241816, marker = 1, backupMarker = 0 },
+        { name = "starvation effigy", marker = 2, backupMarker = 0 },
+        { name = "Frigid Mauler", marker = 3, backupMarker = 0 },
+        { name = "Ruthless totemcaller", marker = 4, backupMarker = 0 },
+    } },
+    [2859] = { name = "The Blinding Vale", group = GROUP_S2, mobs = {
         { name = "Lightgorged Lasher", marker = 1, backupMarker = 0 },
         { name = "Lightfeather Petalwing", marker = 2, backupMarker = 0 },
     } },
-    [2923] = { name = "Voidscar Arena", group = GROUP_M0, mobs = {
+    [2923] = { name = "Voidscar Arena", group = GROUP_S2, mobs = {
         { name = "Kilivore Screamer", marker = 8, backupMarker = 0 },
         { name = "Enthralled Shaman", marker = 1, backupMarker = 0 },
     } },
 }
+
 
 -- Default zone names stay as written above (C_Map IDs can resolve to wrong labels).
 
@@ -525,8 +568,45 @@ local function BuildAutoKickMacroFromPlan(plan)
 end
 
 local function BuildProtAvengersMacroText()
-    local name = ResolveKickSpellNameFromID(PROT_PALADIN_KICK_ID_AVENGERS_SHIELD, "Avenger's Shield")
+    local name = ResolveKickSpellNameFromID(PROT_PALADIN_KICK_ID_AVENGERS_SHIELD, L.MACRO_TYPE_AVENGERS)
     return "#showtooltip " .. name .. "\n/cast [@focus,exists,nodead] [] " .. name
+end
+
+local function BuildProtAvengersAutoMacroText()
+    local name = ResolveKickSpellNameFromID(PROT_PALADIN_KICK_ID_AVENGERS_SHIELD, L.MACRO_TYPE_AVENGERS)
+    return BuildAutoKickMacroFromPlan({ type = "single", t = name, show = name })
+end
+
+--- Format a /say announcement; customText blank uses defaultLocaleKey from L.
+local function FormatAnnounceText(marker, customText, defaultLocaleKey)
+    local template = customText
+    if not template or strtrim(template) == "" then
+        return string.format(L[defaultLocaleKey], marker)
+    end
+    if template:find("%%s", 1, true) then
+        return string.format(template, marker)
+    end
+    if template:find("{rt%%s}", 1, true) then
+        return template:gsub("{rt%%s}", "{rt" .. tostring(marker) .. "}")
+    end
+    return template
+end
+
+local function FormatFocusAnnounceReadyCheck(marker)
+    return FormatAnnounceText(marker, MPlusMarkerDB and MPlusMarkerDB.announceFocusText, "PRINT_FOCUS_ANNOUNCE")
+end
+
+local function FormatFocusAnnounceOnChange(marker)
+    return FormatAnnounceText(marker, MPlusMarkerDB and MPlusMarkerDB.announceFocusChangeText, "PRINT_FOCUS_ANNOUNCE_CHANGE")
+end
+
+local function CanAnnounceFocusInParty()
+    return IsInGroup() and not IsInRaid()
+end
+
+local function TryAnnounceFocusMarker(marker)
+    if not CanAnnounceFocusInParty() then return end
+    SendChatMessage(FormatFocusAnnounceOnChange(marker), "SAY")
 end
 
 local function DeleteMacroIfExists(macroName)
@@ -654,7 +734,7 @@ UpdateMacroForZone = function()
             end
             targetText = targetText .. nextLine
         end
-        CreateOrUpdateMacro(MACRO_NAME, targetText, zoneData.name, L.MACRO_TYPE_TARGET, 1322722)
+        CreateOrUpdateMacro(MACRO_NAME, targetText, GetZoneDisplayName(instanceID, zoneData.name), L.MACRO_TYPE_TARGET, 1322722)
     else
         -- Fallback: Create a placeholder Target macro if it doesn't exist so users can bind it in a city
         if GetMacroIndexByName(MACRO_NAME) == 0 then
@@ -685,11 +765,18 @@ UpdateMacroForZone = function()
     CreateOrUpdateMacro(MACRO_KICK_NAME, kickText, L.MACRO_ZONE_GLOBAL, L.MACRO_TYPE_KICK, 134400)
     CreateOrUpdateMacro(MACRO_KICK_AUTO_NAME, autoKickText, L.MACRO_ZONE_GLOBAL, L.MACRO_TYPE_KICK_AUTO, 134400)
 
-    -- Prot Paladin: Avenger's Shield on its own macro (never combined with Rebuke).
+    -- Prot Paladin: Avenger's Shield focus + auto-tab macros (never combined with Rebuke).
     if IsProtPaladin() then
-        CreateOrUpdateMacro(MACRO_AVENGERS_NAME, BuildProtAvengersMacroText(), L.MACRO_ZONE_GLOBAL, L.MACRO_TYPE_AVENGERS, 134400)
+        local avengersText = BuildProtAvengersMacroText()
+        local avengersAutoText = BuildProtAvengersAutoMacroText()
+        if string.len(avengersAutoText) > 255 then
+            ChatPrintErr(L.PRINT_MACRO_LIMIT)
+        end
+        CreateOrUpdateMacro(MACRO_AVENGERS_NAME, avengersText, L.MACRO_ZONE_GLOBAL, L.MACRO_TYPE_AVENGERS, 134400)
+        CreateOrUpdateMacro(MACRO_AVENGERS_AUTO_NAME, avengersAutoText, L.MACRO_ZONE_GLOBAL, L.MACRO_TYPE_AVENGERS_AUTO, 134400)
     else
         DeleteMacroIfExists(MACRO_AVENGERS_NAME)
+        DeleteMacroIfExists(MACRO_AVENGERS_AUTO_NAME)
     end
 
     -- 5. Build Focus CC/Stop Macro (Universal Mouseover - Updates Everywhere)
@@ -712,15 +799,19 @@ local FOCUS_BAR_ICON_COORDS = {
     {0.0,0.25,0.25,0.5},{0.25,0.5,0.25,0.5},{0.5,0.75,0.25,0.5},{0.75,1.0,0.25,0.5},
 }
 
-local function SetGlobalFocusMarker(markerIndex)
+local function SetGlobalFocusMarker(markerIndex, skipAnnounce)
     markerIndex = tonumber(markerIndex)
     if not markerIndex or markerIndex < 1 or markerIndex > 8 then return end
+    local prev = MPlusMarkerDB.globalFocusMarker or 4
     MPlusMarkerDB.globalFocusMarker = markerIndex
     if type(UpdateMacroForZone) == "function" then
         UpdateMacroForZone()
     end
     if focusBarFrame and focusBarFrame.UpdateSelection then
         focusBarFrame:UpdateSelection()
+    end
+    if not skipAnnounce and markerIndex ~= prev and MPlusMarkerDB.announceFocusOnChange ~= false then
+        TryAnnounceFocusMarker(markerIndex)
     end
     if ConfigGUI and type(ConfigGUI.Refresh) == "function" and ConfigGUI:IsShown() then
         ConfigGUI.Refresh()
@@ -1085,7 +1176,7 @@ local function AddMobToZone(input, markerID, targetInstanceID, targetZoneName)
     end
 
     table.insert(MPlusMarkerDB[instanceID].mobs, newMobEntry)
-    ChatPrint(string.format(L.PRINT_ADDED_MOB, "|cFF00FFFF" .. mobName .. "|r", MPlusMarkerDB[instanceID].name))
+    ChatPrint(string.format(L.PRINT_ADDED_MOB, "|cFF00FFFF" .. mobName .. "|r", GetZoneDisplayName(instanceID, MPlusMarkerDB[instanceID].name)))
     
     UpdateMacroForZone()
     if ConfigGUI and ConfigGUI:IsShown() then ConfigGUI.Refresh() end
@@ -1552,7 +1643,7 @@ local function BuildGUI()
         local sortedZones = {}
         for id, data in pairs(MPlusMarkerDB) do
             if type(data) == "table" and data.name then
-                table.insert(sortedZones, {id = id, name = data.name})
+                table.insert(sortedZones, {id = id, name = GetZoneDisplayName(id, data.name)})
             end
         end
         table.sort(sortedZones, function(a, b) return a.name < b.name end)
@@ -1732,17 +1823,19 @@ local function BuildGUI()
                 if type(data) == "table" and data.name then
                     local gName = data.group or GROUP_NS
                     if not groupedZones[gName] then groupedZones[gName] = {} end
-                    table.insert(groupedZones[gName], {id = id, name = data.name, activeList = data.mobs or {}})
+                    table.insert(groupedZones[gName], {id = id, name = GetZoneDisplayName(id, data.name), activeList = data.mobs or {}})
                 end
             end
             
-            -- Sort group names: Midnight S1 first, M0 second, non-seasonal last
+            -- Sort group names: Midnight S1, S2, M0, non-seasonal last
             local sortedGroups = {}
             for gName in pairs(groupedZones) do table.insert(sortedGroups, gName) end
-            local gS1, gM0, gNS = GROUP_S1, GROUP_M0, GROUP_NS
+            local gS1, gS2, gM0, gNS = GROUP_S1, GROUP_S2, GROUP_M0, GROUP_NS
             table.sort(sortedGroups, function(a, b)
                 if a == gS1 and b ~= gS1 then return true end
                 if b == gS1 and a ~= gS1 then return false end
+                if a == gS2 and b ~= gS2 then return true end
+                if b == gS2 and a ~= gS2 then return false end
                 if a == gM0 and b ~= gM0 then return true end
                 if b == gM0 and a ~= gM0 then return false end
                 if a == gNS and b ~= gNS then return false end
@@ -2048,16 +2141,162 @@ local function BuildGUI()
                 btnIcon:SetNormalTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. (MPlusMarkerDB.globalFocusMarker or 4))
             end
 
-            btnIcon:SetScript("OnClick", function()
-                local next = (MPlusMarkerDB.globalFocusMarker or 4) + 1
-                if next > 8 then next = 1 end
-                SetGlobalFocusMarker(next)
-            end)
             btnIcon:SetScript("OnEnter", function(self) TooltipShowWrapped(self, "ANCHOR_LEFT", L.TOOLTIP_CYCLE_FOCUS_ICON) end)
             btnIcon:SetScript("OnLeave", function() GameTooltip:Hide() end)
             UpdateFocusIcon()
 
             y = y - 32 - 12
+
+            -- Kick announcement (ready check /say)
+            local chkAnnounce = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+            chkAnnounce:SetPoint("TOPLEFT", content, "TOPLEFT", 15, y)
+            chkAnnounce:SetSize(26, 26)
+            chkAnnounce:SetChecked(MPlusMarkerDB.announceFocus)
+
+            local chkLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            chkLabel:SetPoint("TOPLEFT", chkAnnounce, "TOPRIGHT", 5, -4)
+            chkLabel:SetWidth(math.max(80, contentW - 70))
+            chkLabel:SetWordWrap(true)
+            chkLabel:SetJustifyH("LEFT")
+            chkLabel:SetText(L.CHK_ANNOUNCE_FOCUS)
+
+            chkAnnounce:SetScript("OnClick", function(self)
+                MPlusMarkerDB.announceFocus = self:GetChecked()
+            end)
+
+            y = y - math.max(28, chkLabel:GetStringHeight() + 8) - 4
+
+            local chkAnnounceOnChange = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+            chkAnnounceOnChange:SetPoint("TOPLEFT", content, "TOPLEFT", 15, y)
+            chkAnnounceOnChange:SetSize(26, 26)
+            chkAnnounceOnChange:SetChecked(MPlusMarkerDB.announceFocusOnChange ~= false)
+
+            local chkOnChangeLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            chkOnChangeLabel:SetPoint("TOPLEFT", chkAnnounceOnChange, "TOPRIGHT", 5, -4)
+            chkOnChangeLabel:SetWidth(math.max(80, contentW - 70))
+            chkOnChangeLabel:SetWordWrap(true)
+            chkOnChangeLabel:SetJustifyH("LEFT")
+            chkOnChangeLabel:SetText(L.CHK_ANNOUNCE_FOCUS_ON_CHANGE)
+
+            chkAnnounceOnChange:SetScript("OnClick", function(self)
+                MPlusMarkerDB.announceFocusOnChange = self:GetChecked()
+            end)
+
+            y = y - math.max(28, chkOnChangeLabel:GetStringHeight() + 8) - 6
+
+            local lblAnnounceText = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            lblAnnounceText:SetPoint("TOPLEFT", content, "TOPLEFT", 15, y)
+            lblAnnounceText:SetWidth(contentW - 30)
+            lblAnnounceText:SetWordWrap(true)
+            lblAnnounceText:SetJustifyH("LEFT")
+            lblAnnounceText:SetText(L.LABEL_ANNOUNCE_FOCUS_TEXT)
+            y = y - lblAnnounceText:GetStringHeight() - 6
+
+            local announceInput = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+            announceInput:SetSize(contentW - 50, 20)
+            announceInput:SetPoint("TOPLEFT", content, "TOPLEFT", 20, y)
+            announceInput:SetAutoFocus(false)
+            announceInput:SetMaxLetters(120)
+            announceInput:SetText(MPlusMarkerDB.announceFocusText or "")
+
+            y = y - 24
+
+            local lblAnnounceChangeText = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            lblAnnounceChangeText:SetPoint("TOPLEFT", content, "TOPLEFT", 15, y)
+            lblAnnounceChangeText:SetWidth(contentW - 30)
+            lblAnnounceChangeText:SetWordWrap(true)
+            lblAnnounceChangeText:SetJustifyH("LEFT")
+            lblAnnounceChangeText:SetText(L.LABEL_ANNOUNCE_FOCUS_CHANGE_TEXT)
+            y = y - lblAnnounceChangeText:GetStringHeight() - 6
+
+            local announceChangeInput = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+            announceChangeInput:SetSize(contentW - 50, 20)
+            announceChangeInput:SetPoint("TOPLEFT", content, "TOPLEFT", 20, y)
+            announceChangeInput:SetAutoFocus(false)
+            announceChangeInput:SetMaxLetters(120)
+            announceChangeInput:SetText(MPlusMarkerDB.announceFocusChangeText or "")
+
+            local btnAnnounceReset = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+            btnAnnounceReset:SetPoint("TOPLEFT", announceChangeInput, "BOTTOMLEFT", -5, -4)
+            btnAnnounceReset:SetHeight(22)
+            btnAnnounceReset:SetText(L.BTN_ANNOUNCE_RESET)
+            FitPanelButtonWidth(btnAnnounceReset, 88, 18)
+
+            local announcePreview = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            announcePreview:SetPoint("TOPLEFT", btnAnnounceReset, "BOTTOMLEFT", 5, -4)
+            announcePreview:SetWidth(contentW - 25)
+            announcePreview:SetWordWrap(true)
+            announcePreview:SetJustifyH("LEFT")
+
+            local announcePreviewChange = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            announcePreviewChange:SetPoint("TOPLEFT", announcePreview, "BOTTOMLEFT", 0, -2)
+            announcePreviewChange:SetWidth(contentW - 25)
+            announcePreviewChange:SetWordWrap(true)
+            announcePreviewChange:SetJustifyH("LEFT")
+
+            local function UpdateAnnouncePreview()
+                local marker = MPlusMarkerDB.globalFocusMarker or 4
+                announcePreview:SetText(string.format(L.ANNOUNCE_FOCUS_PREVIEW, FormatFocusAnnounceReadyCheck(marker)))
+                announcePreviewChange:SetText(string.format(L.ANNOUNCE_FOCUS_PREVIEW_CHANGE, FormatFocusAnnounceOnChange(marker)))
+            end
+
+            local function SaveAnnounceReadyText(text)
+                MPlusMarkerDB.announceFocusText = text or ""
+                UpdateAnnouncePreview()
+            end
+
+            local function SaveAnnounceChangeText(text)
+                MPlusMarkerDB.announceFocusChangeText = text or ""
+                UpdateAnnouncePreview()
+            end
+
+            announceInput:SetScript("OnTextChanged", function(self)
+                SaveAnnounceReadyText(self:GetText())
+            end)
+            announceInput:SetScript("OnEditFocusLost", function(self)
+                SaveAnnounceReadyText(self:GetText())
+            end)
+            announceInput:SetScript("OnEnterPressed", function(self)
+                self:ClearFocus()
+            end)
+
+            announceChangeInput:SetScript("OnTextChanged", function(self)
+                SaveAnnounceChangeText(self:GetText())
+            end)
+            announceChangeInput:SetScript("OnEditFocusLost", function(self)
+                SaveAnnounceChangeText(self:GetText())
+            end)
+            announceChangeInput:SetScript("OnEnterPressed", function(self)
+                self:ClearFocus()
+            end)
+
+            btnAnnounceReset:SetScript("OnClick", function()
+                MPlusMarkerDB.announceFocusText = ""
+                MPlusMarkerDB.announceFocusChangeText = ""
+                announceInput:SetText("")
+                announceChangeInput:SetText("")
+                UpdateAnnouncePreview()
+            end)
+
+            local announceTextDesc = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            announceTextDesc:SetPoint("TOPLEFT", announcePreviewChange, "BOTTOMLEFT", 0, -4)
+            announceTextDesc:SetWidth(contentW - 25)
+            announceTextDesc:SetWordWrap(true)
+            announceTextDesc:SetJustifyH("LEFT")
+            announceTextDesc:SetText(L.ANNOUNCE_FOCUS_TEXT_DESC)
+            UpdateAnnouncePreview()
+
+            btnIcon:SetScript("OnClick", function()
+                local next = (MPlusMarkerDB.globalFocusMarker or 4) + 1
+                if next > 8 then next = 1 end
+                SetGlobalFocusMarker(next)
+                UpdateAnnouncePreview()
+            end)
+
+            y = y - 20 - btnAnnounceReset:GetHeight() - 6
+            y = y - announcePreview:GetStringHeight() - 2
+            y = y - announcePreviewChange:GetStringHeight() - 4
+            y = y - announceTextDesc:GetStringHeight() - 12
 
             local clearModLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             clearModLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 15, y)
@@ -2193,9 +2432,17 @@ local function BuildGUI()
                 avengersDesc:SetText(string.format(
                     L.KICK_AVENGERS_DESC,
                     MACRO_AVENGERS_NAME,
-                    GetSpellNameLocalized(PROT_PALADIN_KICK_ID_AVENGERS_SHIELD) or "Avenger's Shield"
+                    GetSpellNameLocalized(PROT_PALADIN_KICK_ID_AVENGERS_SHIELD) or L.MACRO_TYPE_AVENGERS
                 ))
-                y = y - avengersDesc:GetStringHeight() - 12
+                y = y - avengersDesc:GetStringHeight() - 6
+
+                local avengersAutoDesc = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                avengersAutoDesc:SetPoint("TOPLEFT", content, "TOPLEFT", 15, y)
+                avengersAutoDesc:SetWidth(contentW - 25)
+                avengersAutoDesc:SetWordWrap(true)
+                avengersAutoDesc:SetJustifyH("LEFT")
+                avengersAutoDesc:SetText(string.format(L.KICK_AVENGERS_AUTO_DESC, MACRO_AVENGERS_AUTO_NAME))
+                y = y - avengersAutoDesc:GetStringHeight() - 12
             else
                 y = y - 12
             end
@@ -2232,25 +2479,6 @@ local function BuildGUI()
             stopDesc:SetJustifyH("LEFT")
             stopDesc:SetText(string.format(L.STOP_DESC, defaultStopSpell))
             y = y - stopDesc:GetStringHeight() - 20
-
-            -- Announce Checkbox (label to the right, wraps for long locales)
-            local chkAnnounce = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
-            chkAnnounce:SetPoint("TOPLEFT", content, "TOPLEFT", 15, y)
-            chkAnnounce:SetSize(26, 26)
-            chkAnnounce:SetChecked(MPlusMarkerDB.announceFocus)
-
-            local chkLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-            chkLabel:SetPoint("TOPLEFT", chkAnnounce, "TOPRIGHT", 5, -4)
-            chkLabel:SetWidth(math.max(80, contentW - 70))
-            chkLabel:SetWordWrap(true)
-            chkLabel:SetJustifyH("LEFT")
-            chkLabel:SetText(L.CHK_ANNOUNCE_FOCUS)
-
-            chkAnnounce:SetScript("OnClick", function(self)
-                MPlusMarkerDB.announceFocus = self:GetChecked()
-            end)
-
-            y = y - math.max(28, chkLabel:GetStringHeight() + 8) - 8
 
             -- Auto-Mark Roles Prompt Checkbox
             local chkAutoMark = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
@@ -2436,6 +2664,9 @@ frame:SetScript("OnEvent", function(self, event, arg1, ...)
         if MPlusMarkerDB.announceFocus == nil then
             MPlusMarkerDB.announceFocus = true
         end
+        if MPlusMarkerDB.announceFocusOnChange == nil then
+            MPlusMarkerDB.announceFocusOnChange = true
+        end
 
         -- Initialize Role Prompt Setting
         if MPlusMarkerDB.autoMarkRolesPrompt == nil then
@@ -2476,9 +2707,8 @@ frame:SetScript("OnEvent", function(self, event, arg1, ...)
                     table.insert(MPlusMarkerDB[id].mobs, row)
                 end
             else
-                -- Ensure existing DB entries get the group tag if they are missing it
-                if not MPlusMarkerDB[id].group then MPlusMarkerDB[id].group = data.group end
-                -- Keep canonical default zone labels (fixes saves from C_Map mis-resolved names)
+                -- Sync group/name from defaults (moves dungeons between seasons; fixes C_Map mis-resolved names)
+                MPlusMarkerDB[id].group = data.group
                 MPlusMarkerDB[id].name = data.name
 
                 -- Ensure existing entries get the new backupMarker and note properties
@@ -2590,9 +2820,9 @@ frame:SetScript("OnEvent", function(self, event, arg1, ...)
         end
 
         -- Focus marker /say: only when in a party group (not solo); never in a raid. Target/focus macros are unchanged and work solo.
-        if MPlusMarkerDB.announceFocus and IsInGroup() and not IsInRaid() then
+        if MPlusMarkerDB.announceFocus and CanAnnounceFocusInParty() then
             local fMarker = MPlusMarkerDB.globalFocusMarker or 4
-            SendChatMessage(string.format(L.PRINT_FOCUS_ANNOUNCE, fMarker), "SAY")
+            SendChatMessage(FormatFocusAnnounceReadyCheck(fMarker), "SAY")
         end
     end
 end)

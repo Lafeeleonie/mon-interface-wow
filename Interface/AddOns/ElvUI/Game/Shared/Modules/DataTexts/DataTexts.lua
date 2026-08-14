@@ -2,7 +2,6 @@ local E, L, V, P, G = unpack(ElvUI)
 local DT = E:GetModule('DataTexts')
 local TT = E:GetModule('Tooltip')
 local LDB = E.Libs.LDB
-local LSM = E.Libs.LSM
 
 -- GLOBALS: ElvDB
 
@@ -19,7 +18,6 @@ local CreateFrame = CreateFrame
 local GetNumSpecializations = GetNumSpecializations
 local InCombatLockdown = InCombatLockdown
 local IsInInstance = IsInInstance
-local MouseIsOver = MouseIsOver
 local RegisterStateDriver = RegisterStateDriver
 local UnregisterStateDriver = UnregisterStateDriver
 
@@ -79,7 +77,7 @@ DT.SPECIALIZATION_CACHE = {}
 
 function DT:QuickDTMode(_, key, active)
 	if DT.SelectedDatatext and (key == 'LALT' or key == 'RALT') then
-		if active == 1 and MouseIsOver(DT.SelectedDatatext) then
+		if active == 1 and DT.SelectedDatatext:IsMouseOver() then
 			DT.OnLeave(DT.SelectedDatatext)
 			E:SetEasyMenuAnchor(E.EasyMenu, DT.SelectedDatatext)
 			E:ComplicatedMenu(QuickList, E.EasyMenu, nil, nil, nil, 'MENU')
@@ -465,12 +463,10 @@ function DT:AssignPanelToDataText(dt, data, event, ...)
 					end
 				elseif DT.UnitEvents[ev] then
 					pcall(dt.RegisterUnitEvent, dt, ev, 'player')
+				elseif ev == 'MODIFIER_STATE_CHANGED' then
+					dt.watchModKey = true
 				else
-					if ev == 'MODIFIER_STATE_CHANGED' then
-						dt.watchModKey = true
-					else
-						pcall(dt.RegisterEvent, dt, ev)
-					end
+					pcall(dt.RegisterEvent, dt, ev)
 				end
 			end
 		end
@@ -554,7 +550,7 @@ function DT:UpdatePanelInfo(panelName, panel, ...)
 	local info = DT.LoadedInfo
 	local font, fontSize, fontOutline = info.font, info.fontSize, info.fontOutline
 	if db and db.fonts and db.fonts.enable then
-		font, fontSize, fontOutline = LSM:Fetch('font', db.fonts.font), db.fonts.fontSize, db.fonts.fontOutline
+		font, fontSize, fontOutline = db.fonts.font, db.fonts.fontSize, db.fonts.fontOutline
 	end
 
 	local battlePanel = not E.Retail and info.isInBattle and (not DT.ForceHideBGStats and E.db.datatexts.panels[panelName].battleground)
@@ -669,7 +665,7 @@ end
 
 function DT:LoadDataTexts(...)
 	local data = DT.LoadedInfo
-	data.font, data.fontSize, data.fontOutline = LSM:Fetch('font', DT.db.font), DT.db.fontSize, DT.db.fontOutline
+	data.font, data.fontSize, data.fontOutline = DT.db.font, DT.db.fontSize, DT.db.fontOutline
 	data.inInstance, data.instanceType = IsInInstance()
 	data.isInBattle = data.inInstance and data.instanceType == 'pvp'
 
@@ -1009,7 +1005,7 @@ function DT:Initialize()
 	end
 
 	-- Ignore header font size on DatatextTooltip
-	local font = LSM:Fetch('font', E.db.tooltip.font)
+	local font = E.db.tooltip.font
 	local fontOutline = E.db.tooltip.fontOutline
 	local textSize = E.db.tooltip.textFontSize
 	_G.DataTextTooltipTextLeft1:FontTemplate(font, textSize, fontOutline)

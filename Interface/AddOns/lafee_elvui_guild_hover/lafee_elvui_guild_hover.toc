@@ -1,0 +1,12 @@
+## Interface: 120007, 120100
+## Title: Lafee ElvUI Guild Hover
+## Notes: Interactive ElvUI datatexts for contacts, guild and community members.
+## Author: Lafee
+## Version: 1.1.11
+## SavedVariables: LafeeElvUIGuildHoverDB
+## RequiredDeps: ElvUI
+
+Core.lua
+Guild.lua
+Communities.lua
+Contacts.lua

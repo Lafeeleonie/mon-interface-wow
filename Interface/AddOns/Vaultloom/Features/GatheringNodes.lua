@@ -17,6 +17,7 @@ local MINIMAP_POSITION_INTERVAL_DENSE = 1 / 20
 local MINIMAP_MEDIUM_PIN_COUNT = 32
 local MINIMAP_DENSE_PIN_COUNT = 64
 local MINIMAP_FULL_INTERVAL = 1.0
+local MINIMAP_IDLE_INTERVAL = 1.0
 local MINIMAP_RANGE_FACTOR = 0.74
 local MINIMAP_RETRY_DELAYS = { 0.25, 0.75, 1.50 }
 local MAP_GEOMETRY_CACHE = {}
@@ -206,7 +207,10 @@ local Runtime = {
     refreshGeneration = 0,
     minimapRefreshGeneration = 0,
     minimapRetryAttempt = 0,
+    minimapIdleGeneration = 0,
+    minimapIdleTimer = nil,
     lastWorldPinCount = 0,
+    worldPinCache = nil,
 }
 
 Addon.GatheringNodes = Runtime
@@ -258,6 +262,25 @@ local function getXY(vector)
     return tonumber(vector.x), tonumber(vector.y)
 end
 
+local function getUnitWorldPosition()
+    if type(UnitPosition) ~= "function" then return nil end
+    local ok, worldY, worldX, _, instanceID = pcall(UnitPosition, "player")
+    worldX, worldY, instanceID = tonumber(worldX), tonumber(worldY), tonumber(instanceID)
+    if not ok or not worldX or not worldY or not instanceID then return nil end
+    return worldX, worldY, instanceID
+end
+
+local function anchorSnapshotToUnitPosition(snapshot)
+    if type(snapshot) ~= "table" then return false end
+    local worldX, worldY, instanceID = getUnitWorldPosition()
+    snapshot.worldAnchorX = worldX
+    snapshot.worldAnchorY = worldY
+    snapshot.worldInstanceID = instanceID
+    snapshot.worldAnchorMapX = worldX and snapshot.x or nil
+    snapshot.worldAnchorMapY = worldY and snapshot.y or nil
+    return worldX ~= nil
+end
+
 local function isInInstance()
     if type(IsInInstance) ~= "function" then return false end
     local ok, inInstance = pcall(IsInInstance)
@@ -302,6 +325,8 @@ local function getMapSnapshot(reuse)
     result.y = y
     result.width = width
     result.height = height
+    result.positionSource = "map"
+    anchorSnapshotToUnitPosition(result)
     return result
 end
 
@@ -311,12 +336,33 @@ local function updateMapSnapshotPosition(snapshot)
     then
         return nil
     end
+    local worldX, worldY, instanceID = getUnitWorldPosition()
+    if worldX and worldY
+        and instanceID == snapshot.worldInstanceID
+        and snapshot.worldAnchorX and snapshot.worldAnchorY
+        and snapshot.worldAnchorMapX and snapshot.worldAnchorMapY
+        and snapshot.width and snapshot.width > 0
+        and snapshot.height and snapshot.height > 0
+    then
+        local x = snapshot.worldAnchorMapX
+            - ((worldX - snapshot.worldAnchorX) / snapshot.width)
+        local y = snapshot.worldAnchorMapY
+            - ((worldY - snapshot.worldAnchorY) / snapshot.height)
+        if x > 0 and x <= 1 and y > 0 and y <= 1 then
+            snapshot.x = x
+            snapshot.y = y
+            snapshot.positionSource = "unit"
+            return snapshot
+        end
+    end
     local okPosition, position = pcall(C_Map.GetPlayerMapPosition, snapshot.mapID, "player")
     local x, y
     if okPosition then x, y = getXY(position) end
     if not x or not y or x <= 0 or x > 1 or y <= 0 or y > 1 then return nil end
     snapshot.x = x
     snapshot.y = y
+    snapshot.positionSource = "map"
+    anchorSnapshotToUnitPosition(snapshot)
     return snapshot
 end
 
@@ -485,7 +531,12 @@ function Runtime:PrepareStore()
     root.data = Logic:CreateStore(root.data)
     self.store = root.data
     self.index = Logic:BuildIndex(self.store)
+    self:InvalidateWorldPinCache()
     return self.store
+end
+
+function Runtime:InvalidateWorldPinCache()
+    self.worldPinCache = nil
 end
 
 function Runtime:GetHiddenStore()
@@ -494,6 +545,7 @@ function Runtime:GetHiddenStore()
     if self.hiddenCharacterKey == characterKey and type(self.hiddenStore) == "table" then
         return self.hiddenStore
     end
+    self:InvalidateWorldPinCache()
     root.hiddenByCharacter[characterKey] = type(root.hiddenByCharacter[characterKey]) == "table"
         and root.hiddenByCharacter[characterKey] or {}
     self.hiddenCharacterKey = characterKey
@@ -538,6 +590,7 @@ function Runtime:ScanProfessions()
             if definition.skillLines[skillLineID] then self.currentProfessions[kind] = true end
         end
     end
+    self:InvalidateWorldPinCache()
 end
 
 function Runtime:GetVisibleNodes(mapID)
@@ -577,6 +630,7 @@ function Runtime:AddNode(kind, nodeName, itemInfo, snapshot)
     if added then
         self:NotifyDataChanged()
     else
+        self:InvalidateWorldPinCache()
         self:RequestWorldRefresh(0)
         self:RequestMinimapRefresh(true)
     end
@@ -748,6 +802,7 @@ function Runtime:CancelPendingCast(unit, _, spellID)
 end
 
 function Runtime:NotifyDataChanged()
+    self:InvalidateWorldPinCache()
     Addon.StateStore:Set("gathering.nodes", {
         total = tonumber(self.index and self.index.total) or 0,
     })
@@ -926,9 +981,19 @@ function PinMixin:OnMouseUp(button)
 end
 
 function Runtime:CollectWorldPins(mapID)
+    mapID = tonumber(mapID)
+    local cached = self.worldPinCache
+    if mapID and type(cached) == "table" and cached.mapID == mapID then
+        return cached.nodes
+    end
     local nodes = self:GetVisibleNodes(mapID)
     for _, node in ipairs(nodes) do node.mapID = tonumber(mapID) end
-    return Logic:Cluster(nodes, 90)
+    local clustered = Logic:Cluster(nodes, 90)
+    self.worldPinCache = {
+        mapID = mapID,
+        nodes = clustered,
+    }
+    return clustered
 end
 
 function Runtime:CreateProvider()
@@ -1020,6 +1085,39 @@ function Runtime:RecycleMinimapPins()
         self.minimapPins[key] = nil
     end
     self.minimapPinCount = 0
+end
+
+function Runtime:CancelMinimapIdleRefresh()
+    self.minimapIdleGeneration = (tonumber(self.minimapIdleGeneration) or 0) + 1
+    local timer = self.minimapIdleTimer
+    self.minimapIdleTimer = nil
+    if timer and type(timer.Cancel) == "function" then
+        pcall(timer.Cancel, timer)
+    end
+end
+
+function Runtime:ScheduleMinimapIdleRefresh()
+    if self.minimapIdleTimer or self.enabled ~= true
+        or not C_Timer or type(C_Timer.NewTimer) ~= "function"
+    then
+        return false
+    end
+    self.minimapIdleGeneration = (tonumber(self.minimapIdleGeneration) or 0) + 1
+    local generation = self.minimapIdleGeneration
+    self.minimapIdleTimer = C_Timer.NewTimer(MINIMAP_IDLE_INTERVAL, function()
+        if Runtime.enabled ~= true or Runtime.minimapIdleGeneration ~= generation then
+            return
+        end
+        Runtime.minimapIdleTimer = nil
+        local token = Addon.PerformanceDiagnostics:Begin(
+            Runtime,
+            "timer",
+            "gathering_nodes.idle_minimap"
+        )
+        Runtime:RefreshMinimap(false)
+        Addon.PerformanceDiagnostics:Finish(token)
+    end)
+    return self.minimapIdleTimer ~= nil
 end
 
 function Runtime:ScheduleMinimapRetry()
@@ -1271,6 +1369,9 @@ function Runtime:UpdateMinimapPositions()
             self.minimapPinCount = math.max(0, (tonumber(self.minimapPinCount) or 1) - 1)
         end
     end
+    if self.minimapPinCount == 0 then
+        self:RefreshUpdateFrame()
+    end
 end
 
 function Runtime:GetMinimapPositionInterval()
@@ -1327,11 +1428,21 @@ end
 
 function Runtime:RefreshUpdateFrame()
     local frame = self:EnsureUpdateFrame()
-    local active = self.enabled == true and self:IsDisplayEnabled() == true
+    local tracking = self.enabled == true and self:IsDisplayEnabled() == true
         and setting("minimap") == true and Minimap
         and (type(Minimap.IsVisible) ~= "function" or Minimap:IsVisible())
         and not isInInstance()
         and self.minimapTrackingNeeded == true
+    local hasPins = tracking and (tonumber(self.minimapPinCount) or 0) > 0
+        and next(self.minimapPins) ~= nil
+    local canSleep = tracking and not hasPins
+        and C_Timer and type(C_Timer.NewTimer) == "function"
+    if canSleep then
+        self:ScheduleMinimapIdleRefresh()
+    else
+        self:CancelMinimapIdleRefresh()
+    end
+    local active = tracking and (hasPins or not canSleep)
     frame:SetShown(active == true)
 end
 
@@ -1668,6 +1779,7 @@ function Runtime:SetResourceVisible(resourceKey, visible)
     else
         hidden[resourceKey] = true
     end
+    self:InvalidateWorldPinCache()
     self:RequestWorldRefresh(0)
     self:RequestMinimapRefresh(true)
     if self.manager and self.manager:IsShown() then self:RefreshManager() end
@@ -1719,6 +1831,7 @@ function Runtime:EnsureManager()
     frame.showAll:SetScript("OnClick", function()
         local hidden = Runtime:GetHiddenStore()
         for key in pairs(hidden) do hidden[key] = nil end
+        Runtime:InvalidateWorldPinCache()
         Runtime:RequestWorldRefresh(0)
         Runtime:RequestMinimapRefresh(true)
         Runtime:RefreshManager()
@@ -1987,6 +2100,7 @@ function Runtime:SetSettingValue(key, value)
 end
 
 function Runtime:ResetSettingValues()
+    self:InvalidateWorldPinCache()
     self:RefreshMiniButton()
     self:RefreshPreview()
     self:RequestWorldRefresh(0)
@@ -2110,6 +2224,8 @@ function Runtime:OnDisable()
     self.recentNode = nil
     self.hiddenCharacterKey = nil
     self.hiddenStore = nil
+    self:InvalidateWorldPinCache()
+    self:CancelMinimapIdleRefresh()
     Addon.WorldMapPins:Deactivate(self)
     self:RemoveProvider()
     self:RecycleMinimapPins()

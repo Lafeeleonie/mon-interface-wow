@@ -224,8 +224,24 @@ end
 
 function module:RunTest(durationSeconds)
     self:EnsureFrame()
-    self.testModeUntil = ns.Compat.GetTime() + (tonumber(durationSeconds) or 5)
+    local duration = tonumber(durationSeconds) or 5
+    self.testModeUntil = ns.Compat.GetTime() + duration
     self:UpdateVisibility()
+    -- The crosshair has no OnUpdate loop, so nothing re-evaluates visibility
+    -- once the test window expires -- without this timer the frame stayed at
+    -- full alpha until the next combat transition. The GetTime() re-check
+    -- keeps an overlapping second RunTest from being cut short by the first
+    -- test's timer.
+    if C_Timer and C_Timer.After then
+        C_Timer.After(duration + 0.1, function()
+            if self.testModeUntil and ns.Compat.GetTime() >= self.testModeUntil then
+                self.testModeUntil = nil
+                if self.isActive then
+                    self:UpdateVisibility()
+                end
+            end
+        end)
+    end
 end
 
 function module:GetDebugState()

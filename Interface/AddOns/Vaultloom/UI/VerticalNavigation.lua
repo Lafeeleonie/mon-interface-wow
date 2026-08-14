@@ -56,8 +56,24 @@ function View:SetDefinitions(definitions)
         else
             entry = Widgets:CreateButton(self.list, "", self.listWidth, 34, "tab")
             entry.subTabKey = definition.key
+            if type(definition.newIndicatorID) == "string" then
+                entry.newBadge = Widgets:CreateLabel(entry, "GameFontNormalSmall", "RIGHT")
+                entry.newBadge:SetPoint("TOPRIGHT", -3, -1)
+                entry.newBadge:SetText(Addon.L.OPTIONS_NEW_BADGE)
+                entry.newBadge:SetTextColor(0.92, 0.76, 0.24, 1)
+                entry.newBadge:Hide()
+            end
             entry:SetScript("OnClick", function(selfButton)
                 if self.onSelect then
+                    if self.selectedKey ~= selfButton.subTabKey and Addon.Sound then
+                        Addon.Sound:Play("tabSwitch")
+                    end
+                    if selfButton.definition.newIndicatorID
+                        and Addon.UI
+                        and type(Addon.UI.MarkNewInterfaceSeen) == "function"
+                    then
+                        Addon.UI:MarkNewInterfaceSeen(selfButton.definition.newIndicatorID)
+                    end
                     self.onSelect(selfButton.subTabKey)
                 end
             end)
@@ -85,6 +101,13 @@ function View:Refresh()
         if visible then
             local label = getLabel(definition)
             entry.label:SetText(label)
+            if entry.newBadge then
+                entry.newBadge:SetShown(
+                    Addon.UI
+                        and type(Addon.UI.IsNewInterface) == "function"
+                        and Addon.UI:IsNewInterface(definition.newIndicatorID)
+                )
+            end
             if definition.key then
                 self.labelsByKey[definition.key] = label
             end

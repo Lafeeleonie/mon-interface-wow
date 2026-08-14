@@ -1,5 +1,4 @@
 local E, L, V, P, G = unpack(ElvUI)
-local LSM = E.Libs.LSM
 
 local wipe, sort, unpack = wipe, sort, unpack
 local next, pairs, tinsert = next, pairs, tinsert
@@ -61,7 +60,6 @@ function E:CreateStatusContent(num, width, parent, anchorTo, content)
 	content:SetSize(width, (num * 20) + ((num-1)*5)) --20 height and 5 spacing
 	content:SetPoint('TOP', anchorTo, 'BOTTOM')
 
-	local font = LSM:Fetch('font', 'Expressway')
 	for i = 1, num do
 		if not content['Line'..i] then
 			local line = CreateFrame('Frame', nil, content)
@@ -71,7 +69,7 @@ function E:CreateStatusContent(num, width, parent, anchorTo, content)
 			text:SetAllPoints()
 			text:SetJustifyH('LEFT')
 			text:SetJustifyV('MIDDLE')
-			text:FontTemplate(font, 14, 'OUTLINE')
+			text:FontTemplate('Expressway', 14, 'OUTLINE')
 			line.Text = text
 
 			if i == 1 then
@@ -109,13 +107,12 @@ function E:CreateStatusSection(width, height, headerWidth, headerHeight, parent,
 	header:SetPoint('TOP', section)
 	section.Header = header
 
-	local font = LSM:Fetch('font', 'Expressway')
 	local text = section.Header:CreateFontString(nil, 'ARTWORK')
 	text:SetPoint('TOP')
 	text:SetPoint('BOTTOM')
 	text:SetJustifyH('CENTER')
 	text:SetJustifyV('MIDDLE')
-	text:FontTemplate(font, 18, 'OUTLINE')
+	text:FontTemplate('Expressway', 18, 'OUTLINE')
 	section.Header.Text = text
 
 	local leftDivider = section.Header:CreateTexture(nil, 'ARTWORK')
@@ -247,7 +244,7 @@ function E:UpdateStatusFrame()
 			local width = PluginSection:GetWidth()
 			PluginSection.Content = E:CreateStatusContent(count, width, PluginSection, PluginSection.Header, PluginSection.Content)
 
-			for i=1, count do
+			for i = 1, count do
 				local data = pluginData[i]
 				local color = data.old and 'ff3333' or '33ff33'
 				PluginSection.Content['Line'..i].Text:SetFormattedText('%s |cff888888v|r|cff%s%s|r', data.title or data.name, color, data.version)

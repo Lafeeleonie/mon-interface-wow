@@ -40,7 +40,8 @@ local function UpdatePageHeight(panel)
 		end
 	end
 
-	panel:SetHeight(math.max(1, math.ceil(top - bottom) + 20))
+	-- A small pad only: anything generous here reads as a page that scrolls by one dead row.
+	panel:SetHeight(math.max(1, math.ceil(top - bottom) + 6))
 end
 
 function M:Build(panel)
@@ -53,6 +54,7 @@ function M:Build(panel)
 		Lines = {
 			L["Create your own custom mini weak auras."],
 			L["You can configure buffs on allies and debuffs on enemies."],
+			L["Sound only auras have no such limit: they can play a sound for either aura type on any unit."],
 		},
 	})
 
@@ -70,7 +72,8 @@ function M:Build(panel)
 	local ioBtn = mini:Button({
 		Parent = panel,
 		Text = L["Import/Export"],
-		Width = 110,
+		-- 140 rather than 110: "Importar/Exportar" and its Korean sibling clip at 110.
+		Width = 140,
 		OnClick = function()
 			local group = ui.Current()
 
@@ -82,7 +85,7 @@ function M:Build(panel)
 	local exportAllBtn = mini:Button({
 		Parent = panel,
 		Text = L["Export All"],
-		Width = 110,
+		Width = 140,
 		OnClick = function()
 			ui.ShowImportWindow(ui.Options().Groups)
 		end,

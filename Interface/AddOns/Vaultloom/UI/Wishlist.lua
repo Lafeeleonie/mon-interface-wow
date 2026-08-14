@@ -187,9 +187,10 @@ local function createWishlistRow(parent, callbacks)
     row:EnableMouse(true)
 
     row.statusLine = row:CreateTexture(nil, "OVERLAY")
-    row.statusLine:SetPoint("TOPLEFT", 4, -5)
-    row.statusLine:SetPoint("BOTTOMLEFT", 4, 5)
+    row.statusLine:SetPoint("TOPLEFT", 4, -7)
+    row.statusLine:SetPoint("BOTTOMLEFT", 4, 7)
     row.statusLine:SetWidth(3)
+    row.statusLineMask = Widgets:AddRoundedStatusLineMask(row, row.statusLine)
 
     row.iconBorder = CreateFrame("Frame", nil, row, BACKDROP_TEMPLATE)
     row.iconBorder:SetPoint("LEFT", 14, 0)

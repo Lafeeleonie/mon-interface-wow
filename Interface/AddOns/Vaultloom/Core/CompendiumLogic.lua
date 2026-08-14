@@ -9,7 +9,7 @@ Logic.SOURCE_ORDER = {
     "renown", "reputation", "drop", "achievement", "quest", "treasure", "delve", "prey",
     "promotion", "dungeon", "raid", "pvp", "worldevent", "event", "profession", "trainer",
     "vendor", "discovery", "specialization", "crafted", "tradingpost", "prepatch",
-    "eversong", "zulaman", "harandar", "voidstorm", "wild",
+    "eversong", "zulaman", "harandar", "voidstorm", "coiled_isle", "wild",
 }
 Logic.CATEGORY_ICONS = {
     all = "Interface\\Icons\\INV_Misc_Book_09",
@@ -49,6 +49,7 @@ local SOURCE_LABEL_KEYS = {
     treasure = "COMPENDIUM_SOURCE_TREASURE",
     vendor = "COMPENDIUM_SOURCE_VENDOR",
     voidstorm = "COMPENDIUM_SOURCE_VOIDSTORM",
+    coiled_isle = "COMPENDIUM_SOURCE_COILED_ISLE",
     wild = "COMPENDIUM_SOURCE_WILD",
     worldevent = "COMPENDIUM_SOURCE_WORLD_EVENT",
     zulaman = "COMPENDIUM_SOURCE_ZULAMAN",
@@ -74,6 +75,7 @@ local CATEGORY_LABEL_KEYS = {
 }
 local ZONE_MAP_IDS = {
     ["Broken Throne Ritual Site"] = 2437,
+    ["Coiled Isle"] = 2512,
     ["Daggerspine Point Ritual Site"] = 2395,
     ["Eversong Woods"] = 2395,
     ["Harandar"] = 2413,

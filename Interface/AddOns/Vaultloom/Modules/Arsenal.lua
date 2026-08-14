@@ -248,6 +248,7 @@ local function scanEquipmentSlot(definition)
     icon = icon or (instant and instant.icon)
     local quality = type(GetInventoryItemQuality) == "function"
         and tonumber(GetInventoryItemQuality("player", slotID)) or nil
+    quality = Addon.ArsenalLogic:ResolveQuality(quality, itemLink, itemID)
     local tooltipLines = getTooltipLines(slotID, itemLink)
     local sockets, filledSockets, emptySockets = getSocketData(itemLink, tooltipLines)
     local enchantable = canEnchant(slotID, itemLink)
@@ -584,6 +585,8 @@ function Service:GetView(mode, characterKey)
         snapshot = characterSnapshot and characterSnapshot.bank or nil
     elseif mode == "warband" then
         snapshot = self:GetWarbandSnapshot()
+    elseif mode == "mail" then
+        snapshot = Addon.Mailbox and Addon.Mailbox:GetSnapshot(characterKey) or nil
     end
     return {
         mode = mode,

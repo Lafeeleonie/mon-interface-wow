@@ -20,6 +20,11 @@ local SOURCE_DEFINITIONS = {
         texture = "Interface\\Icons\\INV_Misc_Herb_11",
     },
     {
+        key = "mail",
+        labelKey = "FEATURE_INVENTORY_SOURCE_MAIL",
+        texture = "Interface\\Icons\\INV_Letter_15",
+    },
+    {
         key = "equipped",
         labelKey = "FEATURE_INVENTORY_SOURCE_EQUIPPED",
         texture = "Interface\\Icons\\INV_Chest_Plate04",
@@ -55,6 +60,25 @@ local function normalizeItemID(value)
     end)
     resolved = ok and tonumber(resolved) or nil
     return resolved and resolved > 0 and math.floor(resolved) or nil
+end
+
+local function getLiveWarbandCount(itemID)
+    if not (C_Item and type(C_Item.GetItemCount) == "function") then
+        return nil
+    end
+
+    local ok, count = pcall(function()
+        -- GetItemCount always includes the current character's bags. Calling it
+        -- once without and once with the account bank isolates the live Warband
+        -- bank total even while the bank frame itself is closed.
+        local bagCount = C_Item.GetItemCount(itemID, false, false, false, false)
+        local accountCount = C_Item.GetItemCount(itemID, false, false, false, true)
+        if type(bagCount) ~= "number" or type(accountCount) ~= "number" then
+            return nil
+        end
+        return math.max(0, math.floor(accountCount - bagCount))
+    end)
+    return ok and count or nil
 end
 
 local function getTooltipItemID(tooltip, data)
@@ -185,10 +209,36 @@ end
 
 function Runtime:GetItemView(itemID)
     self:GetIndex()
-    return Addon.InventoryIndex:GetItemView(itemID, {
-        includeWarband = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "warband_bank") == true,
+    local includeWarband = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "warband_bank") == true
+    local view = Addon.InventoryIndex:GetItemView(itemID, {
+        includeWarband = includeWarband,
         includeEquipped = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "equipped_items") == true,
     })
+
+    if not includeWarband then
+        return view
+    end
+
+    local liveWarband = getLiveWarbandCount(itemID)
+    if liveWarband == nil then
+        return view
+    end
+    if not view then
+        if liveWarband == 0 then
+            return nil
+        end
+        return {
+            itemID = itemID,
+            rows = {},
+            warband = liveWarband,
+            total = liveWarband,
+        }
+    end
+
+    local storedWarband = math.max(0, math.floor(tonumber(view.warband) or 0))
+    view.warband = liveWarband
+    view.total = math.max(0, math.floor(tonumber(view.total) or 0) - storedWarband + liveWarband)
+    return view.total > 0 and view or nil
 end
 
 function Runtime:AddHeader(tooltip, total)
@@ -309,6 +359,9 @@ function Runtime:OnEnable()
         Runtime:InvalidateIndex(true)
     end)
     Addon.StateStore:Subscribe("warband.roster", self, function()
+        Runtime:InvalidateIndex(true)
+    end)
+    Addon.StateStore:Subscribe("mailbox.snapshots", self, function()
         Runtime:InvalidateIndex(true)
     end)
 end

@@ -1,0 +1,46 @@
+## Interface: 120007, 120100
+## Title: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-deDE: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-esES: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-esMX: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-frFR: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-itIT: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-koKR: |cff2eb7e6Lafee ElvUI 채팅 프레임|r
+## Title-ptBR: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-ruRU: |cff2eb7e6Lafee ElvUI Chat Frame|r
+## Title-zhCN: |cff2eb7e6Lafee ElvUI 聊天框架|r
+## Title-zhTW: |cff2eb7e6Lafee ElvUI 聊天框架|r
+## Notes: Adds profile-aware ElvUI movers for Blizzard chat windows.
+## Notes-deDE: Fügt profilabhängige ElvUI-Mover für Blizzard-Chatfenster hinzu.
+## Notes-esES: Añade posicionadores de ElvUI por perfil para las ventanas de chat de Blizzard.
+## Notes-esMX: Añade posicionadores de ElvUI por perfil para las ventanas de chat de Blizzard.
+## Notes-frFR: Ajoute des movers ElvUI liés au profil pour les fenêtres de discussion Blizzard.
+## Notes-itIT: Aggiunge mover ElvUI legati al profilo per le finestre di chat Blizzard.
+## Notes-koKR: 블리자드 대화창용 프로필 기반 ElvUI 이동기를 추가합니다.
+## Notes-ptBR: Adiciona posicionadores do ElvUI vinculados ao perfil para janelas de bate-papo da Blizzard.
+## Notes-ruRU: Добавляет зависящие от профиля якоря ElvUI для окон чата Blizzard.
+## Notes-zhCN: 为暴雪聊天窗口添加随配置保存的 ElvUI 移动锚点。
+## Notes-zhTW: 為暴雪聊天視窗新增隨設定檔儲存的 ElvUI 移動錨點。
+## Author: Lafee
+## Version: 1.2.2
+## OptionalDeps: ElvUI
+## X-ElvUIPlugin: true
+## X-Category: Chat
+
+Localization.lua
+Locales/enUS.lua
+Locales/frFR.lua
+Locales/deDE.lua
+Locales/esES.lua
+Locales/esMX.lua
+Locales/itIT.lua
+Locales/ptBR.lua
+Locales/ruRU.lua
+Locales/koKR.lua
+Locales/zhCN.lua
+Locales/zhTW.lua
+
+Core.lua
+Movers.lua
+ChatFrames.lua
+Config.lua

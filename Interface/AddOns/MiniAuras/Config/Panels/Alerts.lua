@@ -2,24 +2,31 @@
 local _, addon = ...
 local mini = addon.Framework
 local L = addon.L
-local wowEx = addon.Utils.WoWEx
 local verticalSpacing = mini.VerticalSpacing
 local horizontalSpacing = mini.HorizontalSpacing
 local COLUMNS = 4
 local columnWidth
 local enabledColumnWidth
 local config = addon.Config
+local moduleName = addon.Utils.ModuleName
 local helpers = addon.Config.PanelHelpers
 local sounds = addon.Core.Sounds
--- TEMPORARY (12.1): CENTER growth needs a readable row width to center on the anchor, which
--- the 12.1 chained displays don't have, so only LEFT/RIGHT are offered there.
-local USE_AURA_CONTAINERS = wowEx:UseAuraContainers()
-local GROW_OPTIONS = USE_AURA_CONTAINERS and { "LEFT", "RIGHT" } or { "LEFT", "RIGHT", "CENTER" }
+local dbDefaults = addon.Config.Defaults
+local ttsPacks = addon.Core.TtsPacks
+-- CENTER growth needs a readable row width to center on the anchor, which the chained displays
+-- do not have, so only LEFT and RIGHT are offered.
+local GROW_OPTIONS = { "LEFT", "RIGHT" }
 
 ---@class AlertsConfig
 local M = {}
 
 config.Alerts = M
+
+---@param value string
+---@return string
+local function ChannelText(value)
+	return sounds:ChannelText(value)
+end
 
 ---@param parent table
 ---@param options AlertsModuleOptions
@@ -33,7 +40,7 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.Icons.Enabled = value
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -48,7 +55,7 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.IncludeDefensives = value
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -64,16 +71,15 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.Icons.Glow = value
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
 	glowChk:SetPoint("TOPLEFT", iconsEnabledChk, "BOTTOMLEFT", 0, -verticalSpacing)
 
-	-- 12.1 draws these icons through AuraContainers, where the unit's identity - and so
-	-- UnitClass - is secret, so the glow/border can't be class coloured. Each category is its own
-	-- aura group there, so a tint per category is what it can do instead. Only one of the two
-	-- schemes is ever offered, filling the glow row left to right.
+	-- These icons are drawn through AuraContainers, where the unit's identity - and so
+	-- UnitClass - is secret, so the glow and border cannot be class coloured. Each category is
+	-- its own aura group, so a tint per category is what it can offer instead.
 	local nextGlowColumn = 1
 
 	local reverseChk = mini:Checkbox({
@@ -85,74 +91,53 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ReverseCooldown = value
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
 	reverseChk:SetPoint("TOP", glowChk, "TOP", 0, 0)
 
-	if USE_AURA_CONTAINERS then
-		reverseChk:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * nextGlowColumn, 0)
+	reverseChk:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * nextGlowColumn, 0)
+	nextGlowColumn = nextGlowColumn + 1
+	---Places a swatch in the next free column of the glow row, centred on the checkboxes.
+	local function PlaceSwatch(swatch)
+		swatch:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * nextGlowColumn, 0)
+		swatch:SetPoint("TOP", glowChk, "TOP", 0,
+			-math.floor((glowChk:GetHeight() - swatch:GetHeight()) / 2))
 		nextGlowColumn = nextGlowColumn + 1
-		---Places a swatch in the next free column of the glow row, centred on the checkboxes.
-		local function PlaceSwatch(swatch)
-			swatch:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * nextGlowColumn, 0)
-			swatch:SetPoint("TOP", glowChk, "TOP", 0,
-				-math.floor((glowChk:GetHeight() - swatch:GetHeight()) / 2))
-			nextGlowColumn = nextGlowColumn + 1
-		end
-
-		PlaceSwatch(mini:ColorSwatch({
-			Parent = parent,
-			LabelText = L["Important"],
-			Tooltip = L["Change the colour of the glow on important enemy spells."],
-			HasOpacity = false,
-			GetValue = function()
-				local color = options.Icons.ImportantColor
-				return color.R, color.G, color.B, color.A
-			end,
-			SetValue = function(r, g, b, a)
-				local color = options.Icons.ImportantColor
-				color.R, color.G, color.B, color.A = r, g, b, a
-				config:Apply()
-			end,
-		}))
-
-		PlaceSwatch(mini:ColorSwatch({
-			Parent = parent,
-			LabelText = L["Defensive"],
-			Tooltip = L["Change the colour of the glow on defensive spells."],
-			HasOpacity = false,
-			GetValue = function()
-				local color = options.Icons.DefensiveColor
-				return color.R, color.G, color.B, color.A
-			end,
-			SetValue = function(r, g, b, a)
-				local color = options.Icons.DefensiveColor
-				color.R, color.G, color.B, color.A = r, g, b, a
-				config:Apply()
-			end,
-		}))
-	else
-		local colorByClassChk = mini:Checkbox({
-			Parent = parent,
-			LabelText = L["Color by class"],
-			Tooltip = L["Color the glow/border by the enemy's class color."],
-			GetValue = function()
-				return options.Icons.ColorByClass
-			end,
-			SetValue = function(value)
-				options.Icons.ColorByClass = value
-				config:Apply()
-			end,
-		})
-
-		colorByClassChk:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * nextGlowColumn, 0)
-		colorByClassChk:SetPoint("TOP", glowChk, "TOP", 0, 0)
-		nextGlowColumn = nextGlowColumn + 1
-
-		reverseChk:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * nextGlowColumn, 0)
 	end
+
+	PlaceSwatch(mini:ColorSwatch({
+		Parent = parent,
+		LabelText = L["Important"],
+		Tooltip = L["Change the colour of the glow on important enemy spells."],
+		HasOpacity = false,
+		GetValue = function()
+			local color = options.Icons.ImportantColor
+			return color.R, color.G, color.B, color.A
+		end,
+		SetValue = function(r, g, b, a)
+			local color = options.Icons.ImportantColor
+			color.R, color.G, color.B, color.A = r, g, b, a
+			config:Apply(moduleName.Alerts)
+		end,
+	}))
+
+	PlaceSwatch(mini:ColorSwatch({
+		Parent = parent,
+		LabelText = L["Defensive"],
+		Tooltip = L["Change the colour of the glow on defensive spells."],
+		HasOpacity = false,
+		GetValue = function()
+			local color = options.Icons.DefensiveColor
+			return color.R, color.G, color.B, color.A
+		end,
+		SetValue = function(r, g, b, a)
+			local color = options.Icons.DefensiveColor
+			color.R, color.G, color.B, color.A = r, g, b, a
+			config:Apply(moduleName.Alerts)
+		end,
+	}))
 
 	local showTooltipsChk = mini:Checkbox({
 		Parent = parent,
@@ -163,7 +148,7 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.ShowTooltips = value
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -179,7 +164,7 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.SplitBars = value
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -192,17 +177,16 @@ local function BuildSettingsTab(parent, options)
 		Parent = parent,
 		Items = GROW_OPTIONS,
 		GetValue = function()
+			-- An older profile can still hold CENTER, which no longer renders.
 			local grow = options.Grow
 			if grow ~= "LEFT" and grow ~= "RIGHT" then
-				grow = "CENTER"
-			end
-			if USE_AURA_CONTAINERS and grow == "CENTER" then
 				return "RIGHT"
 			end
 			return grow
 		end,
 		Target = options,
 		Key = "Grow",
+		SettingsKey = moduleName.Alerts,
 	})
 
 	growDdl.Label:SetPoint("TOPLEFT", glowChk, "BOTTOMLEFT", 4, -verticalSpacing * 2)
@@ -212,10 +196,11 @@ local function BuildSettingsTab(parent, options)
 		LabelText = L["Icon Size"],
 		Min = 10,
 		Max = 100,
-		Default = 32,
+		Default = dbDefaults.Modules.AlertsModule.Icons.Size,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "Size",
+		SettingsKey = moduleName.Alerts,
 	})
 
 	iconSize.Slider:SetPoint("TOPLEFT", growDdl, "BOTTOMLEFT", 0, -verticalSpacing * 3)
@@ -225,10 +210,11 @@ local function BuildSettingsTab(parent, options)
 		LabelText = L["Max Icons"],
 		Min = 1,
 		Max = 10,
-		Default = 8,
+		Default = dbDefaults.Modules.AlertsModule.Icons.MaxIcons,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "MaxIcons",
+		SettingsKey = moduleName.Alerts,
 	})
 
 	maxIcons.Slider:SetPoint("LEFT", iconSize.Slider, "RIGHT", horizontalSpacing, 0)
@@ -238,11 +224,12 @@ local function BuildSettingsTab(parent, options)
 		LabelText = L["Icon Padding"],
 		Min = 0,
 		Max = 20,
-		Default = 2,
-		Fallback = 2,
+		Default = dbDefaults.Modules.AlertsModule.IconSpacing,
+		Fallback = dbDefaults.Modules.AlertsModule.IconSpacing,
 		Width = sliderWidth,
 		Target = options,
 		Key = "IconSpacing",
+		SettingsKey = moduleName.Alerts,
 	})
 
 	iconSpacing.Slider:SetPoint("TOPLEFT", iconSize.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 3)
@@ -257,7 +244,7 @@ local function BuildSettingsTab(parent, options)
 		SetValue = function(value)
 			options.Important = options.Important or {}
 			options.Important.Enabled = value
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -286,9 +273,9 @@ local function BuildSoundsTab(parent, options)
 		SetValue = function(value)
 			options.Sound.Important.Enabled = value
 			if value then
-				PlaySoundFile(sounds:Resolve(options.Sound.Important.File), options.Sound.Important.Channel or "Master")
+				PlaySoundFile(sounds:Resolve(options.Sound.Important.File), options.Sound.Channel or "Master")
 			end
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -304,8 +291,8 @@ local function BuildSoundsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.Sound.Important.File = value
-			PlaySoundFile(sounds:Resolve(value), options.Sound.Important.Channel or "Master")
-			config:Apply()
+			PlaySoundFile(sounds:Resolve(value), options.Sound.Channel or "Master")
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -322,9 +309,9 @@ local function BuildSoundsTab(parent, options)
 		SetValue = function(value)
 			options.Sound.Defensive.Enabled = value
 			if value then
-				PlaySoundFile(sounds:Resolve(options.Sound.Defensive.File), options.Sound.Defensive.Channel or "Master")
+				PlaySoundFile(sounds:Resolve(options.Sound.Defensive.File), options.Sound.Channel or "Master")
 			end
-			config:Apply()
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
@@ -341,13 +328,34 @@ local function BuildSoundsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.Sound.Defensive.File = value
-			PlaySoundFile(sounds:Resolve(value), options.Sound.Defensive.Channel or "Master")
-			config:Apply()
+			PlaySoundFile(sounds:Resolve(value), options.Sound.Channel or "Master")
+			config:Apply(moduleName.Alerts)
 		end,
 	})
 
 	soundDefensiveDropdown:SetPoint("LEFT", parent, "LEFT", columnWidth * 3, 0)
 	soundDefensiveDropdown:SetPoint("TOP", soundDefensiveChk, "TOP", 0, -4)
+
+	-- One channel for both categories, like the TTS tab: the alerts are one page of sounds, so
+	-- they all come out of the same output. Previews with the important sound, since that is the
+	-- one the channel choice is usually about.
+	local channelDropdown = mini:Dropdown({
+		Parent = parent,
+		LabelText = L["Channel"],
+		Width = 200,
+		Items = sounds:GetChannels(),
+		GetText = ChannelText,
+		GetValue = function()
+			return options.Sound.Channel or "Master"
+		end,
+		SetValue = function(value)
+			options.Sound.Channel = value
+			PlaySoundFile(sounds:Resolve(options.Sound.Important.File), value)
+			config:Apply(moduleName.Alerts)
+		end,
+	})
+	channelDropdown.Label:SetPoint("LEFT", parent, "LEFT", 0, 0)
+	channelDropdown.Label:SetPoint("TOP", soundImportantDropdown, "BOTTOM", 0, -verticalSpacing)
 end
 
 ---@param parent table
@@ -362,170 +370,129 @@ local function BuildTtsTab(parent, options)
 
 	ttsIntro:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 
-	local importantTtsNote = mini:TextBlock({
+	local function EnsureTtsOptions()
+		options.TTS = options.TTS or {}
+	end
+
+	---Builds one category's announce checkbox; `preview` plays when it is switched on.
+	---@param key string "Important" or "Defensive"
+	---@param labelText string
+	---@param tooltip string
+	---@param preview function
+	local function BuildAnnounceCheckbox(key, labelText, tooltip, preview)
+		return mini:Checkbox({
+			Parent = parent,
+			LabelText = labelText,
+			Tooltip = tooltip,
+			GetValue = function()
+				return options.TTS and options.TTS[key] and options.TTS[key].Enabled or false
+			end,
+			SetValue = function(value)
+				EnsureTtsOptions()
+				if not options.TTS[key] then
+					options.TTS[key] = { Enabled = false }
+				end
+				options.TTS[key].Enabled = value
+
+				if value then
+					preview()
+				end
+
+				config:Apply(moduleName.Alerts)
+			end,
+		})
+	end
+
+	local packNote = mini:TextBlock({
 		Parent = parent,
 		Lines = {
-			L["Due to Blizzard API limitations, important spell TTS does not work for Mages, Evokers, Demon Hunters, Hunters, and Shadow Priests."],
+			L["On this game version, text-to-speech uses pre-recorded voice packs."],
 		},
 	})
-	importantTtsNote:SetPoint("TOPLEFT", ttsIntro, "BOTTOMLEFT", 0, -verticalSpacing)
+	packNote:SetPoint("TOPLEFT", ttsIntro, "BOTTOMLEFT", 0, -verticalSpacing)
 
-	local function EnsureTtsOptions()
-		if not options.TTS then
-			options.TTS = { Volume = 100, SpeechRate = 0 }
-		end
-		if options.TTS.SpeechRate == nil then
-			options.TTS.SpeechRate = 0
-		end
+	local function TtsChannel()
+		return options.TTS and options.TTS.Channel or "Master"
 	end
 
-	-- Build voice list from C_VoiceChat.GetTtsVoices()
-	local voiceItems = {}
-	local voiceNameById = {}
-	do
-		local voices = C_VoiceChat and C_VoiceChat.GetTtsVoices and C_VoiceChat.GetTtsVoices() or nil
-		if voices then
-			for _, v in ipairs(voices) do
-				if v and v.voiceID ~= nil then
-					voiceItems[#voiceItems + 1] = v.voiceID
-					voiceNameById[v.voiceID] = v.name or tostring(v.voiceID)
-				end
-			end
-			table.sort(voiceItems, function(a, b)
-				return (voiceNameById[a] or tostring(a)) < (voiceNameById[b] or tostring(b))
-			end)
-		end
-	end
-
-	if #voiceItems == 0 then
-		-- Fallback to the current default voice option if the list isn't available.
-		local fallback = wowEx:ResolveVoiceID(nil)
-		voiceItems = { fallback }
-		voiceNameById[fallback] = tostring(fallback)
-	end
-
-	local voiceDropdown = mini:Dropdown({
+	local packDropdown = mini:Dropdown({
 		Parent = parent,
-		Items = voiceItems,
+		Items = ttsPacks:Names(),
 		GetValue = function()
-			EnsureTtsOptions()
-			return wowEx:ResolveVoiceID(options.TTS.VoiceID)
+			return ttsPacks:Resolve(options.TTS and options.TTS.VoicePack)
 		end,
 		SetValue = function(value)
 			EnsureTtsOptions()
-			options.TTS.VoiceID = value
-			local speechRate = options.TTS.SpeechRate or 0
-			C_VoiceChat.SpeakText(value, L["Voice"], speechRate, options.TTS.Volume or 100, true)
-			config:Apply()
+			options.TTS.VoicePack = value
+			PlaySoundFile(ttsPacks:Path(value) .. "PreviewVoice.ogg", TtsChannel())
+			config:Apply(moduleName.Alerts)
 		end,
 		GetText = function(value)
-			return voiceNameById[value] or tostring(value)
+			return value
 		end,
 	})
-	voiceDropdown:SetPoint("TOPLEFT", importantTtsNote, "BOTTOMLEFT", 0, -verticalSpacing)
-	voiceDropdown:SetWidth(400)
+	packDropdown:SetPoint("TOPLEFT", packNote, "BOTTOMLEFT", 0, -verticalSpacing)
+	packDropdown:SetWidth(400)
 
-	local announceImportantSpellsChk = mini:Checkbox({
+	-- Both categories share this: the engine plays the baked clips, and one page of
+	-- announcements belongs on one output.
+	local channelDropdown = mini:Dropdown({
 		Parent = parent,
-		LabelText = L["Important"],
-		Tooltip = L["Announce important spell names using text-to-speech when they are cast."],
+		LabelText = L["Channel"],
+		Width = 200,
+		Items = sounds:GetChannels(),
+		GetText = ChannelText,
 		GetValue = function()
-			return options.TTS and options.TTS.Important and options.TTS.Important.Enabled or false
+			return options.TTS and options.TTS.Channel or "Master"
 		end,
 		SetValue = function(value)
 			EnsureTtsOptions()
-			if not options.TTS.Important then
-				options.TTS.Important = { Enabled = false }
-			end
-			options.TTS.Important.Enabled = value
-
-			if value then
-				local voiceId = wowEx:ResolveVoiceID(options.TTS and options.TTS.VoiceID)
-				local volume = options.TTS.Volume or 100
-				local speechRate = options.TTS.SpeechRate or 0
-
-				C_VoiceChat.SpeakText(voiceId, L["Important"], speechRate, volume, true)
-			end
-			config:Apply()
+			options.TTS.Channel = value
+			local pack = ttsPacks:Resolve(options.TTS.VoicePack)
+			PlaySoundFile(ttsPacks:Path(pack) .. "PreviewVoice.ogg", value)
+			config:Apply(moduleName.Alerts)
 		end,
 	})
+	channelDropdown.Label:SetPoint("TOPLEFT", packDropdown, "BOTTOMLEFT", 0, -verticalSpacing)
 
-	announceImportantSpellsChk:SetPoint("TOPLEFT", voiceDropdown, "BOTTOMLEFT", 0, -verticalSpacing)
+	---Plays one of the selected pack's preview clips.
+	---@param file string
+	local function PreviewPackClip(file)
+		local pack = ttsPacks:Resolve(options.TTS and options.TTS.VoicePack)
+		PlaySoundFile(ttsPacks:Path(pack) .. file, TtsChannel())
+	end
 
-	local announceDefensiveSpellsChk = mini:Checkbox({
-		Parent = parent,
-		LabelText = L["Defensive"],
-		Tooltip = L["Announce defensive spell names using text-to-speech when they are cast."],
-		GetValue = function()
-			return options.TTS and options.TTS.Defensive and options.TTS.Defensive.Enabled or false
-		end,
-		SetValue = function(value)
-			EnsureTtsOptions()
-			if not options.TTS.Defensive then
-				options.TTS.Defensive = { Enabled = false }
-			end
-			options.TTS.Defensive.Enabled = value
+	local packImportantChk = BuildAnnounceCheckbox(
+		"Important",
+		L["Important"],
+		L["Announce important spell names using text-to-speech when they are cast."],
+		function()
+			PreviewPackClip("PreviewImportant.ogg")
+		end
+	)
+	packImportantChk:SetPoint("TOPLEFT", channelDropdown.Label, "BOTTOMLEFT", 0, -verticalSpacing)
 
-			if value then
-				local voiceId = wowEx:ResolveVoiceID(options.TTS and options.TTS.VoiceID)
-				local volume = options.TTS.Volume or 100
-				local speechRate = options.TTS.SpeechRate or 0
+	local packDefensiveChk = BuildAnnounceCheckbox(
+		"Defensive",
+		L["Defensive"],
+		L["Announce defensive spell names using text-to-speech when they are cast."],
+		function()
+			PreviewPackClip("PreviewDefensive.ogg")
+		end
+	)
+	packDefensiveChk:SetPoint("LEFT", parent, "LEFT", columnWidth, 0)
+	packDefensiveChk:SetPoint("TOP", packImportantChk, "TOP", 0, 0)
 
-				C_VoiceChat.SpeakText(voiceId, L["Defensive"], speechRate, volume, true)
-			end
-
-			config:Apply()
-		end,
-	})
-
-	announceDefensiveSpellsChk:SetPoint("LEFT", parent, "LEFT", columnWidth, 0)
-	announceDefensiveSpellsChk:SetPoint("TOP", announceImportantSpellsChk, "TOP", 0, 0)
-
-	local volumeSlider = mini:Slider({
-		Parent = parent,
-		Min = 0,
-		Max = 100,
-		Width = (columnWidth * 2) - horizontalSpacing,
-		Step = 1,
-		LabelText = L["TTS Volume"],
-		GetValue = function()
-			return options.TTS and options.TTS.Volume or 100
-		end,
-		SetValue = function(v)
-			local newValue = mini:ClampInt(v, 0, 100, 100)
-			EnsureTtsOptions()
-			if options.TTS.Volume ~= newValue then
-				options.TTS.Volume = newValue
-				config:Apply()
-			end
-		end,
-	})
-
-	volumeSlider.Slider:SetPoint("TOPLEFT", announceImportantSpellsChk, "BOTTOMLEFT", 4, -verticalSpacing * 3)
-
-	local speechRateSlider = mini:Slider({
-		Parent = parent,
-		Min = -5,
-		Max = 5,
-		Width = (columnWidth * 2) - horizontalSpacing,
-		Step = 1,
-		LabelText = L["TTS Speech Rate"] or "TTS Speech Rate",
-		GetValue = function()
-			EnsureTtsOptions()
-			return options.TTS.SpeechRate or 0
-		end,
-		SetValue = function(v)
-			local newValue = mini:ClampInt(v, -5, 5, 0)
-			EnsureTtsOptions()
-			if options.TTS.SpeechRate ~= newValue then
-				options.TTS.SpeechRate = newValue
-				config:Apply()
-			end
-		end,
-	})
-
-	speechRateSlider.Slider:SetPoint("LEFT", volumeSlider.Slider, "RIGHT", horizontalSpacing, 0)
-	speechRateSlider.Slider:SetPoint("TOP", volumeSlider.Slider, "TOP", 0, 0)
+	local packEnemyDebuffChk = BuildAnnounceCheckbox(
+		"EnemyDebuff",
+		L["Enemy Debuffs"],
+		L["Announce big enemy cooldowns using text-to-speech as they land on you or your party."],
+		function()
+			PreviewPackClip("PreviewEnemyDebuff.ogg")
+		end
+	)
+	packEnemyDebuffChk:SetPoint("LEFT", parent, "LEFT", columnWidth * 2, 0)
+	packEnemyDebuffChk:SetPoint("TOP", packImportantChk, "TOP", 0, 0)
 end
 
 ---@param panel table
@@ -554,24 +521,25 @@ function M:Build(panel, options)
 	enabledDivider:SetPoint("RIGHT", panel, "RIGHT")
 	enabledDivider:SetPoint("TOP", lines, "BOTTOM", 0, -verticalSpacing)
 
-	local enabledEverywhere = helpers:BuildEnableRow(panel, enabledDivider, db.Modules.AlertsModule.Enabled)
+	local enabledEverywhere = helpers:BuildEnableRow(panel, enabledDivider, db.Modules.AlertsModule.Enabled, nil, moduleName.Alerts)
 
-	local subPanelHeight = 320
+	-- Sized for the spell list: it is a scrolling grid, and the other tabs' blank tail is a
+	-- better trade than a list showing four rows at a time.
+	local subPanelHeight = 420
 	local tabContainer = CreateFrame("Frame", nil, panel)
 	tabContainer:SetPoint("TOPLEFT",  enabledEverywhere, "BOTTOMLEFT",  0, -verticalSpacing)
 	tabContainer:SetPoint("TOPRIGHT", panel,             "TOPRIGHT",    0, 0)
 	tabContainer:SetHeight(subPanelHeight + 34)
 
-	-- TTS is dead on 12.1: announcing a spell name requires reading which aura appeared, which
-	-- is secret there (unlike sounds, which the engine can play itself via AddAuraSound), so
-	-- its tab is hidden. TEMPORARY: remove the gate with the legacy path once 12.1 is live.
 	local subTabs = {
 		{ Key = "settings", Title = L["Settings"] },
 		{ Key = "sounds", Title = L["Sound Alerts"] },
+		{ Key = "tts", Title = L["TTS"] },
 	}
-	if not wowEx:UseAuraContainers() then
-		subTabs[#subTabs + 1] = { Key = "tts", Title = L["TTS"] }
-	end
+
+	-- The announcement is filtered by spell id, which only the engine-side registrations can do:
+	-- an aura's id reaches the addon as a secret value it can never match against.
+	subTabs[#subTabs + 1] = { Key = "ttsSpells", Title = L["Spells"] }
 
 	local tabCtrl = mini:CreateTabs({
 		Parent = tabContainer,
@@ -591,6 +559,11 @@ function M:Build(panel, options)
 	local ttsContent = tabCtrl:GetContent("tts")
 	if ttsContent then
 		BuildTtsTab(ttsContent, options)
+	end
+
+	local ttsSpellsContent = tabCtrl:GetContent("ttsSpells")
+	if ttsSpellsContent then
+		config.AlertsTtsSpells:Build(ttsSpellsContent, options)
 	end
 
 	panel:HookScript("OnShow", function()

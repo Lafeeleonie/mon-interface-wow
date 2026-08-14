@@ -1,12 +1,13 @@
-## Interface: 120007
+## Interface: 120100
 ## Title: Vaultloom - Compendium Data
 ## Notes: Load-on-demand Midnight collection catalog for Vaultloom.
 ## Author: Legijaone
-## Version: 1.0.6-beta
+## Version: 1.1.2-beta
 ## IconTexture: Interface\Icons\Inv_10_gearupgrade_drakesshadowflameenhancedcrest
 ## RequiredDeps: Vaultloom
 ## LoadOnDemand: 1
 ## X-Vaultloom-Bridge: VaultloomCompendiumBridge
 
 Data\MidnightCompendium.lua
+Data\CoiledIsleCompendium.lua
 Register.lua

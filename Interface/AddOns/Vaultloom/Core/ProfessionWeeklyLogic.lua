@@ -314,7 +314,9 @@ function Logic:BuildSnapshot(character, existing, detectorState)
             tooltipLines = { L.PROFESSIONS_EMPTY_HINT },
         }
     end
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existing) == "table" and existing.resetAt or nil
+    )
     local snapshot = {
         generatedAt = type(time) == "function" and time() or 0,
         resetAt = resetAt,

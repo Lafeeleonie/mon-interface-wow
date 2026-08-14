@@ -139,7 +139,9 @@ function Logic:BuildSnapshot(memory, existingSnapshot)
     end
 
     memory = type(memory) == "table" and memory or {}
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
     local renownLevel = Addon.WoWApi:GetCurrentRenownLevel(DATA.renownFactionID)
     local activeMapName, activeQuestID = Addon.WoWApi:GetActivePreyMapName()
     local snapshot = {

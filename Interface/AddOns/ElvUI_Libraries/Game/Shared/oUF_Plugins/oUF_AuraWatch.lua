@@ -320,4 +320,6 @@ local function Disable(self)
 	end
 end
 
-oUF:AddElement('AuraWatch', Update, Enable, Disable)
+if not oUF.isRetail then
+	oUF:AddElement('AuraWatch', Update, Enable, Disable)
+end

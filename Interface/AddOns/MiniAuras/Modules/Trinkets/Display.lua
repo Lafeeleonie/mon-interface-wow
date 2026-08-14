@@ -35,6 +35,8 @@ local watchers = {}
 -- instead of building a replacement per roster flip.
 ---@type { [table]: IconSlotContainer }
 local containersByAnchor = {}
+-- Anchors met during one walk, wiped at the top of it.
+local seenScratch = {}
 ---@type Db
 local db
 ---@type TrinketsModuleOptions
@@ -76,12 +78,6 @@ local function UpdateUnit(unit, durationData)
 		if w.Unit == unit then
 			SetIconState(w.Container, durationData)
 		end
-	end
-end
-
-local function ClearAll()
-	for _, w in pairs(watchers) do
-		SetIconState(w.Container, nil)
 	end
 end
 
@@ -130,23 +126,27 @@ local function ReleaseWatcher(anchorFrame)
 	watchers[anchorFrame] = nil
 end
 
-local function RebuildAnchors()
-	local anchors = frames:GetAll(true, testModeActive)
-	local seen = {}
-
-	for _, anchor in ipairs(anchors) do
-		if anchor and not (anchor.IsForbidden and anchor:IsForbidden()) then
-			local unit = anchor.unit or (anchor.GetAttribute and anchor:GetAttribute("unit"))
-			if unit and unit ~= "" and IsTrackedUnit(unit) then
-				local w = EnsureWatcher(anchor, unit)
-				seen[anchor] = true
-				AnchorContainerToFrame(w.Container, anchor)
-			end
-		end
+local function TakeAnchor(anchor)
+	if not anchor or (anchor.IsForbidden and anchor:IsForbidden()) then
+		return
 	end
 
+	local unit = anchor.unit or (anchor.GetAttribute and anchor:GetAttribute("unit"))
+
+	if unit and unit ~= "" and IsTrackedUnit(unit) then
+		local watcher = EnsureWatcher(anchor, unit)
+		seenScratch[anchor] = true
+		AnchorContainerToFrame(watcher.Container, anchor)
+	end
+end
+
+local function RebuildAnchors()
+	wipe(seenScratch)
+
+	frames:ForEachAnchor(true, testModeActive, TakeAnchor)
+
 	for anchorFrame in pairs(watchers) do
-		if not seen[anchorFrame] then
+		if not seenScratch[anchorFrame] then
 			ReleaseWatcher(anchorFrame)
 		end
 	end
@@ -294,9 +294,10 @@ function M:Render(unit)
 	end
 end
 
----Blanks every slot back to the default icon.
 function M:ClearAll()
-	ClearAll()
+	for _, w in pairs(watchers) do
+		SetIconState(w.Container, nil)
+	end
 end
 
 ---Anchor discovery and visibility only, for the paused case: the frames still have to follow

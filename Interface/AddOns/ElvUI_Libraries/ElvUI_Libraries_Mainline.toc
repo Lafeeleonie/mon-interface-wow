@@ -1,8 +1,8 @@
 ## Title: |cff1784d1ElvUI|r |cfd9b9b9bLibraries|r
 ## Notes: Libraries that power ElvUI
 ## Author: Elv, Simpy
-## Version: v15.18
-## Interface: 120007
+## Version: v15.21
+## Interface: 120100
 ## X-oUF: ElvUF
 ## IconTexture: Interface\AddOns\ElvUI\Game\Shared\Media\Textures\LogoAddon
 ## Category-enUS: UI Overhaul

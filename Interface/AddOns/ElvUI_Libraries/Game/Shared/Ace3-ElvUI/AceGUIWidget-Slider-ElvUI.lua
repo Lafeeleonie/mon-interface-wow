@@ -2,16 +2,16 @@
 Slider Widget (Modified to support min and max fuctions on SetSliderValues)
 Graphical Slider, like, for Range values.
 -------------------------------------------------------------------------------]]
-local Type, Version = "Slider-ElvUI", 3
+local Type, Version = "Slider-ElvUI", 4
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
 
--- Lua APIs
 local min, max, floor = math.min, math.max, math.floor
-local tonumber, pairs = tonumber, pairs
+local tonumber, pairs, type, format = tonumber, pairs, type, format
 
--- WoW APIs
+local _G = _G
 local PlaySound = PlaySound
+local C_Timer_After = C_Timer.After
 local CreateFrame, UIParent = CreateFrame, UIParent
 
 --[[-----------------------------------------------------------------------------
@@ -19,11 +19,9 @@ Support functions
 -------------------------------------------------------------------------------]]
 local function UpdateText(self)
 	local value = self.value or 0
-	if self.ispercent then
-		self.editbox:SetText(("%s%%"):format(floor(value * 1000 + 0.5) / 10))
-	else
-		self.editbox:SetText(floor(value * 100 + 0.5) / 100)
-	end
+	local text = self.ispercent and format('%s%%', floor(value * 1000 + 0.5) * 0.1) or (floor(value * 100 + 0.5) * 0.01)
+
+	self.editbox:SetText(text)
 end
 
 local function UpdateLabels(self)
@@ -94,16 +92,16 @@ end
 
 local function EditBox_OnEnterPressed(frame)
 	local self = frame.obj
-	local value = frame:GetText()
-	if self.ispercent then
-		value = value:gsub('%%', '')
-		value = tonumber(value) / 100
-	else
-		value = tonumber(value)
-	end
+	local text = frame:GetText()
 
+	local value = tonumber(self.ispercent and text:gsub('%%', '') or text)
 	if value then
+		if self.ispercent then
+			value = value * 0.01
+		end
+
 		PlaySound(856) -- SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON
+
 		self.slider:SetValue(value)
 		self:Fire("OnMouseUp", value)
 	end
@@ -248,7 +246,7 @@ local function Constructor()
 
 	local editbox = CreateFrame("EditBox", nil, frame, "BackdropTemplate")
 	editbox:SetAutoFocus(false)
-	editbox:SetFontObject(GameFontHighlightSmall)
+	editbox:SetFontObject(_G.GameFontHighlightSmall)
 	editbox:SetPoint("TOP", slider, "BOTTOM")
 	editbox:SetHeight(14)
 	editbox:SetWidth(70)
@@ -276,6 +274,11 @@ local function Constructor()
 		widget[method] = func
 	end
 	slider.obj, editbox.obj = widget, widget
+
+	C_Timer_After(0.3, function()
+		editbox:SetText(" ")
+		UpdateText(widget)
+	end) -- Workaround for font loading issue, making the editboxes blank until the text is changed
 
 	return AceGUI:RegisterAsWidget(widget)
 end

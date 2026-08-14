@@ -7,6 +7,27 @@ local MAX_VISIBLE_LOOT_ROWS = 6
 local MAX_TOAST_ROWS = 5
 local DEDUPE_WINDOW = 1.25
 local ANIMATION_DURATION = 0.28
+local LOOT_ALL_ICON = "Interface\\Icons\\INV_Misc_Bag_10_Blue"
+local MODERN_WINDOW_BACKDROP = {
+    bgFile = WHITE_TEXTURE,
+    edgeFile = WHITE_TEXTURE,
+    edgeSize = 1,
+    insets = { left = 1, right = 1, top = 1, bottom = 1 },
+}
+local ROUNDED_WINDOW_BACKDROP = {
+    bgFile = WHITE_TEXTURE,
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+}
+local ROUNDED_ROW_FILL_BACKDROP = {
+    bgFile = WHITE_TEXTURE,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+}
+local ROUNDED_ROW_BORDER_BACKDROP = {
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    edgeSize = 9,
+}
 
 local ALERT_EVENTS = {
     "SHOW_LOOT_TOAST",
@@ -14,11 +35,17 @@ local ALERT_EVENTS = {
     "SHOW_LOOT_TOAST_LEGENDARY_LOOTED",
 }
 
+local NATIVE_LOOT_EVENTS = {
+    "LOOT_OPENED",
+    "LOOT_CLOSED",
+    "LOOT_SLOT_CLEARED",
+}
+
 local DEFAULTS = {
     loot_window_mode = "compact",
     loot_alert_mode = "compact",
     boss_alert_mode = "compact",
-    visual_style = "warcraft",
+    visual_style = "standard",
     background_opacity_percent = 100,
     quality_border = true,
     animation_style = "fade",
@@ -39,10 +66,9 @@ local Runtime = {
     recent = {},
     refreshGeneration = 0,
     toastGeneration = 0,
-    lootFrameHooked = nil,
-    lootFrameShowHooked = false,
     lootSessionActive = false,
-    nativeHideGeneration = 0,
+    lootFrameState = nil,
+    lootRegisterHooks = setmetatable({}, { __mode = "k" }),
     alertState = nil,
     alertRegisterHooks = setmetatable({}, { __mode = "k" }),
     bossHook = nil,
@@ -67,19 +93,13 @@ end
 
 local function getVisualStyle()
     local style = setting("visual_style")
-    if style == "clean" or style == "runic" or style == "quality" then
-        return style
-    end
-    return "warcraft"
+    if style == "clean" then return "clean" end
+    if style == "round" or style == "rounded" then return "round" end
+    return "standard"
 end
 
 local function useMinimalStyle()
     return getVisualStyle() == "clean"
-end
-
-local function useSingleLineStyle()
-    local style = getVisualStyle()
-    return style == "clean" or style == "quality"
 end
 
 local function getAnimationStyle()
@@ -95,35 +115,27 @@ local function getAnimationStyle()
 end
 
 local function getLootRowHeight()
-    local style = getVisualStyle()
-    return style == "clean" and 34
-        or style == "quality" and 38
-        or style == "runic" and 46
-        or 42
+    return getVisualStyle() == "clean" and 34 or 40
 end
 
 local function getToastRowHeight()
-    local style = getVisualStyle()
-    return style == "clean" and 34
-        or style == "quality" and 38
-        or style == "runic" and 44
-        or 40
+    return getVisualStyle() == "clean" and 34 or 40
 end
 
 local function getModeLabel(mode)
     if mode == "hidden" then
-        return Addon.L.FEATURE_VALUE_HIDDEN or "Hidden"
+        return Addon.L.FEATURE_VALUE_OFF or "Off"
     elseif mode == "blizzard" then
         return Addon.L.FEATURE_VALUE_BLIZZARD or "Blizzard"
     end
-    return Addon.L.FEATURE_VALUE_COMPACT or "Compact"
+    return Addon.L.FEATURE_VALUE_VAULTLOOM or "Vaultloom"
 end
 
 local function getWindowModeLabel(mode)
     if mode == "blizzard" then
         return Addon.L.FEATURE_VALUE_BLIZZARD or "Blizzard"
     end
-    return Addon.L.FEATURE_VALUE_COMPACT_WINDOW or "Compact"
+    return Addon.L.FEATURE_VALUE_VAULTLOOM or "Vaultloom"
 end
 
 local function now()
@@ -439,6 +451,40 @@ local function createIconQualityBorder(row)
     return border
 end
 
+local function createRowBorder(row)
+    local border = {}
+    border.top = row:CreateTexture(nil, "ARTWORK", nil, 2)
+    border.top:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    border.top:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+    border.top:SetHeight(1)
+
+    border.bottom = row:CreateTexture(nil, "ARTWORK", nil, 2)
+    border.bottom:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+    border.bottom:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+    border.bottom:SetHeight(1)
+
+    border.left = row:CreateTexture(nil, "ARTWORK", nil, 2)
+    border.left:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    border.left:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+    border.left:SetWidth(1)
+
+    border.right = row:CreateTexture(nil, "ARTWORK", nil, 2)
+    border.right:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+    border.right:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+    border.right:SetWidth(1)
+    return border
+end
+
+local function createRoundedRowBorder(row)
+    local border = CreateFrame("Frame", nil, row, BACKDROP_TEMPLATE)
+    border:SetAllPoints(row)
+    border:SetFrameLevel(row:GetFrameLevel() + 2)
+    border:EnableMouse(false)
+    border:SetBackdrop(ROUNDED_ROW_BORDER_BACKDROP)
+    border:Hide()
+    return border
+end
+
 function Runtime:ResetFrameAnimation(frame)
     if not frame then return end
     local group = frame.lootActiveAnimation
@@ -581,40 +627,47 @@ function Runtime:ApplyRowStyle(row, data, isToast)
     local style = getVisualStyle()
     local r, g, b = getQualityColor(data and data.quality)
     local backgroundOpacity = getBackgroundOpacity()
-    if type(row.SetBackdrop) == "function" then row:SetBackdrop(nil) end
+    local rounded = style == "round"
+    local backgroundR = 0.020 + (r * 0.025)
+    local backgroundG = 0.021 + (g * 0.025)
+    local backgroundB = 0.024 + (b * 0.025)
+    local backgroundA = (isToast and 0.94 or 0.90) * backgroundOpacity
+    if type(row.SetBackdrop) == "function" then
+        row:SetBackdrop(rounded and ROUNDED_ROW_FILL_BACKDROP or nil)
+    end
+    row.bg:SetTexture(WHITE_TEXTURE)
+    row.bg:SetVertexColor(1, 1, 1, 1)
     if style == "clean" then
-        row.bg:SetTexture(WHITE_TEXTURE)
         row.bg:SetColorTexture(0.015, 0.018, 0.022, 0)
         row.bg:SetAlpha(1)
-    elseif style == "quality" then
-        row.bg:SetTexture(WHITE_TEXTURE)
-        row.bg:SetColorTexture(
-            0.018,
-            0.016,
-            0.013,
-            (isToast and 0.88 or 0.80) * backgroundOpacity
-        )
+    elseif rounded then
+        row.bg:SetColorTexture(backgroundR, backgroundG, backgroundB, 0)
         row.bg:SetAlpha(1)
-    elseif style == "runic" then
-        row.bg:SetTexture(Addon.Assets.row or WHITE_TEXTURE)
-        row.bg:SetVertexColor(0.72, 0.61, 0.42, 0.94)
-        row.bg:SetAlpha(0.94 * backgroundOpacity)
+        if type(row.SetBackdropColor) == "function" then
+            row:SetBackdropColor(backgroundR, backgroundG, backgroundB, backgroundA)
+        end
     else
-        row.bg:SetTexture(Addon.Assets.cardInset or WHITE_TEXTURE)
-        row.bg:SetVertexColor(1, 1, 1, 1)
-        row.bg:SetAlpha(0.96 * backgroundOpacity)
+        row.bg:SetColorTexture(backgroundR, backgroundG, backgroundB, backgroundA)
+        row.bg:SetAlpha(1)
+    end
+    local borderR, borderG, borderB, borderA = r, g, b, 0.92
+    for _, edge in pairs(row.rowBorder or {}) do
+        edge:SetColorTexture(borderR, borderG, borderB, borderA)
+        edge:SetShown(style ~= "clean" and not rounded)
+    end
+    if row.roundedBorder then
+        row.roundedBorder:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
+        row.roundedBorder:SetShown(rounded)
     end
     for _, edge in pairs(row.iconQualityBorder or {}) do
         edge:SetColorTexture(r, g, b, 1)
         edge:SetShown(setting("quality_border") == true)
     end
     if row.topLine then
-        row.topLine:SetColorTexture(0.78, 0.58, 0.18, 0.34)
-        row.topLine:SetShown(style == "runic")
+        row.topLine:Hide()
     end
     if row.bottomLine then
-        row.bottomLine:SetColorTexture(0.30, 0.20, 0.06, 0.72)
-        row.bottomLine:SetShown(style == "runic")
+        row.bottomLine:Hide()
     end
 end
 
@@ -626,6 +679,13 @@ function Runtime:CreateLootRow(parent)
     row.bg = row:CreateTexture(nil, "BACKGROUND")
     row.bg:SetAllPoints(row)
     row.bg:SetColorTexture(0.02, 0.025, 0.03, 0.72)
+    row.rowBorder = createRowBorder(row)
+    row.roundedBorder = createRoundedRowBorder(row)
+
+    row.hover = row:CreateTexture(nil, "HIGHLIGHT")
+    row.hover:SetAllPoints(row)
+    row.hover:SetColorTexture(1, 1, 1, 0.07)
+    row.hover:Hide()
 
     row.topLine = row:CreateTexture(nil, "ARTWORK", nil, 1)
     row.topLine:SetPoint("TOPLEFT", 4, -3)
@@ -659,8 +719,14 @@ function Runtime:CreateLootRow(parent)
     row.quantity:SetPoint("RIGHT", -9, 0)
     row.quantity:SetWidth(34)
 
-    row:SetScript("OnEnter", function(self) Runtime:ShowTooltip(self) end)
-    row:SetScript("OnLeave", function() Runtime:HideTooltip() end)
+    row:SetScript("OnEnter", function(self)
+        self.hover:Show()
+        Runtime:ShowTooltip(self)
+    end)
+    row:SetScript("OnLeave", function(self)
+        self.hover:Hide()
+        Runtime:HideTooltip()
+    end)
     row:SetScript("OnClick", function(self)
         if Runtime.previewMode or not Runtime.customLootActive then return end
         Runtime:TakeLootSlot(self.data)
@@ -671,37 +737,27 @@ end
 function Runtime:SetLootRow(row, data, index)
     local style = getVisualStyle()
     local minimal = style == "clean"
-    local singleLine = useSingleLineStyle()
     local rowHeight = getLootRowHeight()
     row.data = data
     row:ClearAllPoints()
     row:SetPoint("TOPLEFT", self.lootWindow.child, "TOPLEFT", 0, -((index - 1) * rowHeight))
     row:SetPoint("TOPRIGHT", self.lootWindow.child, "TOPRIGHT", 0, -((index - 1) * rowHeight))
-    row:SetHeight(minimal and 30 or style == "quality" and 34 or style == "runic" and 42 or 38)
+    local rowVisualHeight = minimal and 30 or 36
+    row:SetHeight(rowVisualHeight)
     row.icon:ClearAllPoints()
-    local iconSize = minimal and 28 or style == "runic" and 34 or 32
-    local iconOffset = minimal and 0 or 7
+    local iconSize = minimal and 28 or rowVisualHeight
+    local iconOffset = 0
     row.icon:SetSize(iconSize, iconSize)
     row.icon:SetPoint("LEFT", row, "LEFT", iconOffset, 0)
     row.bg:ClearAllPoints()
-    row.bg:SetPoint("TOPLEFT", row, "TOPLEFT", iconOffset, 0)
-    row.bg:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+    row.bg:SetAllPoints(row)
     row.name:ClearAllPoints()
     row.detail:ClearAllPoints()
     row.quantity:ClearAllPoints()
-    if singleLine then
-        row.name:SetPoint("LEFT", row.icon, "RIGHT", 7, 0)
-        row.name:SetPoint("RIGHT", row, "RIGHT", -40, 0)
-        row.detail:Hide()
-        row.quantity:SetPoint("RIGHT", minimal and 0 or -9, 0)
-    else
-        row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, -3)
-        row.name:SetPoint("TOPRIGHT", -42, -3)
-        row.detail:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 8, 3)
-        row.detail:SetPoint("BOTTOMRIGHT", -42, 3)
-        row.detail:Show()
-        row.quantity:SetPoint("RIGHT", -9, 0)
-    end
+    row.name:SetPoint("LEFT", row.icon, "RIGHT", 7, 0)
+    row.name:SetPoint("RIGHT", row, "RIGHT", -40, 0)
+    row.detail:Hide()
+    row.quantity:SetPoint("RIGHT", minimal and 0 or -9, 0)
     local icon = data.kind == "currency"
         and resolveCurrencyIcon(data.icon)
         or resolveItemIcon(data.icon, data.link, data.itemID)
@@ -734,6 +790,27 @@ function Runtime:SetLootRow(row, data, index)
     row:Show()
 end
 
+function Runtime:ApplyLootWindowStyle()
+    local frame = self.lootWindow
+    if not frame then return end
+    local style = getVisualStyle()
+    if style == "clean" then
+        if type(frame.SetBackdrop) == "function" then frame:SetBackdrop(nil) end
+    elseif style == "round" and type(frame.SetBackdrop) == "function" then
+        frame:SetBackdrop(ROUNDED_WINDOW_BACKDROP)
+        frame:SetBackdropColor(0.010, 0.012, 0.016, 0.94 * getBackgroundOpacity())
+        if type(frame.SetBackdropBorderColor) == "function" then
+            frame:SetBackdropBorderColor(0.32, 0.34, 0.40, 0.92)
+        end
+    elseif type(frame.SetBackdrop) == "function" then
+        frame:SetBackdrop(MODERN_WINDOW_BACKDROP)
+        frame:SetBackdropColor(0.010, 0.012, 0.016, 0.94 * getBackgroundOpacity())
+        if type(frame.SetBackdropBorderColor) == "function" then
+            frame:SetBackdropBorderColor(0.32, 0.34, 0.40, 0.92)
+        end
+    end
+end
+
 function Runtime:EnsureLootWindow()
     if self.lootWindow then
         self.lootWindow:SetScale(clamp(setting("loot_scale_percent"), 70, 140, 100) / 100)
@@ -761,17 +838,28 @@ function Runtime:EnsureLootWindow()
 
     frame.title = Addon.Widgets:CreateLabel(frame, "GameFontNormalLarge", "LEFT")
     frame.title:SetPoint("TOPLEFT", 14, -13)
-    frame.title:SetPoint("TOPRIGHT", -150, -13)
+    frame.title:SetPoint("TOPRIGHT", -76, -13)
     frame.title:SetTextColor(1, 0.82, 0.24, 1)
 
-    frame.takeAll = Addon.Widgets:CreateButton(
-        frame,
-        Addon.L.QUIET_LOOT_TAKE_ALL or "Loot all",
-        96,
-        25
-    )
+    frame.takeAll = Addon.Widgets:CreateButton(frame, "", 25, 25)
     frame.takeAll:SetPoint("TOPRIGHT", -42, -9)
+    frame.takeAll.icon = frame.takeAll:CreateTexture(nil, "ARTWORK")
+    frame.takeAll.icon:SetSize(17, 17)
+    frame.takeAll.icon:SetPoint("CENTER")
+    frame.takeAll.icon:SetTexture(
+        Addon.Assets and Addon.Assets.vaultRewardIcon or LOOT_ALL_ICON
+    )
+    frame.takeAll.icon:SetTexCoord(0, 1, 0, 1)
     frame.takeAll:SetScript("OnClick", function() Runtime:TakeAllLoot() end)
+    frame.takeAll:HookScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(Addon.L.QUIET_LOOT_TAKE_ALL or "Loot all")
+        GameTooltip:Show()
+    end)
+    frame.takeAll:HookScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
 
     frame.close = Addon.Widgets:CreateButton(frame, "X", 25, 25)
     frame.close:SetPoint("TOPRIGHT", -10, -9)
@@ -804,6 +892,7 @@ function Runtime:EnsureLootWindow()
 
     self.lootWindow = frame
     applyPosition(frame, getPositionStore().lootWindow, "CENTER", 0, 40)
+    self:ApplyLootWindowStyle()
     frame:Hide()
     return frame
 end
@@ -822,13 +911,8 @@ function Runtime:RefreshLootWindow(overrideData)
     local rowHeight = getLootRowHeight()
     local headerHeight = self.previewMode and 38
         or minimal and 30
-        or style == "quality" and 38
-        or style == "runic" and 47
-        or 45
-    local frameWidth = minimal and 300
-        or style == "quality" and 330
-        or style == "runic" and 360
-        or 350
+        or 39
+    local frameWidth = minimal and 300 or 354
     local count = #data
     local visibleRows = math.max(1, math.min(MAX_VISIBLE_LOOT_ROWS, count))
     frame:SetWidth(frameWidth)
@@ -947,6 +1031,8 @@ function Runtime:CreateToastRow(parent)
     row.bg = row:CreateTexture(nil, "BACKGROUND")
     row.bg:SetAllPoints(row)
     row.bg:SetColorTexture(0.015, 0.018, 0.022, 0.68)
+    row.rowBorder = createRowBorder(row)
+    row.roundedBorder = createRoundedRowBorder(row)
 
     row.topLine = row:CreateTexture(nil, "ARTWORK", nil, 1)
     row.topLine:SetPoint("TOPLEFT", 4, -3)
@@ -1047,7 +1133,6 @@ function Runtime:SetToastRow(holder, row, entry, index)
     local data = entry.data
     local style = getVisualStyle()
     local minimal = style == "clean"
-    local singleLine = useSingleLineStyle()
     local rowHeight = getToastRowHeight()
     local previewOffset = self.previewMode and 82 or 0
     local entryChanged = row.entry ~= entry
@@ -1066,32 +1151,24 @@ function Runtime:SetToastRow(holder, row, entry, index)
         row:SetPoint("TOP", holder, "TOP", 0, -((index - 1) * rowHeight))
     end
     row:SetSize(
-        minimal and 280 or style == "quality" and 304 or style == "runic" and 332 or 320,
-        minimal and 30 or style == "quality" and 34 or style == "runic" and 40 or 36
+        minimal and 280 or 330,
+        minimal and 30 or 36
     )
     row.icon:ClearAllPoints()
-    local iconOffset = minimal and 0 or 6
-    row.icon:SetSize(minimal and 28 or style == "runic" and 34 or 30, minimal and 28 or style == "runic" and 34 or 30)
+    local rowVisualHeight = minimal and 30 or 36
+    local iconOffset = 0
+    local iconSize = minimal and 28 or rowVisualHeight
+    row.icon:SetSize(iconSize, iconSize)
     row.icon:SetPoint("LEFT", row, "LEFT", iconOffset, 0)
     row.bg:ClearAllPoints()
-    row.bg:SetPoint("TOPLEFT", row, "TOPLEFT", iconOffset, 0)
-    row.bg:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+    row.bg:SetAllPoints(row)
     row.name:ClearAllPoints()
     row.source:ClearAllPoints()
     row.quantity:ClearAllPoints()
-    if singleLine then
-        row.name:SetPoint("LEFT", row.icon, "RIGHT", 7, 0)
-        row.name:SetPoint("RIGHT", row, "RIGHT", -40, 0)
-        row.source:Hide()
-        row.quantity:SetPoint("RIGHT", minimal and 0 or -8, 0)
-    else
-        row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, -2)
-        row.name:SetPoint("TOPRIGHT", -42, -2)
-        row.source:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 8, 3)
-        row.source:SetPoint("BOTTOMRIGHT", -42, 3)
-        row.source:Show()
-        row.quantity:SetPoint("RIGHT", -8, 0)
-    end
+    row.name:SetPoint("LEFT", row.icon, "RIGHT", 7, 0)
+    row.name:SetPoint("RIGHT", row, "RIGHT", -40, 0)
+    row.source:Hide()
+    row.quantity:SetPoint("RIGHT", minimal and 0 or -8, 0)
     local icon = data.kind == "currency"
         and resolveCurrencyIcon(data.icon)
         or resolveItemIcon(data.icon, data.link, data.itemID)
@@ -1123,7 +1200,7 @@ function Runtime:RefreshToastHolder(holder, entries, rows, preview)
     local minimal = style == "clean"
     local rowHeight = getToastRowHeight()
     local count = math.min(MAX_TOAST_ROWS, #entries)
-    holder:SetWidth(minimal and 300 or style == "quality" and 324 or style == "runic" and 352 or 340)
+    holder:SetWidth(minimal and 300 or 350)
     holder:SetHeight(
         preview
             and (92 + (math.max(1, count) * rowHeight))
@@ -1415,57 +1492,58 @@ function Runtime:InstallBossBanner()
     self.bossHook = hook
 end
 
-function Runtime:EnsureLootFrameHook()
-    local frame = _G.LootFrame
-    if frame and self.lootFrameHooked ~= frame and type(frame.HookScript) == "function" then
-        frame:HookScript("OnShow", function(selfFrame)
-            if Runtime.enabled
-                and setting("loot_window_mode") == "compact"
-            then
-                selfFrame:Hide()
-            end
-        end)
-        self.lootFrameHooked = frame
-    end
-    if not self.lootFrameShowHooked
-        and type(_G.LootFrame_Show) == "function"
-        and type(hooksecurefunc) == "function"
-    then
-        hooksecurefunc("LootFrame_Show", function(shownFrame)
-            local target = _G.LootFrame
-            if Runtime.enabled
-                and setting("loot_window_mode") == "compact"
-                and target
-                and type(target.Hide) == "function"
-            then
-                target:Hide()
-            end
-        end)
-        self.lootFrameShowHooked = true
-    end
-end
-
-function Runtime:HideNativeLootFrame()
-    local frame = _G.LootFrame
-    if frame and type(frame.Hide) == "function" then pcall(frame.Hide, frame) end
-end
-
-function Runtime:QueueNativeLootHide()
-    self.nativeHideGeneration = self.nativeHideGeneration + 1
-    local generation = self.nativeHideGeneration
-    local function hideAgain()
-        if Runtime.enabled
-            and Runtime.lootSessionActive
-            and generation == Runtime.nativeHideGeneration
-            and setting("loot_window_mode") == "compact"
-        then
-            Runtime:HideNativeLootFrame()
+function Runtime:RestoreNativeLootEvents()
+    local state = self.lootFrameState
+    self.lootFrameState = nil
+    if type(state) ~= "table" or not state.frame then return end
+    for eventName, wasRegistered in pairs(state.registered or {}) do
+        if wasRegistered and not self:IsFrameEventRegistered(state.frame, eventName) then
+            pcall(state.frame.RegisterEvent, state.frame, eventName)
         end
     end
-    hideAgain()
-    if C_Timer and type(C_Timer.After) == "function" then
-        C_Timer.After(0, hideAgain)
-        C_Timer.After(0.05, hideAgain)
+end
+
+function Runtime:SetNativeLootSuppressed(suppressed)
+    local frame = _G.LootFrame
+    if not suppressed then
+        self:RestoreNativeLootEvents()
+        return
+    end
+    if not frame then return end
+
+    if not self.lootRegisterHooks[frame]
+        and type(hooksecurefunc) == "function"
+        and type(frame.RegisterEvent) == "function"
+    then
+        local hooked = pcall(hooksecurefunc, frame, "RegisterEvent", function(hookedFrame, eventName)
+            if not Runtime.enabled or setting("loot_window_mode") ~= "compact" then return end
+            for _, protectedEvent in ipairs(NATIVE_LOOT_EVENTS) do
+                if eventName == protectedEvent
+                    and Runtime:IsFrameEventRegistered(hookedFrame, eventName)
+                    and type(hookedFrame.UnregisterEvent) == "function"
+                then
+                    pcall(hookedFrame.UnregisterEvent, hookedFrame, eventName)
+                    return
+                end
+            end
+        end)
+        if hooked then self.lootRegisterHooks[frame] = true end
+    end
+
+    if self.lootFrameState and self.lootFrameState.frame ~= frame then
+        self:RestoreNativeLootEvents()
+    end
+    local state = self.lootFrameState
+    if not state then
+        state = { frame = frame, registered = {} }
+        self.lootFrameState = state
+    end
+    for _, eventName in ipairs(NATIVE_LOOT_EVENTS) do
+        local registered = self:IsFrameEventRegistered(frame, eventName)
+        if registered then state.registered[eventName] = true end
+        if registered and type(frame.UnregisterEvent) == "function" then
+            pcall(frame.UnregisterEvent, frame, eventName)
+        end
     end
 end
 
@@ -1473,7 +1551,14 @@ function Runtime:ShowNativeLootIfNeeded()
     local frame = _G.LootFrame
     if not frame or type(frame.Show) ~= "function" or type(GetNumLootItems) ~= "function" then return end
     local ok, count = pcall(GetNumLootItems)
-    if ok and (tonumber(count) or 0) > 0 then frame:Show() end
+    if not ok or (tonumber(count) or 0) <= 0 then return end
+    if type(frame.Open) == "function" then
+        pcall(frame.Open, frame)
+    elseif type(_G.LootFrame_Show) == "function" then
+        pcall(_G.LootFrame_Show, frame)
+    else
+        frame:Show()
+    end
 end
 
 function Runtime:ApplyModes()
@@ -1481,7 +1566,7 @@ function Runtime:ApplyModes()
     local windowMode = setting("loot_window_mode")
     local alertMode = setting("loot_alert_mode")
     self:SetAlertSuppressed(alertMode ~= "blizzard")
-    self:EnsureLootFrameHook()
+    self:SetNativeLootSuppressed(windowMode == "compact")
     if windowMode ~= "compact" then
         if self.customLootActive then
             self.customLootActive = false
@@ -1491,9 +1576,6 @@ function Runtime:ApplyModes()
             end
         end
         if self.lootSessionActive then self:ShowNativeLootIfNeeded() end
-    else
-        self:HideNativeLootFrame()
-        if self.lootSessionActive then self:QueueNativeLootHide() end
     end
 
     if setting("boss_alert_mode") == "blizzard" then
@@ -1507,17 +1589,7 @@ function Runtime:ApplyVisualSettings()
     if self.lootWindow then
         local minimal = useMinimalStyle()
         self.lootWindow:SetScale(clamp(setting("loot_scale_percent"), 70, 140, 100) / 100)
-        if self.previewMode or minimal then
-            if type(self.lootWindow.SetBackdrop) == "function" then
-                self.lootWindow:SetBackdrop(nil)
-            end
-        else
-            Addon.Widgets:ApplyStandardGoldFrame(
-                self.lootWindow,
-                Addon.Assets.windowBackground
-            )
-            self.lootWindow:SetBackdropColor(1, 1, 1, getBackgroundOpacity())
-        end
+        self:ApplyLootWindowStyle()
         self.lootWindow.takeAll:ClearAllPoints()
         self.lootWindow.close:ClearAllPoints()
         if minimal then
@@ -1544,9 +1616,6 @@ end
 
 function Runtime:OnLootOpened(autoLoot)
     self.lootSessionActive = true
-    if setting("loot_window_mode") == "compact" then
-        self:QueueNativeLootHide()
-    end
     if setting("loot_window_mode") ~= "compact" or autoLoot == true then
         self.customLootActive = false
         if self.lootWindow and not self.previewMode then
@@ -1558,12 +1627,10 @@ function Runtime:OnLootOpened(autoLoot)
     self.customLootActive = true
     self.previewMode = false
     self:RefreshLootWindow()
-    self:QueueNativeLootHide()
 end
 
 function Runtime:OnLootClosed()
     self.lootSessionActive = false
-    self.nativeHideGeneration = self.nativeHideGeneration + 1
     self.customLootActive = false
     if self.lootWindow and not self.previewMode
         and not self:PlayFrameAnimation(self.lootWindow, "out", nil, true)
@@ -1668,7 +1735,11 @@ function Runtime:GetSettingValue(settingKey)
     then
         return nil
     end
-    return Addon.FeatureRegistry:GetState(FEATURE_ID).settings[settingKey]
+    local value = Addon.FeatureRegistry:GetState(FEATURE_ID).settings[settingKey]
+    if settingKey == "visual_style" and value ~= nil then
+        return getVisualStyle()
+    end
+    return value
 end
 
 function Runtime:SetSettingValue(settingKey, value)
@@ -1809,7 +1880,6 @@ function Runtime:OnDisable()
     self.enabled = false
     self.refreshGeneration = self.refreshGeneration + 1
     self.toastGeneration = self.toastGeneration + 1
-    self.nativeHideGeneration = self.nativeHideGeneration + 1
     local hadCustomLoot = self.customLootActive
     local hadLootSession = self.lootSessionActive
     self.customLootActive = false
@@ -1818,6 +1888,7 @@ function Runtime:OnDisable()
     self.toasts = {}
     self.recent = {}
     self:RestoreAlertEvents()
+    self:RestoreNativeLootEvents()
     self:RestoreBossBanner()
     self:ResetToastAnimations(false)
     if self.lootWindow then

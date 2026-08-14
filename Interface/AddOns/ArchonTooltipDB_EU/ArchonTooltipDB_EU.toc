@@ -7,7 +7,7 @@
 ## X-Database-Key: EU
 ## X-Database-Name: Europe
 ## X-Game-Version-ID: warcraft-live
-## X-Updated-At: 2026-08-02T08:47:26.000Z
+## X-Updated-At: 2026-08-10T06:43:29.000Z
 ## IconTexture: Interface/AddOns/ArchonTooltip/Media/logo-32-circle.tga
 ## Category: Archon
 

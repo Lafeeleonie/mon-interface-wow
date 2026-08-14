@@ -316,7 +316,9 @@ function Logic:BuildSnapshot(memory, existingSnapshot)
         return existingSnapshot
     end
     memory = type(memory) == "table" and memory or {}
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
     local rows = {
         buildCourtFavorRow(memory),
         buildRunestoneRow(),

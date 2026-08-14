@@ -1,7 +1,6 @@
 local E, L, V, P, G = unpack(ElvUI)
 local NP = E:GetModule('NamePlates')
 local UF = E:GetModule('UnitFrames')
-local LSM = E.Libs.LSM
 
 local unpack = unpack
 local strfind = strfind
@@ -9,60 +8,76 @@ local strfind = strfind
 local CreateFrame = CreateFrame
 
 function NP:Construct_Auras(nameplate)
-	local Auras = CreateFrame('Frame', '$parentAuras', nameplate)
-	Auras:Size(1)
-	Auras.size = 27
-	Auras.num = 4
-	Auras.spacing = E.Border * 2
-	Auras.onlyShowPlayer = false
-	Auras.disableMouse = true
-	Auras.isNameplate = true
-	Auras.initialAnchor = 'BOTTOMLEFT'
-	Auras.growthX = 'RIGHT'
-	Auras.growthY = 'UP'
-	Auras.type = 'auras'
-	Auras.forceShow = nameplate == NP.TestFrame
-	Auras.stacks = {}
-	Auras.rows = {}
+	local Auras, Buffs, Debuffs
 
-	local Buffs = CreateFrame('Frame', '$parentBuffs', nameplate)
-	Buffs:Size(1)
-	Buffs.size = 27
-	Buffs.num = 4
-	Buffs.spacing = E.Border * 2
-	Buffs.onlyShowPlayer = false
-	Buffs.disableMouse = true
-	Buffs.isNameplate = true
-	Buffs.initialAnchor = 'BOTTOMLEFT'
-	Buffs.growthX = 'RIGHT'
-	Buffs.growthY = 'UP'
-	Buffs.type = 'buffs'
-	Buffs.forceShow = nameplate == NP.TestFrame
-	Buffs.stacks = {}
-	Buffs.rows = {}
+	if E.Retail then
+		Auras = E:Auras_Create(nameplate, 'Auras')
+	else
+		Auras = CreateFrame('Frame', '$parentAuras', nameplate)
 
-	local Debuffs = CreateFrame('Frame', '$parentDebuffs', nameplate)
-	Debuffs:Size(1)
-	Debuffs.size = 27
-	Debuffs.num = 4
-	Debuffs.spacing = E.Border * 2
-	Debuffs.onlyShowPlayer = false
-	Debuffs.disableMouse = true
-	Debuffs.isNameplate = true
-	Debuffs.initialAnchor = 'BOTTOMLEFT'
-	Debuffs.growthX = 'RIGHT'
-	Debuffs.growthY = 'UP'
-	Debuffs.type = 'debuffs'
-	Debuffs.forceShow = nameplate == NP.TestFrame
-	Debuffs.stacks = {}
-	Debuffs.rows = {}
+		Auras:Size(1)
+		Auras.size = 27
+		Auras.num = 4
+		Auras.spacing = E.Border * 2
+		Auras.onlyShowPlayer = false
+		Auras.disableMouse = true
+		Auras.isNameplate = true
+		Auras.initialAnchor = 'BOTTOMLEFT'
+		Auras.growthX = 'RIGHT'
+		Auras.growthY = 'UP'
+		Auras.type = 'auras'
+		Auras.forceShow = nameplate == NP.TestFrame
+		Auras.stacks = {}
+		Auras.rows = {}
+	end
+
+	if E.Retail then
+		Buffs = E:Auras_Create(nameplate, 'Buffs')
+	else
+		Buffs = CreateFrame('Frame', '$parentBuffs', nameplate)
+
+		Buffs:Size(1)
+		Buffs.size = 27
+		Buffs.num = 4
+		Buffs.spacing = E.Border * 2
+		Buffs.onlyShowPlayer = false
+		Buffs.disableMouse = true
+		Buffs.isNameplate = true
+		Buffs.initialAnchor = 'BOTTOMLEFT'
+		Buffs.growthX = 'RIGHT'
+		Buffs.growthY = 'UP'
+		Buffs.type = 'buffs'
+		Buffs.forceShow = nameplate == NP.TestFrame
+		Buffs.stacks = {}
+		Buffs.rows = {}
+	end
+
+	if E.Retail then
+		Debuffs = E:Auras_Create(nameplate, 'Debuffs')
+	else
+		Debuffs = CreateFrame('Frame', '$parentDebuffs', nameplate)
+
+		Debuffs:Size(1)
+		Debuffs.size = 27
+		Debuffs.num = 4
+		Debuffs.spacing = E.Border * 2
+		Debuffs.onlyShowPlayer = false
+		Debuffs.disableMouse = true
+		Debuffs.isNameplate = true
+		Debuffs.initialAnchor = 'BOTTOMLEFT'
+		Debuffs.growthX = 'RIGHT'
+		Debuffs.growthY = 'UP'
+		Debuffs.type = 'debuffs'
+		Debuffs.forceShow = nameplate == NP.TestFrame
+		Debuffs.stacks = {}
+		Debuffs.rows = {}
+	end
 
 	Auras.PreUpdate = UF.PreUpdateAura
 	Auras.PreSetPosition = UF.SortAuras
 	Auras.SetPosition = UF.SetPosition
 	Auras.PostCreateButton = NP.Construct_AuraIcon
 	Auras.PostUpdateButton = UF.PostUpdateAura
-	Auras.GetBlizzardAuras = NP.GetBlizzardCrowdControl
 	Auras.CustomFilter = NP.AuraFilter
 
 	Buffs.PreUpdate = UF.PreUpdateAura
@@ -70,7 +85,6 @@ function NP:Construct_Auras(nameplate)
 	Buffs.SetPosition = UF.SetPosition
 	Buffs.PostCreateButton = NP.Construct_AuraIcon
 	Buffs.PostUpdateButton = UF.PostUpdateAura
-	Buffs.GetBlizzardAuras = NP.GetBlizzardBuffs
 	Buffs.CustomFilter = NP.AuraFilter
 
 	Debuffs.PreUpdate = UF.PreUpdateAura
@@ -78,7 +92,6 @@ function NP:Construct_Auras(nameplate)
 	Debuffs.SetPosition = UF.SetPosition
 	Debuffs.PostCreateButton = NP.Construct_AuraIcon
 	Debuffs.PostUpdateButton = UF.PostUpdateAura
-	Debuffs.GetBlizzardAuras = NP.GetBlizzardDebuffs
 	Debuffs.CustomFilter = NP.AuraFilter
 
 	nameplate.Auras_, nameplate.Buffs_, nameplate.Debuffs_ = Auras, Buffs, Debuffs
@@ -102,15 +115,27 @@ function NP:Construct_AuraIcon(button)
 
 	button.Cooldown:SetAllPoints(button.Icon)
 
-	E:RegisterCooldown(button.Cooldown, 'nameplates')
-
 	local auras = button:GetParent()
-	if auras and auras.type then
-		local db = NP:PlateDB(auras.__owner)
-		button.db = db[auras.type]
-	end
+	local nameplate = auras:GetParent()
+
+	local db = NP:PlateDB(nameplate)
+	button.db = db[auras.type]
+
+	E:RegisterCooldown(button.Cooldown, 'nameplates', nameplate.frameType, auras.type)
 
 	NP:UpdateAuraSettings(button)
+end
+
+function NP:Configure_UnitAuras(nameplate)
+	E:Auras_SetUnit(nameplate.Auras_, nameplate.unit)
+	E:Auras_SetUnit(nameplate.Buffs_, nameplate.unit)
+	E:Auras_SetUnit(nameplate.Debuffs_, nameplate.unit)
+end
+
+function NP:Configure_AllAuras(nameplate)
+	E:Auras_UpdateButtons(nameplate.Auras_)
+	E:Auras_UpdateButtons(nameplate.Buffs_)
+	E:Auras_UpdateButtons(nameplate.Debuffs_)
 end
 
 function NP:Configure_Auras(nameplate, which)
@@ -138,31 +163,54 @@ function NP:Configure_Auras(nameplate, which)
 	auras.db = db -- for auraSort
 
 	if which == 'Auras' then -- this wont actually use helpful for blizzard auras its just to stop it from trying debuffs too
-		auras.filter = (NP.db.useBlizzardAuras and 'HELPFUL') or db.filter or 'HARMFUL'
+		auras.filter = db.filter or 'HARMFUL'
+	elseif E.Retail then
+		auras.filter = (which == 'Buffs' and 'HELPFUL') or 'HARMFUL'
 	end
 
-	local index = 1
-	while auras[index] do
-		local button = auras[index]
-		if button then
-			button.db = db
-			NP:UpdateAuraSettings(button)
-			button:SetBackdropBorderColor(unpack(E.media.bordercolor))
+	if E.Retail then
+		auras.noMouse = true
+		auras.keepSizeRatio = db.keepSizeRatio
+		auras.maxFrameCount = auras.numAuras
+		auras.sortMethod = E.AuraContainerSortMethod[db.sortMethod]
+		auras.nameplateType = nameplate.frameType
+		auras.maxDuration = (db.maxDuration and db.maxDuration > 0) and db.maxDuration or nil
+		auras.countPosition, auras.countXOffset, auras.countYOffset = db.countPosition, db.countXOffset, db.countYOffset
+		auras.countFont, auras.countFontSize, auras.countFontOutline = db.countFont, db.countFontSize, db.countFontOutline
+
+		auras.filters.please = auras.filter..'|PLAYER'
+	--	UF:UpdateFilters(auras) -- attach the objects
+	--	UF:GroupFilters(auras, auras.filter) -- build the groups
+
+		auras.allowList = db.useAllowlist and E:Auras_GetFilter(E.global.unitframe.aurafilters, db.allowList or 'Whitelist') or nil
+		auras.blockList = db.useBlocklist and E:Auras_GetFilter(E.global.unitframe.aurafilters, db.blockList or 'Blacklist') or nil
+		auras.candidateFilters = E:Auras_CanidateFilters(auras.allowList, auras.blockList, auras.maxDuration)
+
+		E:Auras_SetContainer(auras)
+		E:Auras_SetLineSize(auras)
+	else
+		local index = 1
+		while auras[index] do
+			local button = auras[index]
+			if button then
+				button.db = db
+				NP:UpdateAuraSettings(button)
+				button:SetBackdropBorderColor(unpack(E.media.bordercolor))
+			end
+
+			index = index + 1
 		end
 
-		index = index + 1
+		auras:Size(db.numAuras * db.size + ((db.numAuras - 1) * db.spacing), 1)
 	end
 
 	auras:SetFrameLevel(7)
 	auras:ClearAllPoints()
 	auras:Point(auras.initialAnchor, auras.attachTo, auras.anchorPoint, auras.xOffset, auras.yOffset)
-	auras:Size(db.numAuras * db.size + ((db.numAuras - 1) * db.spacing), 1)
 end
 
 function NP:Update_Auras(nameplate)
 	local db = NP:PlateDB(nameplate)
-
-	nameplate.usingBlizzardAuras = NP.db.useBlizzardAuras
 
 	if db.auras.enable or db.debuffs.enable or db.buffs.enable then
 		if not nameplate:IsElementEnabled('Auras') then
@@ -172,6 +220,12 @@ function NP:Update_Auras(nameplate)
 		nameplate.Auras_:ClearAllPoints()
 		nameplate.Buffs_:ClearAllPoints()
 		nameplate.Debuffs_:ClearAllPoints()
+
+		if E.Retail then
+			nameplate.Auras_:SetEnabled(db.auras.enable)
+			nameplate.Debuffs_:SetEnabled(db.debuffs.enable)
+			nameplate.Buffs_:SetEnabled(db.buffs.enable)
+		end
 
 		if db.auras.enable then
 			nameplate.Auras = nameplate.Auras_
@@ -210,7 +264,7 @@ function NP:UpdateAuraSettings(button)
 		if button.Count then
 			local point = db.countPosition or 'CENTER'
 			button.Count:SetJustifyH(strfind(point, 'RIGHT') and 'RIGHT' or 'LEFT')
-			button.Count:FontTemplate(LSM:Fetch('font', db.countFont), db.countFontSize, db.countFontOutline)
+			button.Count:FontTemplate(db.countFont, db.countFontSize, db.countFontOutline)
 			button.Count:ClearAllPoints()
 			button.Count:Point(point, db.countXOffset, db.countYOffset)
 		end
@@ -218,7 +272,7 @@ function NP:UpdateAuraSettings(button)
 		if button.Text then
 			local point = db.sourceText.position or 'TOP'
 			button.Text:SetJustifyH(strfind(point, 'RIGHT') and 'RIGHT' or 'LEFT')
-			button.Text:FontTemplate(LSM:Fetch('font', db.sourceText.font), db.sourceText.fontSize, db.sourceText.fontOutline)
+			button.Text:FontTemplate(db.sourceText.font, db.sourceText.fontSize, db.sourceText.fontOutline)
 			button.Text:ClearAllPoints()
 			button.Text:Point(point or 'TOP', db.sourceText.xOffset, db.sourceText.yOffset)
 		end

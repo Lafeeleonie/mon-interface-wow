@@ -1,5 +1,5 @@
-## Interface: 11508, 20505, 50503, 120001, 120005, 120007
-## Version: v1.6.2
+## Interface: 11508, 20505, 50503, 120005, 120007, 120100
+## Version: v1.6.3
 ## Title: Account Played
 ## Notes: get account /played and sort by class (/aplayed show OR minimap button)
 ## Author: Jeremy-Gstein
@@ -19,3 +19,4 @@ AccountPlayed.lua
 MinimapButton.lua
 Settings.lua
 API.lua
+

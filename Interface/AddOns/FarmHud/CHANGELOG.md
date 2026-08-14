@@ -1,6 +1,6 @@
 # FarmHud
 
-## [10.1.13-release](https://github.com/HizurosWoWAddOns/FarmHud/tree/10.1.13-release) (2026-06-19)
-[Full Changelog](https://github.com/HizurosWoWAddOns/FarmHud/commits/10.1.13-release) [Previous Releases](https://github.com/HizurosWoWAddOns/FarmHud/releases)
+## [1.1.14-release](https://github.com/HizurosWoWAddOns/FarmHud/tree/1.1.14-release) (2026-08-13)
+[Full Changelog](https://github.com/HizurosWoWAddOns/FarmHud/commits/1.1.14-release) [Previous Releases](https://github.com/HizurosWoWAddOns/FarmHud/releases)
 
-- Fix typo in option panel table  
+- Update toc file  

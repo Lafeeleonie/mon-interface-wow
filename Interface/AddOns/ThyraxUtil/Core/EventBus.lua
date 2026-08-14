@@ -5,9 +5,9 @@ local EventBus = ns.EventBus
 
 local registeredEvents = {}
 
--- The actual WoW event frame — owned by ThyraxUtil (core addon, NOT tainted).
+-- The actual WoW event frame -- owned by ThyraxUtil (core addon, NOT tainted).
 -- Dependent addons (like ThyraxUtil_InterruptTracker) cannot create their own
--- frames and call RegisterEvent on them in WoW 12.0 — they are permanently
+-- frames and call RegisterEvent on them in WoW 12.0 -- they are permanently
 -- tainted. ALL event registration must go through this core-owned frame.
 local eventFrame = CreateFrame("Frame")
 

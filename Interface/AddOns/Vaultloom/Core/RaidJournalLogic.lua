@@ -37,9 +37,19 @@ function Logic:IsDifficultyKey(key)
     return DATA.difficultyIDs[key] ~= nil
 end
 
+function Logic:GetContentType(instanceID, raidKey)
+    local mappings = type(DATA.instanceContentTypes) == "table" and DATA.instanceContentTypes or {}
+    local byInstanceID = type(mappings.byInstanceID) == "table" and mappings.byInstanceID or {}
+    local byKey = type(mappings.byKey) == "table" and mappings.byKey or {}
+    local contentType = byInstanceID[number(instanceID)] or byKey[self:NormalizeKey(raidKey)] or "raid"
+    if type(contentType) == "table" then contentType = contentType.key end
+    return DATA.contentTypes[contentType] and contentType or "raid"
+end
+
 function Logic:IsSnapshotValid(snapshot, currentTime)
     currentTime = number(currentTime) or now()
-    return type(snapshot) == "table" and (number(snapshot.resetAt) or 0) > currentTime
+    return type(snapshot) == "table"
+        and Addon.WoWApi:GetResetState(snapshot.resetAt, currentTime) ~= Addon.WoWApi.RESET_EXPIRED
 end
 
 local function fallbackSnapshot(resetAt, currentTime, reason)
@@ -50,6 +60,7 @@ local function fallbackSnapshot(resetAt, currentTime, reason)
             name = string.format("%s %d", L.WISHLIST_SOURCE_RAID or L.SCREEN_RAIDS or "Raid", index),
             description = L.RAID_JOURNAL_UNAVAILABLE,
             icon = definition.icon,
+            contentType = definition.contentType or "raid",
             bosses = {},
         }
     end
@@ -119,6 +130,15 @@ local function oldRaidByKey(existing)
     return result
 end
 
+local function oldRaidByInstanceID(existing)
+    local result = {}
+    for _, raid in ipairs(type(existing) == "table" and existing.raids or {}) do
+        local instanceID = number(type(raid) == "table" and raid.instanceID)
+        if instanceID then result[instanceID] = raid end
+    end
+    return result
+end
+
 local function oldBossByKey(raid)
     local result = {}
     for _, boss in ipairs(type(raid) == "table" and raid.bosses or {}) do
@@ -127,77 +147,331 @@ local function oldBossByKey(raid)
     return result
 end
 
+local function getInstanceInfo(instanceID)
+    if type(EJ_GetInstanceInfo) ~= "function" then return nil end
+    if type(EJ_SelectInstance) == "function" then pcall(EJ_SelectInstance, instanceID) end
+    local ok, name, description, background, buttonImage1, _, buttonImage2, _, _, _, mapID =
+        pcall(EJ_GetInstanceInfo, instanceID)
+    if not ok or type(name) ~= "string" or name == "" then return nil end
+    return {
+        instanceID = number(instanceID),
+        name = name,
+        description = type(description) == "string" and description or "",
+        icon = buttonImage1 or buttonImage2 or background,
+        mapID = number(mapID),
+    }
+end
+
+local function getJournalCatalog()
+    local catalog = {}
+    for _, instanceID in ipairs(DATA.journalInstanceIDs or {}) do
+        local info = getInstanceInfo(instanceID)
+        if info then catalog[#catalog + 1] = info end
+    end
+    if #catalog > 0 then return catalog, true end
+
+    if type(EJ_GetInstanceByIndex) ~= "function" then return catalog, false end
+    local index = 1
+    while true do
+        local ok, instanceID, name, description = pcall(EJ_GetInstanceByIndex, index, true)
+        if not ok or not instanceID then break end
+        local info = getInstanceInfo(instanceID) or {
+            instanceID = number(instanceID),
+            name = name,
+            description = type(description) == "string" and description or "",
+        }
+        if type(info.name) == "string" and info.name ~= "" then catalog[#catalog + 1] = info end
+        index = index + 1
+    end
+    return catalog, false
+end
+
+local function getDifficultyValidity()
+    if type(EJ_IsValidInstanceDifficulty) ~= "function" then return nil end
+    local result, observed = {}, false
+    for difficultyKey, difficultyID in pairs(DATA.difficultyIDs or {}) do
+        if type(EJ_SetDifficulty) == "function" then pcall(EJ_SetDifficulty, difficultyID) end
+        local ok, valid = pcall(EJ_IsValidInstanceDifficulty, difficultyID)
+        if ok then
+            result[difficultyKey] = valid == true
+            observed = true
+        end
+    end
+    return observed and result or nil
+end
+
+local function scanEncounterCatalog(instanceID, preferredDifficultyKey, availableDifficulties)
+    local keys, seen = {}, {}
+    local function add(key)
+        if DATA.difficultyIDs[key] and not seen[key] then
+            seen[key] = true
+            keys[#keys + 1] = key
+        end
+    end
+    add(preferredDifficultyKey)
+    add("normal")
+    add("lfr")
+    add("heroic")
+    add("mythic")
+
+    for _, difficultyKey in ipairs(keys) do
+        if not availableDifficulties or availableDifficulties[difficultyKey] ~= false then
+            if type(EJ_SetDifficulty) == "function" then
+                pcall(EJ_SetDifficulty, DATA.difficultyIDs[difficultyKey])
+            end
+            local encounters, index = {}, 1
+            while true do
+                local ok, bossName, bossDescription, encounterID, _, _, _, dungeonEncounterID =
+                    pcall(EJ_GetEncounterInfoByIndex, index, instanceID)
+                if not ok or not bossName then break end
+                encounters[#encounters + 1] = {
+                    name = bossName,
+                    description = type(bossDescription) == "string" and bossDescription or "",
+                    encounterID = number(encounterID),
+                    dungeonEncounterID = number(dungeonEncounterID),
+                }
+                index = index + 1
+            end
+            if #encounters > 0 then return encounters end
+        end
+    end
+    return {}
+end
+
+local function exactEncounterCompletion(mapID, dungeonEncounterID, difficultyID)
+    local api = type(C_RaidLocks) == "table" and C_RaidLocks.IsEncounterComplete or nil
+    if type(api) ~= "function" or not number(mapID) or not number(dungeonEncounterID) then
+        return false, false
+    end
+    local ok, completed = pcall(api, mapID, dungeonEncounterID, difficultyID)
+    if not ok or type(completed) ~= "boolean" then return false, false end
+    return completed == true, true
+end
+
+local function achievementEarnedThisReset(achievementID)
+    achievementID = number(achievementID)
+    if not achievementID or type(GetAchievementInfo) ~= "function" then return false, false end
+
+    local ok, _, _, _, completed, month, day, year, _, _, _, _, isGuild, wasEarnedByMe =
+        pcall(GetAchievementInfo, achievementID)
+    if not ok then return false, false end
+    if completed ~= true or isGuild == true or wasEarnedByMe ~= true then return false, true end
+
+    month, day, year = number(month), number(day), number(year)
+    if not month or not day or not year or type(time) ~= "function" then return false, true end
+    if year < 100 then year = year + 2000 end
+
+    local earnedDayStart = time({ year = year, month = month, day = day, hour = 0 })
+    local _, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    resetAt = number(resetAt) or 0
+    if not earnedDayStart or resetAt <= 0 then return false, true end
+
+    -- Achievement timestamps contain only a calendar date. Treat the date as
+    -- current when any part of it overlaps the active weekly reset window.
+    local cycleStart = resetAt - (7 * 24 * 60 * 60)
+    return earnedDayStart < resetAt and (earnedDayStart + (24 * 60 * 60)) > cycleStart, true
+end
+
+function Logic:GetBossProgress(definition)
+    definition = type(definition) == "table" and definition or {}
+    local instanceID = number(definition.journalInstanceID)
+    local journalEncounterID = number(definition.journalEncounterID)
+    local instance = instanceID and getInstanceInfo(instanceID) or nil
+    local encounter
+
+    if instanceID and type(EJ_GetEncounterInfoByIndex) == "function" then
+        if type(EJ_SelectInstance) == "function" then pcall(EJ_SelectInstance, instanceID) end
+        for _, difficultyID in ipairs(definition.difficultyIDs or {}) do
+            if type(EJ_SetDifficulty) == "function" then pcall(EJ_SetDifficulty, difficultyID) end
+            local index = 1
+            while true do
+                local ok, name, description, encounterID, _, _, _, dungeonEncounterID =
+                    pcall(EJ_GetEncounterInfoByIndex, index, instanceID)
+                if not ok or not name then break end
+                if not journalEncounterID or number(encounterID) == journalEncounterID then
+                    encounter = {
+                        name = name,
+                        description = type(description) == "string" and description or "",
+                        encounterID = number(encounterID),
+                        dungeonEncounterID = number(dungeonEncounterID),
+                    }
+                    break
+                end
+                index = index + 1
+            end
+            if encounter then break end
+        end
+    end
+
+    local completed, available = false, false
+    for _, difficultyID in ipairs(definition.difficultyIDs or {}) do
+        local exact, exactAvailable = exactEncounterCompletion(
+            instance and instance.mapID,
+            encounter and encounter.dungeonEncounterID,
+            difficultyID
+        )
+        completed = completed or exact
+        available = available or exactAvailable
+    end
+
+    local wantedDifficulties = {}
+    for _, difficultyID in ipairs(definition.difficultyIDs or {}) do
+        wantedDifficulties[number(difficultyID)] = true
+    end
+    if type(GetNumSavedInstances) == "function"
+        and type(GetSavedInstanceInfo) == "function"
+        and type(GetSavedInstanceEncounterInfo) == "function"
+    then
+        local okCount, instanceCount = pcall(GetNumSavedInstances)
+        if okCount then
+            available = true
+            for instanceIndex = 1, number(instanceCount) or 0 do
+                local ok, _, _, _, difficultyID, locked, _, _, isRaid, _, _, encounterTotal =
+                    pcall(GetSavedInstanceInfo, instanceIndex)
+                if ok and isRaid == true and locked == true and wantedDifficulties[number(difficultyID)] then
+                    for encounterIndex = 1, number(encounterTotal) or 0 do
+                        local encounterOk, savedName, savedEncounterID, killed =
+                            pcall(GetSavedInstanceEncounterInfo, instanceIndex, encounterIndex)
+                        local matchingID = number(savedEncounterID)
+                        local matchingName = self:NormalizeKey(savedName) == self:NormalizeKey(
+                            (encounter and encounter.name) or definition.fallbackName
+                        )
+                        if encounterOk and (matchingName
+                            or matchingID == journalEncounterID
+                            or matchingID == number(encounter and encounter.dungeonEncounterID))
+                        then
+                            if type(savedName) == "string" and savedName ~= "" then
+                                encounter = encounter or {}
+                                encounter.name = savedName
+                            end
+                            completed = completed or killed == true
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if not completed and definition.achievementID then
+        local achievementCompleted, achievementAvailable = achievementEarnedThisReset(definition.achievementID)
+        completed = completed or achievementCompleted
+        available = available or achievementAvailable
+    end
+
+    local icon
+    if type(EJ_GetCreatureInfo) == "function" and journalEncounterID then
+        local ok, _, _, _, _, creatureIcon = pcall(EJ_GetCreatureInfo, 1, journalEncounterID)
+        if ok then icon = creatureIcon end
+    end
+    return {
+        completed = completed,
+        available = available,
+        name = encounter and encounter.name or definition.fallbackName,
+        description = encounter and encounter.description or "",
+        icon = icon,
+        journalEncounterID = journalEncounterID,
+        dungeonEncounterID = encounter and encounter.dungeonEncounterID or nil,
+    }
+end
+
 function Logic:ScanSnapshot(identity, existing, difficultyKey, isCurrentCharacter, currentTime)
     currentTime = number(currentTime) or now()
     difficultyKey = self:IsDifficultyKey(difficultyKey) and difficultyKey or "normal"
-    local _, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local _, resetAt = Addon.WoWApi:GetWeeklyResetInfo(type(existing) == "table" and existing.resetAt or nil)
     resetAt = number(resetAt) or 0
     local validExisting = self:IsSnapshotValid(existing, currentTime) and existing or nil
     local tierIndex, tierError = findMidnightTier()
-    if not tierIndex or type(EJ_SelectTier) ~= "function" or type(EJ_GetInstanceByIndex) ~= "function"
+    if not tierIndex or type(EJ_SelectTier) ~= "function"
         or type(EJ_GetEncounterInfoByIndex) ~= "function"
     then
         return validExisting or fallbackSnapshot(resetAt, currentTime, tierError or "api-unavailable"), false, tierError
     end
     pcall(EJ_SelectTier, tierIndex)
-    local difficultyID = DATA.difficultyIDs[difficultyKey]
-    local lockouts, lockoutsAvailable = readLockouts(difficultyID, isCurrentCharacter, function(value)
-        return self:NormalizeKey(value)
-    end)
+    local lockoutsByDifficulty, lockoutsAvailableByDifficulty = {}, {}
+    for key, difficultyID in pairs(DATA.difficultyIDs or {}) do
+        lockoutsByDifficulty[key], lockoutsAvailableByDifficulty[key] = readLockouts(
+            difficultyID,
+            isCurrentCharacter,
+            function(value) return self:NormalizeKey(value) end
+        )
+    end
     local previousRaids = oldRaidByKey(validExisting)
+    local previousRaidsByInstanceID = oldRaidByInstanceID(validExisting)
     local raids = {}
-    local instanceIndex = 1
-    while true do
-        local ok, instanceID, name, description = pcall(EJ_GetInstanceByIndex, instanceIndex, true)
-        if not ok or not instanceID then break end
-        if type(name) == "string" and name ~= "" then
+    local catalog, explicitCatalog = getJournalCatalog()
+    local seenInstanceIDs = {}
+    for _, instance in ipairs(catalog) do
+        local instanceID = number(instance.instanceID)
+        local name = instance.name
+        if instanceID and type(name) == "string" and name ~= "" then
+            seenInstanceIDs[instanceID] = true
             local raidKey = self:NormalizeKey(name)
-            local previousRaid = previousRaids[raidKey]
+            local previousRaid = previousRaids[raidKey] or previousRaidsByInstanceID[instanceID]
             local previousBosses = oldBossByKey(previousRaid)
             local raid = {
                 key = raidKey,
-                instanceID = number(instanceID),
+                instanceID = instanceID,
                 tierIndex = tierIndex,
                 name = name,
-                description = type(description) == "string" and description or "",
+                description = instance.description,
+                contentType = self:GetContentType(instanceID, raidKey),
+                icon = instance.icon,
+                mapID = instance.mapID,
                 bosses = {},
             }
             if type(EJ_SelectInstance) == "function" then pcall(EJ_SelectInstance, instanceID) end
-            if type(EJ_SetDifficulty) == "function" then pcall(EJ_SetDifficulty, difficultyID) end
-            if type(EJ_GetInstanceInfo) == "function" then
-                local infoOk, _, _, background, buttonImage1, _, buttonImage2 = pcall(EJ_GetInstanceInfo, instanceID)
-                if infoOk then raid.icon = buttonImage1 or buttonImage2 or background end
-            end
-            local encounterIndex = 1
-            while true do
-                local encounterOk, bossName, bossDescription, encounterID = pcall(EJ_GetEncounterInfoByIndex, encounterIndex, instanceID)
-                if not encounterOk or not bossName then break end
+            raid.availableDifficulties = getDifficultyValidity()
+            local encounters = scanEncounterCatalog(instanceID, difficultyKey, raid.availableDifficulties)
+            for _, encounter in ipairs(encounters) do
+                local bossName = encounter.name
                 local bossKey = self:NormalizeKey(bossName)
                 local previousBoss = previousBosses[bossKey]
                 local killedByDifficulty = copy(type(previousBoss) == "table" and previousBoss.killedByDifficulty or {})
-                local observedKilled = lockouts[raidKey] and lockouts[raidKey].kills[bossKey] == true
-                if lockoutsAvailable then
-                    killedByDifficulty[difficultyKey] = observedKilled or killedByDifficulty[difficultyKey] == true
+                for key, difficultyID in pairs(DATA.difficultyIDs or {}) do
+                    local lockouts = lockoutsByDifficulty[key]
+                    local observedKilled = lockouts and lockouts[raidKey]
+                        and lockouts[raidKey].kills[bossKey] == true
+                    local exactKilled, exactAvailable = exactEncounterCompletion(
+                        raid.mapID,
+                        encounter.dungeonEncounterID,
+                        difficultyID
+                    )
+                    if exactAvailable or lockoutsAvailableByDifficulty[key] then
+                        killedByDifficulty[key] = exactKilled or observedKilled
+                            or killedByDifficulty[key] == true
+                    end
                 end
                 local icon
-                if type(EJ_GetCreatureInfo) == "function" and number(encounterID) then
-                    local creatureOk, _, _, _, _, creatureIcon = pcall(EJ_GetCreatureInfo, 1, encounterID)
+                if type(EJ_GetCreatureInfo) == "function" and encounter.encounterID then
+                    local creatureOk, _, _, _, _, creatureIcon = pcall(EJ_GetCreatureInfo, 1, encounter.encounterID)
                     if creatureOk then icon = creatureIcon end
                 end
                 raid.bosses[#raid.bosses + 1] = {
                     key = bossKey,
-                    encounterID = number(encounterID),
+                    encounterID = encounter.encounterID,
+                    dungeonEncounterID = encounter.dungeonEncounterID,
                     name = bossName,
-                    description = type(bossDescription) == "string" and bossDescription or "",
+                    description = encounter.description,
                     icon = icon,
                     killedByDifficulty = killedByDifficulty,
                 }
-                encounterIndex = encounterIndex + 1
             end
             raid.icon = raid.icon or (raid.bosses[1] and raid.bosses[1].icon)
-            if #raid.bosses > 0 then raids[#raids + 1] = raid end
+            if #raid.bosses > 0 then
+                raids[#raids + 1] = raid
+            elseif previousRaid then
+                local preserved = copy(previousRaid)
+                preserved.availableDifficulties = raid.availableDifficulties or preserved.availableDifficulties
+                raids[#raids + 1] = preserved
+            end
         end
-        instanceIndex = instanceIndex + 1
+    end
+    if explicitCatalog then
+        for _, instanceID in ipairs(DATA.journalInstanceIDs or {}) do
+            instanceID = number(instanceID)
+            local previousRaid = instanceID and previousRaidsByInstanceID[instanceID] or nil
+            if previousRaid and not seenInstanceIDs[instanceID] then raids[#raids + 1] = copy(previousRaid) end
+        end
     end
     if #raids == 0 then
         return validExisting or fallbackSnapshot(resetAt, currentTime, "empty-journal"), false, "empty-journal"
@@ -279,9 +553,16 @@ function Logic:BuildView(snapshot, settings, identity, loot, currentTime)
     settings = type(settings) == "table" and settings or {}
     local difficultyKey = self:IsDifficultyKey(settings.difficultyKey) and settings.difficultyKey or "normal"
     local classFilterKey = settings.classFilterKey == "all" and "all" or "player"
-    local raids = copy(snapshot.raids or {})
+    local raids = {}
+    for _, sourceRaid in ipairs(copy(snapshot.raids or {})) do
+        local available = sourceRaid.availableDifficulties
+        if type(available) ~= "table" or available[difficultyKey] ~= false then
+            raids[#raids + 1] = sourceRaid
+        end
+    end
     local selectedRaid = raids[1]
     for _, raid in ipairs(raids) do
+        raid.contentType = self:GetContentType(raid.instanceID, raid.key)
         raid.killedCount = 0
         raid.totalCount = #raid.bosses
         for _, boss in ipairs(raid.bosses or {}) do

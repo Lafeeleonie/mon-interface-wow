@@ -3,9 +3,9 @@ local BL = E:GetModule('Blizzard')
 
 local _G = _G
 local min = min
-local CreateFrame = CreateFrame
 local hooksecurefunc = hooksecurefunc
 
+local CreateFrame = CreateFrame
 local Tracker_Collapse = WatchFrame_Collapse
 local Tracker_Expand = WatchFrame_Expand
 local Tracker = WatchFrame
@@ -42,7 +42,7 @@ end
 
 function BL:ObjectiveTracker_Setup()
 	local holder = CreateFrame('Frame', 'ObjectiveFrameHolder', E.UIParent)
-	holder:Point('TOPRIGHT', E.UIParent, -135, -300)
+	holder:Point('TOPRIGHT', -135, -300)
 	holder:Size(130, 22)
 
 	E:CreateMover(holder, 'ObjectiveFrameMover', L["Objective Frame"], nil, nil, nil, nil, nil, 'general,blizzUIImprovements')

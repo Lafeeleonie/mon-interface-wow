@@ -12,8 +12,8 @@ addon.Core.TestSpells = M
 -- without reading any of them.
 --
 -- READ-ONLY: consumers share these tables. The per-entry fields are part of what the preview
--- shows, so they live with the spell rather than in the module: StartOffset and Cooldown drive
--- the fake swipe, Class drives the alerts class-colour preview, DispelColor the border tint.
+-- shows, so they live with the spell rather than in the module: DispelColor drives the border
+-- tint.
 
 -- Shared sets
 
@@ -30,6 +30,15 @@ M.CrowdControl = {
 M.Defensive = {
 	{ SpellId = 33206 }, -- Pain Suppression
 	{ SpellId = 1022 },  -- Blessing of Protection
+}
+
+---The buffs Blizzard flags as important, i.e. an ally's offensive cooldowns. Preview only, so
+---these stand in for a category the addon never names spell by spell: 12.1 hands it whichever
+---buffs the engine has flagged.
+---@type TestSpell[]
+M.Important = {
+	{ SpellId = 31884 }, -- Avenging Wrath
+	{ SpellId = 1719 },  -- Recklessness
 }
 
 -- Per-module sets
@@ -57,13 +66,13 @@ M.Nameplates = {
 	},
 }
 
----The alert bars carry a class per defensive so the legacy class-colour preview has something
----to colour; the real 12.1 bars can't class colour (UnitClass is secret there).
+---The alert bars colour by category rather than by class: UnitClass is secret, so a real bar
+---could never match a class colour and the preview must not promise one.
 M.Alerts = {
 	Defensive = {
-		{ SpellId = 47788, Class = "PRIEST" },   -- Guardian Spirit
-		{ SpellId = 45438, Class = "MAGE" },     -- Ice Block
-		{ SpellId = 104773, Class = "WARLOCK" }, -- Unending Resolve
+		{ SpellId = 47788 },  -- Guardian Spirit
+		{ SpellId = 45438 },  -- Ice Block
+		{ SpellId = 104773 }, -- Unending Resolve
 	},
 	Important = {
 		190319, -- Combustion
@@ -71,35 +80,6 @@ M.Alerts = {
 		377362, -- Precognition
 	},
 }
-
----The cooldown trackers preview a running swipe, so each entry carries when it started and how
----long it lasts. Predictive entries show the glow and buff countdown before the cooldown commits.
-M.FriendlyCooldowns = {
-	Committed = {
-		{ SpellId = 642,   StartOffset = 60,  Cooldown = 300 }, -- Divine Shield
-		{ SpellId = 33206, StartOffset = 30,  Cooldown = 180 }, -- Pain Suppression
-		{ SpellId = 45438, StartOffset = 120, Cooldown = 240 }, -- Ice Block
-	},
-	Predictive = {
-		{ SpellId = 288613, StartOffset = 5, BuffDuration = 17 }, -- Trueshot (MM Hunter)
-		{ SpellId = 190319, StartOffset = 3, BuffDuration = 15 }, -- Combustion (Fire Mage)
-	},
-}
-
----Inactive entries preview the faded always-show state when that option is enabled.
-M.EnemyCooldowns = {
-	{ SpellId = 45438,   StartOffset = 30, Cooldown = 240 }, -- Ice Block        (defensive)
-	{ SpellId = 642,     StartOffset = 15, Cooldown = 300, Inactive = true }, -- Divine Shield (defensive)
-	{ SpellId = 31224,   StartOffset = 10, Cooldown = 60  }, -- Cloak of Shadows (defensive)
-	{ SpellId = 48792,   StartOffset = 45, Cooldown = 180, Inactive = true }, -- Icebound Fortitude (defensive)
-	{ SpellId = 47585,   StartOffset = 5,  Cooldown = 120 }, -- Dispersion       (defensive)
-	{ SpellId = 22812,   StartOffset = 20, Cooldown = 60  }, -- Barkskin         (defensive)
-	{ SpellId = 871,     StartOffset = 60, Cooldown = 240, Inactive = true }, -- Shield Wall (defensive)
-	{ SpellId = 33206,   StartOffset = 8,  Cooldown = 120 }, -- Pain Suppression (external defensive)
-}
-
----@type TestSpell
-M.Precog = { SpellId = 377360 } -- Precognition
 
 ---Specs whose interrupt cooldowns the enemy kick bar previews - a spell list by proxy, since the
 ---bar draws one icon per spec's kick.
@@ -118,11 +98,18 @@ M.KickSpecIds = {
 ---@param spells table[]|number[] TestSpell entries, or bare spell ids.
 ---@param startSlot number First slot to write (after a kick icon, for the modules that show one).
 ---@param options table Styling and limits:
---- ReverseCooldown/Glow/FontScale passed through to SetSlot;
+--- ReverseCooldown/HideSwipe/HideNumbers/Glow/FontScale passed through to SetSlot;
 --- Color tints every icon; ColorByDispelType tints each with its spell's DispelColor instead;
+--- TextColor tints the countdown and any stand-in count, replacing the global colour-by-time
+--- while it is set;
+--- CenterStackText puts that text centred on each icon in place of the countdown (the icon
+--- containers only, where the live displays can centre a stack count);
 --- ShowTooltips attaches each spell id;
 --- Count caps how many spells are drawn (default all);
---- Stagger staggers durations and start times so the swipes visibly differ (default a flat 15s).
+--- Stagger staggers durations and start times so the swipes visibly differ (default a flat 15s);
+--- BarTexture and Border are passed to a BarSlotContainer's fill and outline (the icon
+--- containers ignore both, drawing their border off Color instead);
+--- SpellName false leaves a bar's fill unlabelled (default on).
 ---@return number nextSlot
 function M:FillContainer(container, spells, startSlot, options)
 	local now = GetTime()
@@ -157,10 +144,19 @@ function M:FillContainer(container, spells, startSlot, options)
 				DurationObject = wowEx:CreateDuration(startTime, duration),
 				Alpha = true,
 				ReverseCooldown = options.ReverseCooldown,
+				HideSwipe = options.HideSwipe,
+				HideNumbers = options.HideNumbers,
 				Glow = options.Glow,
 				Color = color,
+				TextColor = options.TextColor,
+				ChargeText = options.CenterStackText,
+				ChargeTextCenter = options.CenterStackText ~= nil,
 				FontScale = options.FontScale,
 				SpellId = options.ShowTooltips and spellId or nil,
+				-- Only a bar container draws a name; the icon containers ignore both of these.
+				Name = options.SpellName ~= false and C_Spell.GetSpellName(spellId) or nil,
+				BarTexture = options.BarTexture,
+				Border = options.Border,
 			})
 			slot = slot + 1
 		end

@@ -194,6 +194,46 @@ local function ItemClassListsEqual(a, b)
     return true
 end
 
+-- AH frame accessors. Declared here, BEFORE every consumer: ResetAllFilters
+-- (further down) compiles a reference to whatever `GetFilterButton` is in
+-- scope at that point, so defining these below it made that reference resolve
+-- to the global (nil) and the Options Panel "Clear AH Filters" button raised
+-- "attempt to call a nil value".
+--
+-- The dropdown filter state in WoW 12.0 lives on AuctionHouseFrame.SearchBar
+-- .FilterButton. This holds .filters (keyed table), .minLevel, .maxLevel and
+-- a :GetFilters() method. The dump diagnostic (/thyrax ahdump) confirmed this
+-- layout in 12.0.5.
+local function GetFilterButton()
+    local af = _G.AuctionHouseFrame
+    if af and af.SearchBar and af.SearchBar.FilterButton then
+        return af.SearchBar.FilterButton
+    end
+    return nil
+end
+
+-- Browse results panel -- owns the searchContext (only after a Search runs)
+-- and the SetSearchContext / GetSearchContext methods we use to trigger a
+-- refresh after writing our saved filters back into FilterButton.
+local function GetBrowseResultsFrame()
+    local af = _G.AuctionHouseFrame
+    if af and af.BrowseResultsFrame then
+        return af.BrowseResultsFrame
+    end
+    return nil
+end
+
+-- Legacy alias kept for back-compat with older code paths inside this module
+-- that still expect (owner, ctx). New code should use GetFilterButton +
+-- GetBrowseResultsFrame directly.
+local function GetBrowseContext()
+    local brf = GetBrowseResultsFrame()
+    if brf and brf.searchContext then
+        return brf, brf.searchContext
+    end
+    return nil
+end
+
 -- Snapshot a Blizzard-built browse query (or live searchContext) into our
 -- persisted form. We only keep filters, level range, and itemClassFilters;
 -- searchString and sorts intentionally don't persist (per user preference --
@@ -377,40 +417,6 @@ end
 -- ============================================================================
 -- AH integration
 -- ============================================================================
-
--- The dropdown filter state in WoW 12.0 lives on AuctionHouseFrame.SearchBar
--- .FilterButton. This holds .filters (array of enum values), .minLevel,
--- .maxLevel and a :GetFilters() method. The dump diagnostic (/thyrax ahdump)
--- confirmed this layout in 12.0.5.
-local function GetFilterButton()
-    local af = _G.AuctionHouseFrame
-    if af and af.SearchBar and af.SearchBar.FilterButton then
-        return af.SearchBar.FilterButton
-    end
-    return nil
-end
-
--- Browse results panel -- owns the searchContext (only after a Search runs)
--- and the SetSearchContext / GetSearchContext methods we use to trigger a
--- refresh after writing our saved filters back into FilterButton.
-local function GetBrowseResultsFrame()
-    local af = _G.AuctionHouseFrame
-    if af and af.BrowseResultsFrame then
-        return af.BrowseResultsFrame
-    end
-    return nil
-end
-
--- Legacy alias kept for back-compat with older code paths inside this module
--- that still expect (owner, ctx). New code should use GetFilterButton +
--- GetBrowseResultsFrame directly.
-local function GetBrowseContext()
-    local brf = GetBrowseResultsFrame()
-    if brf and brf.searchContext then
-        return brf, brf.searchContext
-    end
-    return nil
-end
 
 -- Build the keyed-table form Blizzard's FilterButton expects.
 -- Per AuctionHouseFilterButtonMixin source, self.filters is { [enum]=bool }.

@@ -238,18 +238,40 @@ function Compat.GetSpellNameByID(spellID)
     return C_Spell.GetSpellName(spellID)
 end
 
+-- WoW 12.1 widened aura secrecy: "all of the UnitAura APIs will now either
+-- return full secrets or nil when called by addons", auras are secret "during
+-- combat, encounters, M+, and PvP matches", and "AuraData structs are now
+-- always fully secret". That makes ANY truthiness test on a field that came out
+-- of an aura struct unsafe -- including the `auraData.spellId or spellID`
+-- defaulting this function used to do.
+--
+-- Presence-only check. Never reads a field, so it can never touch a secret and
+-- is safe to call from every context, including inside a raid encounter.
+function Compat.HasPlayerAura(spellID)
+    local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+    if not ok then return false end
+    return type(auraData) == "table"
+end
+
 function Compat.FindPlayerAuraBySpellID(spellID)
-    local auraData = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
-    if auraData then
-        -- Pass duration / expirationTime through unmolested. Under WoW 12.0
-        -- those fields can be secret numbers, and even a truthiness test (the
-        -- pre-12.0 `or 0` defaulting) is documented as forbidden on secret
-        -- values. Callers must dispatch on type() and Compat.IsNonSecretNumber
-        -- before doing any arithmetic or comparisons on them.
-        return auraData.name, auraData.duration, auraData.expirationTime, auraData.sourceUnit,
-            auraData.spellId or spellID
+    local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+    if not ok or type(auraData) ~= "table" then
+        return nil
     end
-    return nil
+
+    -- Pass duration / expirationTime through unmolested. Those fields can be
+    -- secret numbers, and even a truthiness test is documented as forbidden on
+    -- secret values. Callers must dispatch on type() and Compat.IsNonSecretNumber
+    -- before doing any arithmetic or comparisons on them.
+    -- spellId is resolved here instead of via `or`, which would be a truthiness
+    -- test on a potentially secret number.
+    local resolvedID = auraData.spellId
+    if not Compat.IsNonSecretNumber(resolvedID) then
+        resolvedID = spellID
+    end
+
+    return auraData.name, auraData.duration, auraData.expirationTime, auraData.sourceUnit,
+        resolvedID
 end
 
 function Compat.GetAddOnVersion(name)

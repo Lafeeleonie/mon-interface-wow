@@ -286,9 +286,14 @@ local function buildBountifulRow(character, memory)
     local stickyCompleted = clamp(memory and memory.completed, 0, cap)
     local activeRemaining, source = findBountifulRemaining()
     local completedCount = stickyCompleted
-    if activeRemaining ~= nil then
+    if activeRemaining and activeRemaining > 0 then
         local liveCompleted = clamp(cap - activeRemaining, 0, cap)
-        completedCount = activeRemaining > 0 and liveCompleted or math.max(stickyCompleted, liveCompleted)
+        completedCount = math.max(stickyCompleted, liveCompleted)
+    elseif activeRemaining == 0 then
+        -- No visible Bountiful Delve can also mean that the map/POI data is
+        -- unavailable for the current area. It is not proof that all four
+        -- were completed, so retain only progress observed earlier today.
+        source = source and (source .. ":no-active-signal") or "no-active-signal"
     end
     local tooltipLines = {
         L.PVE_DAILY_BOUNTIFUL_HINT,
@@ -397,6 +402,7 @@ local function buildWantedRow(memory)
         status = status,
         seen = totalToday > 0,
         completed = status == "complete",
+        questID = activeIDs[1] or availableIDs[1],
         activeIDs = activeIDs,
         availableIDs = availableIDs,
         completedIDs = completedIDs,
@@ -415,7 +421,7 @@ local function buildWantedRow(memory)
 end
 
 local function buildDecorDuelRow()
-    local questID = DEFINITIONS.decorDuelQuestID
+    local questID = DEFINITIONS.decorDuel.questID
     local label = L.PVE_DAILY_DECOR_LABEL
     local title = QuestApi:GetTitle(questID, label)
     if QuestApi:IsCompleted(questID) then
@@ -467,12 +473,18 @@ function Logic:BuildSnapshot(memory, existingSnapshot, character)
     memory = type(memory) == "table" and memory or {}
     memory.bountiful = type(memory.bountiful) == "table" and memory.bountiful or {}
     memory.wanted = type(memory.wanted) == "table" and memory.wanted or {}
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetDailyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetDailyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
     local rows = {
         buildBountifulRow(character, memory.bountiful),
         buildWantedRow(memory.wanted),
-        buildDecorDuelRow(),
     }
+    if type(DEFINITIONS.decorDuel) == "table"
+        and DEFINITIONS.decorDuel.enabled == true
+    then
+        rows[#rows + 1] = buildDecorDuelRow()
+    end
     memory.bountiful.completed = rows[1].completedCount
     memory.wanted.lastKnownTotal = rows[2].lastKnownTotal
     memory.wanted.discoveredIDs = rows[2].discoveredIDs

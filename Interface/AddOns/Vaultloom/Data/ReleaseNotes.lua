@@ -1,10 +1,148 @@
 local _, Addon = ...
 
 local L = Addon.L
-local MAX_RELEASE_HISTORY = 10
+local MAX_RELEASE_HISTORY = 12
 
 local function buildReleaseNotes()
     local releases = {
+        {
+            version = "1.1.2-beta",
+            title = L.RELEASE_1_0_3_UPDATE_TITLE,
+            state = L.RELEASE_1_0_3_UPDATE_STATE,
+            subtitle = L.RELEASE_1_0_3_UPDATE_SUBTITLE,
+            newFeatureIDs = {
+                "stat_focus",
+                "midnight_rare_map_pins",
+                "midnight_treasure_map_pins",
+            },
+            newInterfaceIDs = {
+                "compendium_tab",
+                "pve_rares_tab",
+            },
+            sections = {
+                {
+                    title = L.RELEASE_1_0_3_UPDATE_SECTION_HIGHLIGHTS,
+                    items = {
+                        L.RELEASE_1_0_3_UPDATE_STAT_FOCUS,
+                        L.RELEASE_1_0_3_UPDATE_STAT_FOCUS_NOTE,
+                        L.RELEASE_1_0_3_UPDATE_COMPENDIUM,
+                        L.RELEASE_1_0_3_UPDATE_RARES,
+                        L.RELEASE_1_0_3_UPDATE_MAP_PINS,
+                        L.RELEASE_1_0_3_UPDATE_ONE_CLICK,
+                        L.RELEASE_1_0_3_UPDATE_INVENTORY,
+                        L.RELEASE_1_0_3_UPDATE_REMOVE_COORDINATES,
+                    },
+                },
+            },
+        },
+        {
+            version = "1.1.1-beta",
+            title = L.RELEASE_1_0_2_UPDATE_TITLE,
+            state = L.RELEASE_1_0_2_UPDATE_STATE,
+            subtitle = L.RELEASE_1_0_2_UPDATE_SUBTITLE,
+            sections = {
+                {
+                    title = L.RELEASE_1_0_2_UPDATE_SECTION_CHANGES,
+                    items = {
+                        L.RELEASE_1_0_2_UPDATE_QUEST_ICONS,
+                        L.RELEASE_1_0_2_UPDATE_WEEKLIES,
+                        L.RELEASE_1_0_2_UPDATE_PROGRESS,
+                        L.RELEASE_1_0_2_UPDATE_SEASON_TWO,
+                    },
+                },
+            },
+        },
+        {
+            version = "1.1.0-beta",
+            title = L.RELEASE_1_0_10_TITLE,
+            state = L.RELEASE_1_0_10_STATE,
+            subtitle = L.RELEASE_1_0_10_SUBTITLE,
+            sections = {
+                {
+                    title = L.RELEASE_1_0_10_SECTION_CHANGES,
+                    items = {
+                        L.RELEASE_1_0_10_HARDEN_SNAPSHOTS,
+                        L.RELEASE_1_0_10_SMOOTH_GATHERING,
+                        L.RELEASE_1_0_10_COALESCE_PVE,
+                        L.RELEASE_1_0_10_REDUCE_DISPATCH,
+                        L.RELEASE_1_0_10_UPDATE_RETAIL,
+                    },
+                },
+            },
+        },
+        {
+            version = "1.0.9-beta",
+            title = L.RELEASE_1_0_9_TITLE,
+            state = L.RELEASE_1_0_9_STATE,
+            subtitle = L.RELEASE_1_0_9_SUBTITLE,
+            newFeatureIDs = {
+                "one_click_processing",
+            },
+            newInterfaceIDs = {
+                "warband_specialization_art",
+                "housing_tab",
+                "utility_resource_settings",
+            },
+            sections = {
+                {
+                    title = L.RELEASE_1_0_9_SECTION_CHANGES,
+                    items = {
+                        L.RELEASE_1_0_9_IMPROVE_VISUALS,
+                        L.RELEASE_1_0_9_ADD_WARBAND_SPEC_BACKGROUNDS,
+                        L.RELEASE_1_0_9_REWORK_RESOURCES,
+                        L.RELEASE_1_0_9_REWORK_HOUSING,
+                        L.RELEASE_1_0_9_REWORK_PROCESSING,
+                        L.RELEASE_1_0_9_REWORK_PVE,
+                    },
+                },
+            },
+        },
+        {
+            version = "1.0.8-beta",
+            title = L.RELEASE_1_0_8_TITLE,
+            state = L.RELEASE_1_0_8_STATE,
+            subtitle = L.RELEASE_1_0_8_SUBTITLE,
+            newFeatureIDs = {
+                "mailbox",
+            },
+            newInterfaceIDs = {
+                "arsenal_mail",
+                "warband_manual_order",
+            },
+            sections = {
+                {
+                    title = L.RELEASE_1_0_8_SECTION_NEW,
+                    items = {
+                        L.RELEASE_1_0_8_ADD_MAIL_FEATURE,
+                        L.RELEASE_1_0_8_ADD_ARSENAL_MAIL,
+                        L.RELEASE_1_0_8_ADD_MANUAL_ORDER,
+                    },
+                },
+                {
+                    title = L.RELEASE_1_0_8_SECTION_IMPROVED,
+                    items = {
+                        L.RELEASE_1_0_8_IMPROVE_ESCAPE,
+                        L.RELEASE_1_0_8_IMPROVE_SOUNDS,
+                        L.RELEASE_1_0_8_IMPROVE_TEXTS,
+                    },
+                },
+            },
+        },
+        {
+            version = "1.0.7-beta",
+            title = L.RELEASE_1_0_7_TITLE,
+            state = L.RELEASE_1_0_7_STATE,
+            subtitle = L.RELEASE_1_0_7_SUBTITLE,
+            sections = {
+                {
+                    title = L.RELEASE_1_0_7_SECTION_CHANGES,
+                    items = {
+                        L.RELEASE_1_0_7_ADD_VAULT_OVERVIEW,
+                        L.RELEASE_1_0_7_IMPROVE_BUTTONS,
+                    },
+                },
+            },
+        },
         {
             version = "1.0.6-beta",
             title = L.RELEASE_1_0_6_TITLE,
@@ -88,7 +226,7 @@ local function buildReleaseNotes()
             },
         },
         {
-            version = "1.0.2-beta",
+            version = "1.0.2-beta.1",
             title = L.RELEASE_1_0_2_TITLE,
             state = L.RELEASE_1_0_2_STATE,
             subtitle = L.RELEASE_1_0_2_SUBTITLE,

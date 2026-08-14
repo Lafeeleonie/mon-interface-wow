@@ -16,10 +16,6 @@ local REFRESH_EVENTS = {
     "QUEST_TURNED_IN",
 }
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
@@ -39,9 +35,8 @@ function Service:GetSnapshot(characterKey)
         return nil
     end
     Addon.PveWeeklyLogic:ApplyAccountHides(snapshot, getAccountState())
-    local resetAt = tonumber(snapshot.resetAt) or 0
-    if resetAt > 0 and resetAt <= now() then
-        record.snapshots.pveWeekly = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pveWeekly", "expired")
         return nil
     end
     return snapshot
@@ -50,7 +45,7 @@ end
 local function getMemory(record, resetAt)
     local memory = type(record.weeklyQuestMemory) == "table" and record.weeklyQuestMemory or nil
     local savedResetAt = memory and tonumber(memory.resetAt) or 0
-    if not memory or (resetAt > 0 and savedResetAt > 0 and savedResetAt ~= resetAt) then
+    if not memory or Addon.WoWApi:IsResetExpired(savedResetAt) then
         memory = {
             resetAt = resetAt,
             buckets = {},
@@ -79,8 +74,13 @@ local function collectWeekly()
         getAccountState()
     )
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pveWeekly = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "pveWeekly",
+            snapshot,
+            "refresh"
+        )
+        if not stored then snapshot = existing end
     end
     return {
         characterKey = identity.key,

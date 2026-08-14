@@ -21,7 +21,7 @@ if DBM:IsPostMidnight() then
 	disableAuraFrames:SetScript("OnClick", function()
 		DBM.Options.DontShowPrivateAuraFrame = not DBM.Options.DontShowPrivateAuraFrame
 		local auraHandler = DBM.Auras
-		local updateMethod = auraHandler and (auraHandler.UpdateAuraAnchors or auraHandler.UpdatePrivateAuraAnchors)
+		local updateMethod = auraHandler and auraHandler.UpdateAuraAnchors
 		if updateMethod and not updateMethod(auraHandler) then
 			DBM:QueueAuraAnchorUpdate()
 		end
@@ -111,9 +111,7 @@ spamPTArea:CreateCheckButton(L.DontShowPT, true, nil, "DontShowPT2")
 spamPTArea:CreateCheckButton(L.DontShowPTText, true, nil, "DontShowPTText")
 local SPTCDA = spamPTArea:CreateCheckButton(L.DontPlayPTCountdown, true, nil, "DontPlayPTCountdown")
 
-local PTSlider = spamPTArea:CreateSlider(L.PT_Threshold, 1, 10, 1, 300)
-PTSlider:SetPoint("BOTTOMLEFT", SPTCDA, "BOTTOMLEFT", 80, -40)
-PTSlider:SetValue(math.floor(DBM.Options.PTCountThreshold2))
-PTSlider:HookScript("OnValueChanged", function(self)
-	DBM.Options.PTCountThreshold2 = math.floor(self:GetValue())
+local PTSlider = spamPTArea:CreateSlider(L.PT_Threshold, 1, 10, 1, 300, math.floor(DBM.Options.PTCountThreshold2), function(value)
+	DBM.Options.PTCountThreshold2 = math.floor(value)
 end)
+PTSlider:SetPoint("BOTTOMLEFT", SPTCDA, "BOTTOMLEFT", 80, -40)

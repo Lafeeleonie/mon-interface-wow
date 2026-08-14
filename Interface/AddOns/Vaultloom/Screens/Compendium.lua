@@ -51,20 +51,23 @@ local function createItemRow(parent, service)
     row:SetHeight(42)
     row:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Addon.Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     row:SetBackdropColor(0.025, 0.022, 0.020, 0.90)
     row:SetBackdropBorderColor(unpackColor(Theme.colors.goldDim))
 
     row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints(row)
+    row.background:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+    row.background:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
     row.background:SetTexture(Addon.Assets.row)
 
     row.statusLine = row:CreateTexture(nil, "ARTWORK")
-    row.statusLine:SetPoint("TOPLEFT", 4, -4)
-    row.statusLine:SetPoint("BOTTOMLEFT", 4, 4)
+    row.statusLine:SetPoint("TOPLEFT", 4, -6)
+    row.statusLine:SetPoint("BOTTOMLEFT", 4, 6)
     row.statusLine:SetWidth(3)
+    row.statusLineMask = Widgets:AddRoundedStatusLineMask(row, row.statusLine)
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(31, 31)
@@ -79,24 +82,28 @@ local function createItemRow(parent, service)
 
     row.name = Widgets:CreateLabel(row, "GameFontHighlightSmall", "LEFT")
     row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 10, -1)
-    row.name:SetPoint("RIGHT", -92, 0)
+    row.name:SetPoint("RIGHT", -120, 0)
     row.name:SetHeight(18)
 
     row.source = Widgets:CreateLabel(row, "GameFontDisableSmall", "LEFT")
     row.source:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 10, 1)
-    row.source:SetPoint("RIGHT", -92, 0)
+    row.source:SetPoint("RIGHT", -120, 0)
     row.source:SetHeight(15)
 
     row.status = Widgets:CreateLabel(row, "GameFontNormalSmall", "RIGHT")
-    row.status:SetPoint("TOPRIGHT", -9, -7)
     row.status:SetWidth(74)
 
     row.waypoint = CreateFrame("Button", nil, row)
     row.waypoint:SetSize(24, 24)
-    row.waypoint:SetPoint("BOTTOMRIGHT", -8, 3)
+    row.waypoint:SetPoint("RIGHT", -8, 0)
+    row.status:SetPoint("RIGHT", row.waypoint, "LEFT", -8, 0)
     row.waypoint.icon = row.waypoint:CreateTexture(nil, "ARTWORK")
     row.waypoint.icon:SetAllPoints(row.waypoint)
     row.waypoint.icon:SetTexture(Addon.Assets.compendiumWaypointIcon)
+    row.waypoint.iconBorder = row.waypoint:CreateTexture(nil, "OVERLAY")
+    row.waypoint.iconBorder:SetSize(30, 30)
+    row.waypoint.iconBorder:SetPoint("CENTER", row.waypoint.icon, "CENTER", 0, 0)
+    row.waypoint.iconBorder:SetTexture(Addon.Assets.compendiumIconBorder)
     row.waypoint:SetScript("OnClick", function(self)
         if self.ownerRecord then service:SetWaypoint(self.ownerRecord) end
     end)
@@ -142,6 +149,22 @@ local function createPoolLine(parent, service)
     return line
 end
 
+local function layoutItemRowActions(row, hasWaypoint)
+    local contentRight = hasWaypoint and -120 or -92
+    row.name:ClearAllPoints()
+    row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 10, -1)
+    row.name:SetPoint("RIGHT", contentRight, 0)
+    row.source:ClearAllPoints()
+    row.source:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 10, 1)
+    row.source:SetPoint("RIGHT", contentRight, 0)
+    row.status:ClearAllPoints()
+    if hasWaypoint then
+        row.status:SetPoint("RIGHT", row.waypoint, "LEFT", -8, 0)
+    else
+        row.status:SetPoint("RIGHT", -9, 0)
+    end
+end
+
 local function applyRecord(row, record)
     if not record then row.record = nil; row:Hide(); return end
     local info = record.runtime
@@ -154,6 +177,7 @@ local function applyRecord(row, record)
     row.statusLine:SetColorTexture(color[1], color[2], color[3], 0.95)
     row.icon:SetTexture(info.icon or Logic:GetCategoryIcon(record.entry.category))
     local hasWaypoint = Logic:GetWaypoint(record.entry) ~= nil
+    layoutItemRowActions(row, hasWaypoint)
     row.waypoint.ownerRecord = record
     row.waypoint:SetShown(hasWaypoint)
     row:Show()
@@ -218,6 +242,7 @@ local function createScreen(_, host)
         button.icon:SetTexture(Logic:GetCategoryIcon(categoryKey))
         button.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
         button.iconMask = addCircularMask(button, button.icon)
+        button.iconBorder = Widgets:CreateRoundedIconBorder(button, button.icon, 1, Theme.colors.goldDim)
         button.label:ClearAllPoints()
         button.label:SetPoint("LEFT", 43, 0)
         button.label:SetPoint("RIGHT", -46, 0)
@@ -288,8 +313,9 @@ local function createScreen(_, host)
     frame.search:SetPoint("LEFT", frame.statusButtons.unknown, "RIGHT", 6, 0)
     frame.search:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Addon.Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     frame.search:SetBackdropColor(0.025, 0.022, 0.020, 0.94)
     frame.search:SetBackdropBorderColor(unpackColor(Theme.colors.goldDim))
@@ -417,9 +443,14 @@ local function createScreen(_, host)
         for _, categoryKey in ipairs(Logic.CATEGORY_ORDER) do
             local button = self.categoryButtons[categoryKey]
             local stats = view.categoryStats[categoryKey] or {}
+            local active = categoryKey == selected.category
             button.label:SetText(Logic:GetCategoryLabel(categoryKey))
             button.progress:SetText(string.format(L.COMPENDIUM_PROGRESS_FORMAT, stats.collected or 0, stats.total or 0))
-            Widgets:SetButtonActive(button, categoryKey == selected.category)
+            Widgets:SetButtonActive(button, active)
+            local borderColor = active and Theme.colors.gold or Theme.colors.goldDim
+            button.iconBorder:SetBackdropBorderColor(
+                borderColor[1], borderColor[2], borderColor[3], active and 0.96 or 0.78
+            )
         end
         for statusKey, button in pairs(self.statusButtons) do
             Widgets:SetButtonActive(button, statusKey == selected.status)

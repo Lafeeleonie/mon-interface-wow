@@ -96,7 +96,7 @@ function M:CreateTabs(options)
 	-- underline overlays it. Anchored after the tab loop.
 	local baseline = strip:CreateTexture(nil, "OVERLAY")
 	pixel.SetHeight(baseline, 1)
-	GUI.SetSolid(baseline, 1, 1, 1, 0.10)
+	GUI.SetSolid(baseline, 1, 1, 1, vertical and 0.10 or 0.15)
 
 	-- Vertical mode: static right-edge separator line. The bottom edge is anchored to the last
 	-- button after the tab loop (the strip itself extends past it to the parent's bottom).
@@ -116,8 +116,9 @@ function M:CreateTabs(options)
 			btn.Text:SetTextColor(tabTextSelected.r, tabTextSelected.g, tabTextSelected.b, 1)
 			btn.Highlight:Hide()
 
+			if btn.Wash then btn.Wash:Show() end
+
 			if vertical then
-				if btn.Wash then btn.Wash:Show() end
 				if btn.Indicator then btn.Indicator:Show() end
 			else
 				if btn.Accent then btn.Accent:Show() end
@@ -126,8 +127,9 @@ function M:CreateTabs(options)
 			local idle = vertical and tabTextHover or tabTextIdle
 			btn.Text:SetTextColor(idle.r, idle.g, idle.b, 1)
 
+			if btn.Wash then btn.Wash:Hide() end
+
 			if vertical then
-				if btn.Wash then btn.Wash:Hide() end
 				if btn.Indicator then btn.Indicator:Hide() end
 			else
 				if btn.Accent then btn.Accent:Hide() end
@@ -325,6 +327,19 @@ function M:CreateTabs(options)
 			GUI.SetSolid(btn.Highlight, 1, 1, 1, 0.05)
 			btn.Text:SetPoint("CENTER", btn, "CENTER", 0, 0)
 
+			-- A faint plate under every tab: bare labels over the page read as text, not as a
+			-- control, and users were missing the strip entirely.
+			btn.Plate = btn:CreateTexture(nil, "BACKGROUND", nil, 1)
+			btn.Plate:SetAllPoints(btn)
+			GUI.SetSolid(btn.Plate, 1, 1, 1, 0.06)
+
+			-- Selection wash rising from the underline, matching the vertical sidebar's wash, so
+			-- the active tab is marked by more than text color.
+			btn.Wash = btn:CreateTexture(nil, "BACKGROUND", nil, 3)
+			btn.Wash:SetAllPoints(btn)
+			GUI.SetGradientV(btn.Wash, accent.r, accent.g, accent.b, 0.30, accent.r, accent.g, accent.b, 0)
+			btn.Wash:Hide()
+
 			-- Bottom-edge accent underline for selected state; overlays the shared baseline.
 			btn.Accent = btn:CreateTexture(nil, "OVERLAY", nil, 1)
 			pixel.SetHeight(btn.Accent, 2)
@@ -407,6 +422,7 @@ function M:CreateTabs(options)
 
 			-- Scrollbar, visible only when content overflows
 			local scrollBar = CreateFrame("Slider", nil, scrollContainer, GUI.BackdropTemplate)
+			scrollBar:SetOrientation("VERTICAL")
 			scrollBar:SetWidth(10)
 			scrollBar:SetPoint("TOPRIGHT", scrollContainer, "TOPRIGHT", 0, -2)
 			scrollBar:SetPoint("BOTTOMRIGHT", scrollContainer, "BOTTOMRIGHT", 0, 2)
@@ -423,14 +439,14 @@ function M:CreateTabs(options)
 			GUI.SetSolid(thumb, 0.55, 0.55, 0.55, 0.85)
 			scrollBar:SetThumbTexture(thumb)
 
-			-- A vertical slider puts its MINIMUM at the bottom, while scroll offset grows
-			-- downwards, so the two run opposite ways. Everything below converts between them
-			-- rather than letting a drag down scroll the content up.
+			-- A vertical slider's minimum sits at its TOP, exactly like the scroll offset, so the
+			-- two map onto each other directly; Blizzard's own scrollbars feed SetVerticalScroll
+			-- the raw slider value the same way.
 
 			---@param scroll number
 			---@return number
 			local function ScrollToValue(scroll)
-				return maxScroll - math.min(math.max(scroll, 0), maxScroll)
+				return math.min(math.max(scroll, 0), maxScroll)
 			end
 
 			local function UpdateScrollBar()
@@ -452,7 +468,7 @@ function M:CreateTabs(options)
 			end
 
 			scrollBar:SetScript("OnValueChanged", function(_, val)
-				scrollFrame:SetVerticalScroll(maxScroll - val)
+				scrollFrame:SetVerticalScroll(val)
 			end)
 
 			scrollFrame:SetScript("OnScrollRangeChanged", function()

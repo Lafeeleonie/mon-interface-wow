@@ -4,8 +4,8 @@ local L = Addon.L
 local Theme = Addon.Theme
 local Widgets = Addon.Widgets
 local StatusRows = Addon.StatusRows
-local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 local ScrollFrames = Addon.ScrollFrames
+local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 
 local STATUS_COLORS = {
     complete = { 0.34, 0.88, 0.48, 1 },
@@ -45,16 +45,11 @@ local function createScroll(parent, topAnchor, fallbackChildWidth, bottom)
     return scroll, child
 end
 
-local function createHeader(parent, title, subtitle)
+local function createHeader(parent, title)
     parent.title = Widgets:CreateLabel(parent, "GameFontNormalLarge", "LEFT")
     parent.title:SetPoint("TOPLEFT", 16, -16)
     parent.title:SetPoint("TOPRIGHT", -16, -16)
     parent.title:SetText(title)
-    parent.subtitle = Widgets:CreateLabel(parent, "GameFontHighlightSmall", "LEFT")
-    parent.subtitle:SetPoint("TOPLEFT", parent.title, "BOTTOMLEFT", 0, -7)
-    parent.subtitle:SetPoint("TOPRIGHT", -16, 0)
-    parent.subtitle:SetWordWrap(true)
-    parent.subtitle:SetText(subtitle)
 end
 
 local function createSectionHeader(parent, text)
@@ -64,40 +59,90 @@ local function createSectionHeader(parent, text)
     return label
 end
 
-local function createStatCard(parent)
-    local card = Widgets:CreatePanel(parent, "cardInset")
-    card:SetHeight(64)
-    card.label = Widgets:CreateLabel(card, "GameFontDisableSmall", "LEFT")
-    card.label:SetPoint("TOPLEFT", 10, -8)
-    card.label:SetPoint("TOPRIGHT", -10, -8)
-    card.value = Widgets:CreateLabel(card, "GameFontNormalLarge", "LEFT")
-    card.value:SetPoint("TOPLEFT", card.label, "BOTTOMLEFT", 0, -3)
-    card.value:SetPoint("TOPRIGHT", -10, 0)
-    card.meta = Widgets:CreateLabel(card, "GameFontDisableSmall", "LEFT")
-    card.meta:SetPoint("TOPLEFT", card.value, "BOTTOMLEFT", 0, -2)
-    card.meta:SetPoint("TOPRIGHT", -10, 0)
+local function setTooltip(button, title, body)
+    button.tooltipTitle = title
+    button.tooltipBody = body
+    local previousEnter = button:GetScript("OnEnter")
+    local previousLeave = button:GetScript("OnLeave")
+    button:SetScript("OnEnter", function(self)
+        if previousEnter then previousEnter(self) end
+        if not GameTooltip or not self.tooltipTitle then return end
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR_RIGHT")
+        GameTooltip:AddLine(self.tooltipTitle, Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], true)
+        if self.tooltipBody then GameTooltip:AddLine(self.tooltipBody, 0.92, 0.92, 0.92, true) end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        if previousLeave then previousLeave(self) end
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+end
+
+local function setProgressColor(bar, complete)
+    if complete then bar:SetStatusBarColor(0.28, 0.76, 0.42, 0.96)
+    else bar:SetStatusBarColor(0.74, 0.63, 0.28, 0.95) end
+end
+
+local function createNeighborhoodCard(parent, compact)
+    local card = CreateFrame("Button", nil, parent, BACKDROP_TEMPLATE)
+    Widgets:ApplyPanelStyle(card, compact and "cardInset" or "card")
+    card:SetHeight(compact and 72 or 148)
+    card.name = Widgets:CreateLabel(card, compact and "GameFontNormal" or "GameFontNormalLarge", "LEFT")
+    card.name:SetPoint("TOPLEFT", compact and 10 or 14, compact and -9 or -13)
+    card.name:SetPoint("TOPRIGHT", compact and -66 or -100, compact and -9 or -13)
+    card.status = Widgets:CreateLabel(card, "GameFontNormalSmall", "RIGHT")
+    card.status:SetPoint("TOPRIGHT", compact and -9 or -13, compact and -10 or -15)
+    card.status:SetWidth(compact and 58 or 90)
+    card.endeavor = Widgets:CreateLabel(card, "GameFontHighlightSmall", "LEFT")
+    card.endeavor:SetPoint("TOPLEFT", card.name, "BOTTOMLEFT", 0, compact and -4 or -8)
+    card.endeavor:SetPoint("TOPRIGHT", compact and -10 or -14, 0)
+    card.endeavor:SetMaxLines(1)
+    card.progress = Widgets:CreateProgressBar(card)
+    card.progress:SetPoint("TOPLEFT", card.endeavor, "BOTTOMLEFT", 0, compact and -6 or -10)
+    card.progress:SetPoint("TOPRIGHT", compact and -10 or -14, 0)
+    card.progress:SetHeight(compact and 8 or 12)
+    card.progressValue = Widgets:CreateLabel(card, "GameFontDisableSmall", "RIGHT")
+    card.progressValue:SetPoint("TOPRIGHT", card.progress, "BOTTOMRIGHT", 0, compact and -3 or -6)
+    card.level = Widgets:CreateLabel(card, "GameFontDisableSmall", "LEFT")
+    card.level:SetPoint("TOPLEFT", card.progress, "BOTTOMLEFT", 0, compact and -3 or -6)
+    if not compact then
+        card.house = Widgets:CreateLabel(card, "GameFontDisableSmall", "LEFT")
+        card.house:SetPoint("TOPLEFT", card.level, "BOTTOMLEFT", 0, -7)
+        card.house:SetPoint("TOPRIGHT", -14, 0)
+    end
+    card:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], 0.95)
+    end)
+    card:SetScript("OnLeave", function(self)
+        local color = self.selected and Theme.colors.gold or Theme.colors.goldDim
+        self:SetBackdropBorderColor(color[1], color[2], color[3], self.selected and 0.95 or 0.65)
+    end)
+    card:Hide()
     return card
 end
 
-local function applyStatCard(card, entry)
-    entry = type(entry) == "table" and entry or {}
-    card.label:SetText(entry.label or "")
-    card.value:SetText(entry.value or "--")
-    card.meta:SetText(entry.meta or "")
-    card.value:SetTextColor(Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], 1)
-end
-
-local function layoutStatCards(summaryPanel, cards, width)
-    width = tonumber(width) or (summaryPanel.GetWidth and summaryPanel:GetWidth()) or 0
-    local innerWidth = width > 200 and width - 28 or 748
-    local gap = 12
-    local cardWidth = math.max(112, math.floor((innerWidth - (gap * (#cards - 1))) / #cards))
-    for index, card in ipairs(cards) do
-        card:ClearAllPoints()
-        card:SetWidth(cardWidth)
-        if index == 1 then card:SetPoint("TOPLEFT", 14, -44)
-        else card:SetPoint("TOPLEFT", cards[index - 1], "TOPRIGHT", gap, 0) end
-    end
+local function applyNeighborhoodCard(card, entry, selected)
+    if type(entry) ~= "table" then card:Hide(); return end
+    card.entry = entry
+    card.neighborhoodGUID = entry.neighborhoodGUID
+    card.selected = selected == true
+    card.name:SetText(entry.title or L.HOUSING_HOME_NONE)
+    card.endeavor:SetText(entry.endeavorTitle or L.HOUSING_LOADING_SHORT)
+    card.progressValue:SetText(entry.progressValue or "--")
+    card.level:SetText(string.format(L.HOUSING_CARD_LEVEL, entry.levelValue or "--"))
+    if card.house then card.house:SetText(entry.houseName or "") end
+    local statusText = entry.active and L.HOUSING_STATUS_ACTIVE
+        or entry.complete and L.HOUSING_STATUS_COMPLETE
+        or L.HOUSING_STATUS_VIEW
+    card.status:SetText(statusText)
+    local statusColor = entry.active and Theme.colors.gold
+        or entry.complete and STATUS_COLORS.complete or Theme.colors.muted
+    card.status:SetTextColor(statusColor[1], statusColor[2], statusColor[3], 1)
+    Widgets:SetProgress(card.progress, entry.progressRatio or 0, 1)
+    setProgressColor(card.progress, entry.complete == true)
+    local border = selected and Theme.colors.gold or entry.active and Theme.colors.goldDim or Theme.colors.goldDim
+    card:SetBackdropBorderColor(border[1], border[2], border[3], selected and 0.95 or 0.65)
+    card:Show()
 end
 
 local function createTaskRow(parent, previous, service)
@@ -105,8 +150,9 @@ local function createTaskRow(parent, previous, service)
     row:SetHeight(48)
     row:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Addon.Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     row:SetBackdropColor(0.025, 0.022, 0.020, 0.88)
     row:SetBackdropBorderColor(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.55)
@@ -118,12 +164,14 @@ local function createTaskRow(parent, previous, service)
         row:SetPoint("TOPRIGHT", 0, 0)
     end
     row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints(row)
+    row.background:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+    row.background:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
     row.background:SetTexture(Addon.Assets.row)
     row.statusLine = row:CreateTexture(nil, "ARTWORK")
-    row.statusLine:SetPoint("TOPLEFT", 4, -5)
-    row.statusLine:SetPoint("BOTTOMLEFT", 4, 5)
+    row.statusLine:SetPoint("TOPLEFT", 4, -6)
+    row.statusLine:SetPoint("BOTTOMLEFT", 4, 6)
     row.statusLine:SetWidth(3)
+    row.statusLineMask = Widgets:AddRoundedStatusLineMask(row, row.statusLine)
     row.label = Widgets:CreateLabel(row, "GameFontHighlightSmall", "LEFT")
     row.label:SetPoint("TOPLEFT", 14, -7)
     row.label:SetPoint("BOTTOMRIGHT", -104, 7)
@@ -140,7 +188,7 @@ local function createTaskRow(parent, previous, service)
             for _, line in ipairs(self.tooltipLines or {}) do
                 if line and line ~= "" then GameTooltip:AddLine(line, 0.92, 0.92, 0.92, true) end
             end
-            if service:CanToggleTasks() then
+            if self.allowToggle and service:CanToggleTasks() then
                 GameTooltip:AddLine(self.tracked and L.HOUSING_TASK_UNTRACK_HINT or L.HOUSING_TASK_TRACK_HINT, 0.72, 0.72, 0.72, true)
             end
             GameTooltip:Show()
@@ -151,26 +199,148 @@ local function createTaskRow(parent, previous, service)
         if GameTooltip then GameTooltip:Hide() end
     end)
     row:SetScript("OnClick", function(self)
-        if self.taskID ~= nil then service:ToggleTask(self.taskID, self.tracked) end
+        if self.allowToggle and self.taskID ~= nil then service:ToggleTask(self.taskID, self.tracked) end
     end)
     row:Hide()
     return row
 end
 
-local function setTaskRow(row, entry)
-    if not entry then row:Hide(); return end
-    local color = STATUS_COLORS[entry.status] or STATUS_COLORS.missing
-    local text = entry.title or ""
-    if type(entry.meta) == "string" and entry.meta ~= "" then text = text .. "\n" .. entry.meta end
+local function setTaskRow(row, entry, allowToggle)
+    if type(entry) ~= "table" then
+        row.taskID, row.tooltipTitle, row.tooltipLines = nil, nil, nil
+        row:Hide()
+        return
+    end
+    local color = STATUS_COLORS[entry.status] or Theme.colors.muted
+    local text = entry.title or L.UNKNOWN
+    if entry.meta and entry.meta ~= "" then text = text .. "\n|cff9b978f" .. entry.meta .. "|r" end
     row.label:SetText(text)
     row.value:SetText(entry.statusText or "")
     row.value:SetTextColor(color[1], color[2], color[3], 1)
     row.statusLine:SetColorTexture(color[1], color[2], color[3], 0.95)
     row.taskID = entry.id
     row.tracked = entry.tracked == true
+    row.allowToggle = allowToggle == true
     row.tooltipTitle = entry.tooltipTitle
     row.tooltipLines = entry.tooltipLines
     row:Show()
+end
+
+local function createSummaryPanel(parent)
+    local panel = Widgets:CreatePanel(parent, "card")
+    panel:SetHeight(142)
+    panel.title = Widgets:CreateLabel(panel, "GameFontNormalLarge", "LEFT")
+    panel.title:SetPoint("TOPLEFT", 14, -13)
+    panel.title:SetPoint("TOPRIGHT", -110, -13)
+    panel.status = Widgets:CreateLabel(panel, "GameFontNormalSmall", "RIGHT")
+    panel.status:SetPoint("TOPRIGHT", -14, -15)
+    panel.status:SetWidth(92)
+    panel.meta = Widgets:CreateLabel(panel, "GameFontDisableSmall", "LEFT")
+    panel.meta:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -6)
+    panel.meta:SetPoint("TOPRIGHT", -14, 0)
+    panel.progressLabel = Widgets:CreateLabel(panel, "GameFontHighlightSmall", "LEFT")
+    panel.progressLabel:SetPoint("TOPLEFT", panel.meta, "BOTTOMLEFT", 0, -12)
+    panel.progressValue = Widgets:CreateLabel(panel, "GameFontHighlightSmall", "RIGHT")
+    panel.progressValue:SetPoint("RIGHT", -14, 0)
+    panel.progressValue:SetPoint("CENTER", panel.progressLabel, "CENTER", 0, 0)
+    panel.progress = Widgets:CreateProgressBar(panel)
+    panel.progress:SetPoint("TOPLEFT", panel.progressLabel, "BOTTOMLEFT", 0, -7)
+    panel.progress:SetPoint("TOPRIGHT", -14, 0)
+    panel.progress:SetHeight(12)
+    panel.note = Widgets:CreateLabel(panel, "GameFontDisableSmall", "LEFT")
+    panel.note:SetPoint("TOPLEFT", panel.progress, "BOTTOMLEFT", 0, -9)
+    panel.note:SetPoint("TOPRIGHT", -14, 0)
+    return panel
+end
+
+local function applySummaryPanel(panel, view)
+    local progress = type(view.progress) == "table" and view.progress or {}
+    local house = type(view.house) == "table" and view.house or {}
+    panel.title:SetText(view.title or L.HOUSING_TITLE)
+    panel.meta:SetText(house.neighborhoodName or house.subtitle or house.title or "")
+    panel.progressLabel:SetText(progress.label or L.HOUSING_PROGRESS_LABEL)
+    panel.progressValue:SetText(progress.value or "--")
+    panel.note:SetText(progress.note or "")
+    panel.status:SetText(view.isActive and L.HOUSING_STATUS_ACTIVE
+        or view.isComplete and L.HOUSING_STATUS_COMPLETE or L.HOUSING_STATUS_VIEW)
+    local color = view.isActive and Theme.colors.gold
+        or view.isComplete and STATUS_COLORS.complete or Theme.colors.muted
+    panel.status:SetTextColor(color[1], color[2], color[3], 1)
+    Widgets:SetProgress(panel.progress, progress.ratio or 0, 1)
+    Widgets:SetProgressBreakpoints(panel.progress, progress.thresholds, progress.maxThreshold)
+    setProgressColor(panel.progress, view.isComplete == true)
+end
+
+local function createStatStrip(parent)
+    local panel = Widgets:CreatePanel(parent, "cardInset")
+    panel:SetHeight(66)
+    panel.cells = {}
+    local previous
+    for index = 1, 4 do
+        local cell = CreateFrame("Frame", nil, panel)
+        cell:SetHeight(48)
+        if previous then cell:SetPoint("TOPLEFT", previous, "TOPRIGHT", 8, 0)
+        else cell:SetPoint("TOPLEFT", 14, -9) end
+        cell:SetWidth(176)
+        cell.label = Widgets:CreateLabel(cell, "GameFontDisableSmall", "LEFT")
+        cell.label:SetPoint("TOPLEFT", 0, 0)
+        cell.label:SetPoint("TOPRIGHT", 0, 0)
+        cell.value = Widgets:CreateLabel(cell, "GameFontNormal", "LEFT")
+        cell.value:SetPoint("TOPLEFT", cell.label, "BOTTOMLEFT", 0, -2)
+        cell.value:SetPoint("TOPRIGHT", 0, 0)
+        cell.meta = Widgets:CreateLabel(cell, "GameFontDisableSmall", "LEFT")
+        cell.meta:SetPoint("TOPLEFT", cell.value, "BOTTOMLEFT", 0, -1)
+        cell.meta:SetPoint("TOPRIGHT", 0, 0)
+        panel.cells[index] = cell
+        previous = cell
+    end
+    return panel
+end
+
+local function applyStatStrip(panel, entries)
+    entries = type(entries) == "table" and entries or {}
+    for index, cell in ipairs(panel.cells) do
+        local entry = entries[index]
+        cell.label:SetText(entry and entry.label or "")
+        cell.value:SetText(entry and entry.value or "--")
+        cell.meta:SetText(entry and entry.meta or "")
+    end
+end
+
+local function createRewardSummary(parent)
+    local panel = Widgets:CreatePanel(parent, "card")
+    panel:SetHeight(66)
+    panel.title = Widgets:CreateLabel(panel, "GameFontNormalLarge", "LEFT")
+    panel.title:SetPoint("TOPLEFT", 14, -12)
+    panel.title:SetPoint("TOPRIGHT", -130, -12)
+    panel.status = Widgets:CreateLabel(panel, "GameFontNormalSmall", "RIGHT")
+    panel.status:SetPoint("TOPRIGHT", -14, -14)
+    panel.status:SetWidth(116)
+    panel.text = Widgets:CreateLabel(panel, "GameFontDisableSmall", "LEFT")
+    panel.text:SetPoint("TOPLEFT", panel.title, "BOTTOMLEFT", 0, -6)
+    panel.text:SetPoint("TOPRIGHT", -14, 0)
+    return panel
+end
+
+local function applyRewardSummary(panel, summary)
+    summary = type(summary) == "table" and summary or {}
+    panel.title:SetText(summary.title or L.HOUSING_REWARD_SUMMARY_TITLE)
+    panel.status:SetText(summary.status or "")
+    panel.text:SetText(summary.text or "")
+    local color = summary.complete and STATUS_COLORS.complete or STATUS_COLORS.turnin
+    panel.status:SetTextColor(color[1], color[2], color[3], 1)
+end
+
+local function modeLabel(mode)
+    if mode == "automatic" then return L.HOUSING_SWITCH_MODE_AUTOMATIC end
+    if mode == "off" then return L.HOUSING_SWITCH_MODE_OFF end
+    return L.HOUSING_SWITCH_MODE_ASK
+end
+
+local function modeDescription(mode)
+    if mode == "automatic" then return L.HOUSING_SWITCH_MODE_AUTOMATIC_DESC end
+    if mode == "off" then return L.HOUSING_SWITCH_MODE_OFF_DESC end
+    return L.HOUSING_SWITCH_MODE_ASK_DESC
 end
 
 local function createScreen(_, host)
@@ -179,116 +349,111 @@ local function createScreen(_, host)
     local frame = CreateFrame("Frame", nil, host)
     frame:SetAllPoints(host)
     frame:Hide()
-    frame.layoutVersion = "housing-endeavors-1"
+    frame.layoutVersion = "housing-neighborhoods-4"
+    frame.selectedNeighborhoodGUID = nil
 
-    frame.navigation = Widgets:CreateButton(frame, L.HOUSING_TAB_ENDEAVORS, 188, 24, "tab")
-    frame.navigation:SetPoint("TOPLEFT", 0, 0)
-    Widgets:SetButtonActive(frame.navigation, true)
-    frame.subTabButtons = { endeavors = frame.navigation }
+    frame.subTabButtons = {}
+    local previousTab
+    for _, definition in ipairs(Addon.Data.HOUSING.subTabs or {}) do
+        local button = Widgets:CreateButton(frame, L[definition.labelKey], 230, 24, "tab")
+        if previousTab then button:SetPoint("LEFT", previousTab, "RIGHT", 8, 0)
+        else button:SetPoint("TOPLEFT", 0, 0) end
+        frame.subTabButtons[definition.key] = button
+        previousTab = button
+    end
+    frame.navigation = frame.subTabButtons.endeavors
 
     frame.contentHost = CreateFrame("Frame", nil, frame)
     frame.contentHost:SetPoint("TOPLEFT", frame.navigation, "BOTTOMLEFT", 0, -10)
     frame.contentHost:SetPoint("BOTTOMRIGHT", 0, 0)
 
-    frame.summaryPanel = Widgets:CreatePanel(frame.contentHost, "card")
-    frame.summaryPanel:SetPoint("TOPLEFT", 0, 0)
-    frame.summaryPanel:SetPoint("TOPRIGHT", 0, 0)
-    frame.summaryPanel:SetHeight(196)
-    frame.summaryTitle = Widgets:CreateLabel(frame.summaryPanel, "GameFontNormalLarge", "LEFT")
-    frame.summaryTitle:SetPoint("TOPLEFT", 14, -14)
-    frame.summaryTitle:SetPoint("TOPRIGHT", -14, -14)
-    frame.summaryTitle:SetText(L.HOUSING_TITLE)
-    frame.summarySubtitle = Widgets:CreateLabel(frame.summaryPanel, "GameFontHighlightSmall", "LEFT")
-    frame.summarySubtitle:SetPoint("TOPLEFT", frame.summaryTitle, "BOTTOMLEFT", 0, -6)
-    frame.summarySubtitle:SetPoint("TOPRIGHT", -14, 0)
-    frame.summarySubtitle:Hide()
-    frame.statCards = {}
-    for index = 1, 4 do frame.statCards[index] = createStatCard(frame.summaryPanel) end
-    layoutStatCards(frame.summaryPanel, frame.statCards)
-    frame.summaryPanel:SetScript("OnSizeChanged", function(_, width)
-        layoutStatCards(frame.summaryPanel, frame.statCards, width)
-    end)
-    frame.progressLabel = Widgets:CreateLabel(frame.summaryPanel, "GameFontHighlightSmall", "LEFT")
-    frame.progressLabel:SetPoint("TOPLEFT", frame.statCards[1], "BOTTOMLEFT", 0, -14)
-    frame.progressValue = Widgets:CreateLabel(frame.summaryPanel, "GameFontHighlightSmall", "RIGHT")
-    frame.progressValue:SetPoint("RIGHT", -14, 0)
-    frame.progressValue:SetPoint("CENTER", frame.progressLabel, "CENTER", 0, 0)
-    frame.progressBar = Widgets:CreateProgressBar(frame.summaryPanel)
-    frame.progressBar:SetPoint("TOPLEFT", frame.progressLabel, "BOTTOMLEFT", 0, -7)
-    frame.progressBar:SetPoint("TOPRIGHT", -14, 0)
-    frame.progressBar:SetHeight(12)
-    frame.progressNote = Widgets:CreateLabel(frame.summaryPanel, "GameFontDisableSmall", "LEFT")
-    frame.progressNote:SetPoint("TOPLEFT", frame.progressBar, "BOTTOMLEFT", 0, -10)
-    frame.progressNote:SetPoint("TOPRIGHT", -14, 0)
-    frame.progressNote:SetWordWrap(true)
+    frame.pages = {}
+    for _, key in ipairs({ "endeavors", "activity" }) do
+        local page = CreateFrame("Frame", nil, frame.contentHost)
+        page:SetAllPoints(frame.contentHost)
+        page:Hide()
+        frame.pages[key] = page
+    end
 
-    frame.tasksPanel = Widgets:CreatePanel(frame.contentHost, "cardInset")
-    frame.tasksPanel:SetPoint("TOPLEFT", frame.summaryPanel, "BOTTOMLEFT", 0, -14)
-    frame.tasksPanel:SetPoint("BOTTOMRIGHT", 0, 0)
-    frame.tasksTitle = Widgets:CreateLabel(frame.tasksPanel, "GameFontNormalLarge", "LEFT")
-    frame.tasksTitle:SetPoint("TOPLEFT", 14, -14)
-    frame.tasksTitle:SetText(L.HOUSING_SECTION_TASKS)
-    frame.tasksSubtitle = Widgets:CreateLabel(frame.tasksPanel, "GameFontHighlightSmall", "LEFT")
-    frame.tasksSubtitle:SetPoint("TOPLEFT", frame.tasksTitle, "BOTTOMLEFT", 0, -6)
-    frame.tasksSubtitle:SetPoint("TOPRIGHT", -14, 0)
-    frame.tasksSubtitle:SetWordWrap(true)
-    frame.tasksSubtitle:SetText(L.HOUSING_SECTION_TASKS_SUBTITLE)
-    frame.tasksScroll, frame.tasksScrollChild = createScroll(frame.tasksPanel, frame.tasksSubtitle, 690)
-    frame.tasksEmpty = Widgets:CreateLabel(frame.tasksScrollChild, "GameFontDisable", "LEFT")
-    frame.tasksEmpty:SetPoint("TOPLEFT", 4, -4)
-    frame.tasksEmpty:SetPoint("TOPRIGHT", -4, -4)
-    frame.tasksEmpty:SetWordWrap(true)
-    frame.taskRows = {}
-    frame.contentEmpty = Widgets:CreateLabel(frame.contentHost, "GameFontDisableLarge", "LEFT")
-    frame.contentEmpty:SetPoint("TOPLEFT", 4, -4)
-    frame.contentEmpty:SetPoint("BOTTOMRIGHT", -4, 4)
-    frame.contentEmpty:SetJustifyV("TOP")
-    frame.contentEmpty:SetWordWrap(true)
-    frame.contentEmpty:Hide()
+    local endeavors = frame.pages.endeavors
+    endeavors.summary = createSummaryPanel(endeavors)
+    endeavors.summary:SetPoint("TOPLEFT", 0, 0)
+    endeavors.summary:SetPoint("TOPRIGHT", 0, 0)
+    endeavors.stats = createStatStrip(endeavors)
+    endeavors.stats:SetPoint("TOPLEFT", endeavors.summary, "BOTTOMLEFT", 0, -10)
+    endeavors.stats:SetPoint("TOPRIGHT", endeavors.summary, "BOTTOMRIGHT", 0, -10)
+    endeavors.tasksPanel = Widgets:CreatePanel(endeavors, "cardInset")
+    endeavors.tasksPanel:SetPoint("TOPLEFT", endeavors.stats, "BOTTOMLEFT", 0, -12)
+    endeavors.tasksPanel:SetPoint("BOTTOMRIGHT", 0, 0)
+    endeavors.tasksTitle = Widgets:CreateLabel(endeavors.tasksPanel, "GameFontNormalLarge", "LEFT")
+    endeavors.tasksTitle:SetPoint("TOPLEFT", 14, -14)
+    endeavors.tasksTitle:SetPoint("TOPRIGHT", -250, -14)
+    endeavors.tasksTitle:SetText(L.HOUSING_SECTION_TASKS)
+    endeavors.tasksCap = Widgets:CreateLabel(endeavors.tasksPanel, "GameFontDisableSmall", "RIGHT")
+    endeavors.tasksCap:SetPoint("TOPRIGHT", -14, -17)
+    endeavors.tasksCap:SetWidth(226)
+    endeavors.tasksCap:SetText(string.format(L.HOUSING_TASK_HOUSE_XP_CAP_SHORT, Addon.Data.HOUSING.houseXPPerEndeavor))
+    endeavors.tasksScroll, endeavors.tasksScrollChild = createScroll(endeavors.tasksPanel, endeavors.tasksTitle, 690)
+    endeavors.tasksEmpty = Widgets:CreateLabel(endeavors.tasksScrollChild, "GameFontDisable", "LEFT")
+    endeavors.tasksEmpty:SetPoint("TOPLEFT", 4, -4)
+    endeavors.tasksEmpty:SetPoint("TOPRIGHT", -4, -4)
+    endeavors.tasksEmpty:SetWordWrap(true)
+    endeavors.taskRows = {}
+    frame.tasksScroll = endeavors.tasksScroll
+    frame.tasksScrollChild = endeavors.tasksScrollChild
+    frame.taskRows = endeavors.taskRows
+    frame.summaryTitle = endeavors.summary.title
+    frame.statCells = endeavors.stats.cells
+
+    local activity = frame.pages.activity
+    activity.rewardSummary = createRewardSummary(activity)
+    activity.rewardSummary:SetPoint("TOPLEFT", 0, 0)
+    activity.rewardSummary:SetPoint("TOPRIGHT", 0, 0)
+    activity.milestonesPanel = Widgets:CreatePanel(activity, "cardInset")
+    activity.milestonesPanel:SetPoint("TOPLEFT", activity.rewardSummary, "BOTTOMLEFT", 0, -12)
+    activity.milestonesPanel:SetPoint("BOTTOMLEFT", 0, 0)
+    activity.milestonesPanel:SetWidth(374)
+    activity.milestonesTitle = Widgets:CreateLabel(activity.milestonesPanel, "GameFontNormalLarge", "LEFT")
+    activity.milestonesTitle:SetPoint("TOPLEFT", 14, -14)
+    activity.milestonesTitle:SetText(L.HOUSING_SECTION_MILESTONES)
+    activity.milestonesScroll, activity.milestonesScrollChild = createScroll(activity.milestonesPanel, activity.milestonesTitle, 338)
+    activity.milestonesEmpty = Widgets:CreateLabel(activity.milestonesScrollChild, "GameFontDisable", "LEFT")
+    activity.milestonesEmpty:SetPoint("TOPLEFT", 4, -4)
+    activity.milestonesEmpty:SetPoint("TOPRIGHT", -4, -4)
+    activity.milestonesEmpty:SetText(L.HOUSING_MILESTONES_EMPTY)
+    activity.milestoneRows = {}
+    activity.logPanel = Widgets:CreatePanel(activity, "cardInset")
+    activity.logPanel:SetPoint("TOPLEFT", activity.milestonesPanel, "TOPRIGHT", 14, 0)
+    activity.logPanel:SetPoint("BOTTOMRIGHT", 0, 0)
+    activity.logTitle = Widgets:CreateLabel(activity.logPanel, "GameFontNormalLarge", "LEFT")
+    activity.logTitle:SetPoint("TOPLEFT", 14, -14)
+    activity.logTitle:SetText(L.HOUSING_SECTION_ACTIVITY)
+    activity.logScroll, activity.logScrollChild = createScroll(activity.logPanel, activity.logTitle, 338)
+    activity.logEmpty = Widgets:CreateLabel(activity.logScrollChild, "GameFontDisable", "LEFT")
+    activity.logEmpty:SetPoint("TOPLEFT", 4, -4)
+    activity.logEmpty:SetPoint("TOPRIGHT", -4, -4)
+    activity.logEmpty:SetText(L.HOUSING_ACTIVITY_EMPTY)
+    activity.activityRows = {}
+    frame.milestonesScroll = activity.milestonesScroll
+    frame.milestonesScrollChild = activity.milestonesScrollChild
+    frame.activityScroll = activity.logScroll
+    frame.activityScrollChild = activity.logScrollChild
+    frame.rewardSummary = activity.rewardSummary
 
     frame.sidebarPanel = Widgets:CreatePanel(shellFrame.sidebar, "sidebar")
     frame.sidebarPanel:SetAllPoints(shellFrame.sidebar)
     frame.sidebarPanel:SetFrameLevel(shellFrame.sidebar:GetFrameLevel() + 10)
-    createHeader(frame.sidebarPanel, L.HOUSING_TITLE, L.HOUSING_SECTION_HOME_SUBTITLE)
-    frame.homeHeader = createSectionHeader(frame.sidebarPanel, L.HOUSING_SECTION_HOME)
-    frame.homeHeader:SetPoint("TOPLEFT", frame.sidebarPanel.subtitle, "BOTTOMLEFT", 0, -14)
-    frame.homeHeader:SetPoint("TOPRIGHT", -16, 0)
-    frame.homePanel = Widgets:CreatePanel(frame.sidebarPanel, "cardInset")
-    frame.homePanel:SetPoint("TOPLEFT", frame.homeHeader, "BOTTOMLEFT", 0, -8)
-    frame.homePanel:SetPoint("TOPRIGHT", -16, 0)
-    frame.homePanel:SetHeight(168)
-    frame.homeName = Widgets:CreateLabel(frame.homePanel, "GameFontNormalLarge", "LEFT")
-    frame.homeName:SetPoint("TOPLEFT", 14, -13)
-    frame.homeName:SetPoint("TOPRIGHT", -14, -13)
-    frame.homeSubtitle = Widgets:CreateLabel(frame.homePanel, "GameFontHighlightSmall", "LEFT")
-    frame.homeSubtitle:SetPoint("TOPLEFT", frame.homeName, "BOTTOMLEFT", 0, -5)
-    frame.homeSubtitle:SetPoint("TOPRIGHT", -14, 0)
-    frame.homeMeta = Widgets:CreateLabel(frame.homePanel, "GameFontDisableSmall", "LEFT")
-    frame.homeMeta:SetPoint("TOPLEFT", frame.homeSubtitle, "BOTTOMLEFT", 0, -6)
-    frame.homeMeta:SetPoint("TOPRIGHT", -14, 0)
-    frame.homeLevelLabel = Widgets:CreateLabel(frame.homePanel, "GameFontDisableSmall", "LEFT")
-    frame.homeLevelLabel:SetPoint("TOPLEFT", frame.homeMeta, "BOTTOMLEFT", 0, -10)
-    frame.homeLevelLabel:SetText(L.HOUSING_HOME_LEVEL)
-    frame.homeLevelValue = Widgets:CreateLabel(frame.homePanel, "GameFontHighlightSmall", "RIGHT")
-    frame.homeLevelValue:SetPoint("RIGHT", -14, 0)
-    frame.homeLevelValue:SetPoint("CENTER", frame.homeLevelLabel, "CENTER", 0, 0)
-    frame.homeFavorLabel = Widgets:CreateLabel(frame.homePanel, "GameFontDisableSmall", "LEFT")
-    frame.homeFavorLabel:SetPoint("TOPLEFT", frame.homeLevelLabel, "BOTTOMLEFT", 0, -13)
-    frame.homeFavorLabel:SetText(L.HOUSING_HOME_FAVOR)
-    frame.homeFavorValue = Widgets:CreateLabel(frame.homePanel, "GameFontHighlightSmall", "RIGHT")
-    frame.homeFavorValue:SetPoint("RIGHT", -14, 0)
-    frame.homeFavorValue:SetPoint("CENTER", frame.homeFavorLabel, "CENTER", 0, 0)
-    frame.homeFavorBar = Widgets:CreateProgressBar(frame.homePanel)
-    frame.homeFavorBar:SetPoint("TOPLEFT", frame.homeFavorLabel, "BOTTOMLEFT", 0, -6)
-    frame.homeFavorBar:SetPoint("TOPRIGHT", -14, 0)
-    frame.homeFavorBar:SetHeight(10)
-    frame.homeCouponLabel = Widgets:CreateLabel(frame.homePanel, "GameFontDisableSmall", "LEFT")
-    frame.homeCouponLabel:SetPoint("TOPLEFT", frame.homeFavorBar, "BOTTOMLEFT", 0, -11)
-    frame.homeCouponValue = Widgets:CreateLabel(frame.homePanel, "GameFontHighlightSmall", "RIGHT")
-    frame.homeCouponValue:SetPoint("RIGHT", -14, 0)
-    frame.homeCouponValue:SetPoint("CENTER", frame.homeCouponLabel, "CENTER", 0, 0)
+    createHeader(frame.sidebarPanel, L.HOUSING_TITLE)
+    frame.neighborhoodsHeader = createSectionHeader(frame.sidebarPanel, L.HOUSING_SECTION_NEIGHBORHOODS)
+    frame.neighborhoodsHeader:SetPoint("TOPLEFT", frame.sidebarPanel.title, "BOTTOMLEFT", 0, -14)
+    frame.neighborhoodsHeader:SetPoint("TOPRIGHT", -16, 0)
+    frame.neighborhoodsPanel = Widgets:CreatePanel(frame.sidebarPanel, "cardInset")
+    frame.neighborhoodsPanel:SetPoint("TOPLEFT", frame.neighborhoodsHeader, "BOTTOMLEFT", 0, -8)
+    frame.neighborhoodsPanel:SetPoint("TOPRIGHT", -16, 0)
+    frame.neighborhoodsPanel:SetHeight(166)
+    frame.sidebarNeighborhoodCards = {}
     frame.weeklyHeader = createSectionHeader(frame.sidebarPanel, L.HOUSING_SECTION_WEEKLY)
-    frame.weeklyHeader:SetPoint("TOPLEFT", frame.homePanel, "BOTTOMLEFT", 0, -14)
+    frame.weeklyHeader:SetPoint("TOPLEFT", frame.neighborhoodsPanel, "BOTTOMLEFT", 0, -14)
     frame.weeklyHeader:SetPoint("TOPRIGHT", -16, 0)
     frame.weeklyPanel = Widgets:CreatePanel(frame.sidebarPanel, "cardInset")
     frame.weeklyPanel:SetPoint("TOPLEFT", frame.weeklyHeader, "BOTTOMLEFT", 0, -7)
@@ -298,78 +463,114 @@ local function createScreen(_, host)
     frame.weeklyRow:ClearAllPoints()
     frame.weeklyRow:SetPoint("TOPLEFT", 10, -6)
     frame.weeklyRow:SetPoint("TOPRIGHT", -10, -6)
-    frame.trackedHeader = createSectionHeader(frame.sidebarPanel, L.HOUSING_SECTION_TRACKED)
-    frame.trackedHeader:SetPoint("TOPLEFT", frame.weeklyPanel, "BOTTOMLEFT", 0, -14)
+    frame.sidebarHint = Widgets:CreateLabel(frame.sidebarPanel, "GameFontDisableSmall", "LEFT")
+    frame.sidebarHint:SetPoint("TOPLEFT", frame.weeklyPanel, "BOTTOMLEFT", 2, -16)
+    frame.sidebarHint:SetPoint("BOTTOMRIGHT", -18, 18)
+    frame.sidebarHint:SetJustifyV("TOP")
+    frame.sidebarHint:SetWordWrap(true)
+    frame.sidebarHint:SetText(L.HOUSING_NEIGHBORHOOD_HINT)
+
+    frame.utilityPanel = Widgets:CreatePanel(shellFrame.utility, "utility")
+    frame.utilityPanel:SetAllPoints(shellFrame.utility)
+    frame.utilityPanel:SetFrameLevel(shellFrame.utility:GetFrameLevel() + 10)
+    createHeader(frame.utilityPanel, L.HOUSING_CONTROL_TITLE)
+    frame.controlPanel = Widgets:CreatePanel(frame.utilityPanel, "cardInset")
+    frame.controlPanel:SetPoint("TOPLEFT", frame.utilityPanel.title, "BOTTOMLEFT", 0, -12)
+    frame.controlPanel:SetPoint("TOPRIGHT", -16, 0)
+    frame.controlPanel:SetHeight(106)
+    frame.activeLabel = Widgets:CreateLabel(frame.controlPanel, "GameFontDisableSmall", "LEFT")
+    frame.activeLabel:SetPoint("TOPLEFT", 12, -12)
+    frame.activeLabel:SetText(L.HOUSING_ACTIVE_DESTINATION)
+    frame.activeName = Widgets:CreateLabel(frame.controlPanel, "GameFontNormalLarge", "LEFT")
+    frame.activeName:SetPoint("TOPLEFT", frame.activeLabel, "BOTTOMLEFT", 0, -5)
+    frame.activeName:SetPoint("TOPRIGHT", -12, 0)
+    frame.controlMessage = Widgets:CreateLabel(frame.controlPanel, "GameFontHighlightSmall", "LEFT")
+    frame.controlMessage:SetPoint("TOPLEFT", frame.activeName, "BOTTOMLEFT", 0, -9)
+    frame.controlMessage:SetPoint("TOPRIGHT", -12, 0)
+    frame.controlMessage:SetWordWrap(true)
+    frame.controlAction = Widgets:CreateButton(frame.controlPanel, L.HOUSING_SET_ACTIVE, 224, 28)
+    frame.controlAction:SetPoint("BOTTOMLEFT", 12, 13)
+    frame.modePanel = Widgets:CreatePanel(frame.utilityPanel, "cardInset")
+    frame.modePanel:SetPoint("TOPLEFT", frame.controlPanel, "BOTTOMLEFT", 0, -12)
+    frame.modePanel:SetPoint("TOPRIGHT", -16, 0)
+    frame.modePanel:SetHeight(122)
+    frame.modeLabel = Widgets:CreateLabel(frame.modePanel, "GameFontNormal", "LEFT")
+    frame.modeLabel:SetPoint("TOPLEFT", 12, -11)
+    frame.modeLabel:SetPoint("TOPRIGHT", -12, -11)
+    frame.modeLabel:SetText(L.HOUSING_SWITCH_MODE)
+    frame.modeDescription = Widgets:CreateLabel(frame.modePanel, "GameFontDisableSmall", "LEFT")
+    frame.modeDescription:SetPoint("TOPLEFT", frame.modeLabel, "BOTTOMLEFT", 0, -6)
+    frame.modeDescription:SetPoint("TOPRIGHT", -12, 0)
+    frame.modeDescription:SetWordWrap(true)
+    frame.modeButtons = {}
+    local previousModeButton
+    for _, definition in ipairs({
+        { key = "off", width = 64 },
+        { key = "ask", width = 84 },
+        { key = "automatic", width = 84 },
+    }) do
+        local button = Widgets:CreateButton(frame.modePanel, modeLabel(definition.key), definition.width, 25, "tab")
+        button.label:ClearAllPoints()
+        button.label:SetPoint("TOPLEFT", 4, 0)
+        button.label:SetPoint("BOTTOMRIGHT", -4, 0)
+        if previousModeButton then button:SetPoint("LEFT", previousModeButton, "RIGHT", 5, 0)
+        else button:SetPoint("BOTTOMLEFT", 12, 11) end
+        button.mode = definition.key
+        setTooltip(button, modeLabel(definition.key), modeDescription(definition.key))
+        frame.modeButtons[definition.key] = button
+        previousModeButton = button
+    end
+    frame.quickPanel = Widgets:CreatePanel(frame.utilityPanel, "cardInset")
+    frame.quickPanel:SetPoint("TOPLEFT", frame.modePanel, "BOTTOMLEFT", 0, -12)
+    frame.quickPanel:SetPoint("TOPRIGHT", -16, 0)
+    frame.quickPanel:SetHeight(48)
+    frame.decorationsButton = Widgets:CreateButton(frame.quickPanel, L.HOUSING_OPEN_DECORATIONS, 118, 25)
+    frame.decorationsButton:SetPoint("LEFT", 12, 0)
+    setTooltip(frame.decorationsButton, L.HOUSING_OPEN_DECORATIONS, L.HOUSING_OPEN_DECORATIONS_DESC)
+    frame.dashboardButton = Widgets:CreateButton(frame.quickPanel, L.HOUSING_OPEN_DASHBOARD, 118, 25)
+    frame.dashboardButton:SetPoint("LEFT", frame.decorationsButton, "RIGHT", 6, 0)
+    setTooltip(frame.dashboardButton, L.HOUSING_OPEN_DASHBOARD, L.HOUSING_OPEN_DASHBOARD_DESC)
+    frame.trackedHeader = createSectionHeader(frame.utilityPanel, L.HOUSING_SECTION_TRACKED)
+    frame.trackedHeader:SetPoint("TOPLEFT", frame.quickPanel, "BOTTOMLEFT", 0, -14)
     frame.trackedHeader:SetPoint("TOPRIGHT", -16, 0)
-    frame.trackedPanel = Widgets:CreatePanel(frame.sidebarPanel, "cardInset")
-    frame.trackedPanel:SetPoint("TOPLEFT", frame.trackedHeader, "BOTTOMLEFT", 0, -7)
+    frame.trackedPanel = Widgets:CreatePanel(frame.utilityPanel, "cardInset")
+    frame.trackedPanel:SetPoint("TOPLEFT", frame.trackedHeader, "BOTTOMLEFT", 0, -8)
     frame.trackedPanel:SetPoint("BOTTOMRIGHT", -16, 16)
-    frame.trackedSubtitle = Widgets:CreateLabel(frame.trackedPanel, "GameFontHighlightSmall", "LEFT")
-    frame.trackedSubtitle:SetPoint("TOPLEFT", 12, -12)
-    frame.trackedSubtitle:SetPoint("TOPRIGHT", -12, -12)
-    frame.trackedSubtitle:SetWordWrap(true)
-    frame.trackedSubtitle:SetText(L.HOUSING_SECTION_TRACKED_SUBTITLE)
-    frame.trackedScroll, frame.trackedScrollChild = createScroll(frame.trackedPanel, frame.trackedSubtitle, 214)
+    frame.trackedScroll, frame.trackedScrollChild = createScroll(frame.trackedPanel, frame.trackedHeader, 250)
+    frame.trackedScroll:ClearAllPoints()
+    frame.trackedScroll:SetPoint("TOPLEFT", frame.trackedPanel, "TOPLEFT", 12, -10)
+    frame.trackedScroll:SetPoint("BOTTOMRIGHT", -26, 12)
     frame.trackedEmpty = Widgets:CreateLabel(frame.trackedScrollChild, "GameFontDisableSmall", "LEFT")
     frame.trackedEmpty:SetPoint("TOPLEFT", 4, -4)
     frame.trackedEmpty:SetPoint("TOPRIGHT", -4, -4)
     frame.trackedEmpty:SetWordWrap(true)
     frame.trackedEmpty:SetText(L.HOUSING_TRACKED_EMPTY)
     frame.trackedRows = {}
-    frame.sidebarEmpty = Widgets:CreateLabel(frame.sidebarPanel, "GameFontDisable", "LEFT")
-    frame.sidebarEmpty:SetPoint("TOPLEFT", frame.sidebarPanel.subtitle, "BOTTOMLEFT", 0, -14)
-    frame.sidebarEmpty:SetPoint("BOTTOMRIGHT", -16, 16)
-    frame.sidebarEmpty:SetJustifyV("TOP")
-    frame.sidebarEmpty:SetWordWrap(true)
-    frame.sidebarEmpty:Hide()
 
-    frame.utilityPanel = Widgets:CreatePanel(shellFrame.utility, "utility")
-    frame.utilityPanel:SetAllPoints(shellFrame.utility)
-    frame.utilityPanel:SetFrameLevel(shellFrame.utility:GetFrameLevel() + 10)
-    createHeader(frame.utilityPanel, L.HOUSING_UTILITY_TITLE, L.HOUSING_UTILITY_SUBTITLE)
-    frame.milestonesHeader = createSectionHeader(frame.utilityPanel, L.HOUSING_SECTION_MILESTONES)
-    frame.milestonesHeader:SetPoint("TOPLEFT", frame.utilityPanel.subtitle, "BOTTOMLEFT", 0, -14)
-    frame.milestonesHeader:SetPoint("TOPRIGHT", -16, 0)
-    frame.milestonesPanel = Widgets:CreatePanel(frame.utilityPanel, "cardInset")
-    frame.milestonesPanel:SetPoint("TOPLEFT", frame.milestonesHeader, "BOTTOMLEFT", 0, -8)
-    frame.milestonesPanel:SetPoint("TOPRIGHT", -16, 0)
-    frame.milestonesPanel:SetHeight(168)
-    frame.milestonesSubtitle = Widgets:CreateLabel(frame.milestonesPanel, "GameFontHighlightSmall", "LEFT")
-    frame.milestonesSubtitle:SetPoint("TOPLEFT", 12, -12)
-    frame.milestonesSubtitle:SetPoint("TOPRIGHT", -12, -12)
-    frame.milestonesSubtitle:SetWordWrap(true)
-    frame.milestonesSubtitle:SetText(L.HOUSING_SECTION_MILESTONES_SUBTITLE)
-    frame.milestonesScroll, frame.milestonesScrollChild = createScroll(frame.milestonesPanel, frame.milestonesSubtitle, 250)
-    frame.milestonesEmpty = Widgets:CreateLabel(frame.milestonesScrollChild, "GameFontDisableSmall", "LEFT")
-    frame.milestonesEmpty:SetPoint("TOPLEFT", 4, -4)
-    frame.milestonesEmpty:SetPoint("TOPRIGHT", -4, -4)
-    frame.milestonesEmpty:SetWordWrap(true)
-    frame.milestonesEmpty:SetText(L.HOUSING_MILESTONES_EMPTY)
-    frame.milestoneRows = {}
-    frame.activityHeader = createSectionHeader(frame.utilityPanel, L.HOUSING_SECTION_ACTIVITY)
-    frame.activityHeader:SetPoint("TOPLEFT", frame.milestonesPanel, "BOTTOMLEFT", 0, -14)
-    frame.activityHeader:SetPoint("TOPRIGHT", -16, 0)
-    frame.activityPanel = Widgets:CreatePanel(frame.utilityPanel, "cardInset")
-    frame.activityPanel:SetPoint("TOPLEFT", frame.activityHeader, "BOTTOMLEFT", 0, -8)
-    frame.activityPanel:SetPoint("BOTTOMRIGHT", -16, 16)
-    frame.activitySubtitle = Widgets:CreateLabel(frame.activityPanel, "GameFontHighlightSmall", "LEFT")
-    frame.activitySubtitle:SetPoint("TOPLEFT", 12, -12)
-    frame.activitySubtitle:SetPoint("TOPRIGHT", -12, -12)
-    frame.activitySubtitle:SetWordWrap(true)
-    frame.activitySubtitle:SetText(L.HOUSING_SECTION_ACTIVITY_SUBTITLE)
-    frame.activityScroll, frame.activityScrollChild = createScroll(frame.activityPanel, frame.activitySubtitle, 250)
-    frame.activityEmpty = Widgets:CreateLabel(frame.activityScrollChild, "GameFontDisableSmall", "LEFT")
-    frame.activityEmpty:SetPoint("TOPLEFT", 4, -4)
-    frame.activityEmpty:SetPoint("TOPRIGHT", -4, -4)
-    frame.activityEmpty:SetWordWrap(true)
-    frame.activityEmpty:SetText(L.HOUSING_ACTIVITY_EMPTY)
-    frame.activityRows = {}
-    frame.utilityEmpty = Widgets:CreateLabel(frame.utilityPanel, "GameFontDisable", "LEFT")
-    frame.utilityEmpty:SetPoint("TOPLEFT", frame.utilityPanel.subtitle, "BOTTOMLEFT", 0, -14)
-    frame.utilityEmpty:SetPoint("BOTTOMRIGHT", -16, 16)
-    frame.utilityEmpty:SetJustifyV("TOP")
-    frame.utilityEmpty:SetWordWrap(true)
-    frame.utilityEmpty:Hide()
+    frame.contentEmpty = Widgets:CreateLabel(frame.contentHost, "GameFontDisableLarge", "LEFT")
+    frame.contentEmpty:SetPoint("TOPLEFT", 4, -4)
+    frame.contentEmpty:SetPoint("BOTTOMRIGHT", -4, 4)
+    frame.contentEmpty:SetJustifyV("TOP")
+    frame.contentEmpty:SetWordWrap(true)
+    frame.contentEmpty:Hide()
+
+    frame.confirm = Widgets:CreatePanel(frame.contentHost, "content")
+    frame.confirm:SetSize(430, 174)
+    frame.confirm:SetPoint("CENTER")
+    frame.confirm:SetFrameLevel(frame.contentHost:GetFrameLevel() + 40)
+    frame.confirm.title = Widgets:CreateLabel(frame.confirm, "GameFontNormalLarge", "CENTER")
+    frame.confirm.title:SetPoint("TOPLEFT", 18, -20)
+    frame.confirm.title:SetPoint("TOPRIGHT", -18, -20)
+    frame.confirm.title:SetText(L.HOUSING_SWITCH_PROMPT_TITLE)
+    frame.confirm.message = Widgets:CreateLabel(frame.confirm, "GameFontHighlightSmall", "CENTER")
+    frame.confirm.message:SetPoint("TOPLEFT", 24, -56)
+    frame.confirm.message:SetPoint("TOPRIGHT", -24, -56)
+    frame.confirm.message:SetWordWrap(true)
+    frame.confirm.cancel = Widgets:CreateButton(frame.confirm, L.HOUSING_IGNORE_CYCLE, 164, 30)
+    frame.confirm.cancel:SetPoint("BOTTOMLEFT", 36, 22)
+    frame.confirm.accept = Widgets:CreateButton(frame.confirm, L.HOUSING_SWITCH_NOW, 164, 30)
+    frame.confirm.accept:SetPoint("BOTTOMRIGHT", -36, 22)
+    frame.confirm:Hide()
 
     local standardSidebar = {
         shellFrame.sidebarTitle, shellFrame.sidebarSubtitle, shellFrame.sidebarCurrent,
@@ -405,7 +606,7 @@ local function createScreen(_, host)
             end
             if clickable then
                 row.hitbox:SetScript("OnClick", function()
-                    if row.taskID ~= nil then service:ToggleTask(row.taskID, row.taskTracked) end
+                    if row.allowToggle and row.taskID ~= nil then service:ToggleTask(row.taskID, row.taskTracked) end
                 end)
             end
             pool[#pool + 1] = row
@@ -413,65 +614,146 @@ local function createScreen(_, host)
     end
 
     local function ensureTaskRows(count)
-        while #frame.taskRows < count do
-            frame.taskRows[#frame.taskRows + 1] = createTaskRow(
-                frame.tasksScrollChild,
-                frame.taskRows[#frame.taskRows],
+        while #endeavors.taskRows < count do
+            endeavors.taskRows[#endeavors.taskRows + 1] = createTaskRow(
+                endeavors.tasksScrollChild,
+                endeavors.taskRows[#endeavors.taskRows],
                 service
             )
         end
     end
 
-    local function showAvailable(available, message)
-        frame.sidebarEmpty:SetShown(not available)
-        frame.sidebarEmpty:SetText(message or "")
-        frame.homeHeader:SetShown(available)
-        frame.homePanel:SetShown(available)
-        frame.weeklyHeader:SetShown(available)
-        frame.weeklyPanel:SetShown(available)
-        frame.trackedHeader:SetShown(available)
-        frame.trackedPanel:SetShown(available)
-        frame.contentEmpty:SetShown(not available)
-        frame.contentEmpty:SetText(message or "")
-        frame.summaryPanel:SetShown(available)
-        frame.tasksPanel:SetShown(available)
-        frame.utilityEmpty:SetShown(not available)
-        frame.utilityEmpty:SetText(message or "")
-        frame.milestonesHeader:SetShown(available)
-        frame.milestonesPanel:SetShown(available)
-        frame.activityHeader:SetShown(available)
-        frame.activityPanel:SetShown(available)
+    local function ensureNeighborhoodCards(pool, parent, count, compact)
+        while #pool < count do
+            local card = createNeighborhoodCard(parent, compact)
+            if compact then
+                if #pool == 0 then card:SetPoint("TOPLEFT", 8, -8); card:SetPoint("TOPRIGHT", -8, -8)
+                else card:SetPoint("TOPLEFT", pool[#pool], "BOTTOMLEFT", 0, -6); card:SetPoint("TOPRIGHT", pool[#pool], "BOTTOMRIGHT", 0, -6) end
+            end
+            card:SetScript("OnClick", function(self)
+                if self.neighborhoodGUID then frame:SelectNeighborhood(self.neighborhoodGUID) end
+            end)
+            pool[#pool + 1] = card
+        end
+    end
+
+    function frame:SetTab(key)
+        if not self.pages[key] then key = "endeavors" end
+        self.selectedTab = key
+        Addon.Database:GetUI().selectedSubTabs.housing = key
+        for tabKey, page in pairs(self.pages) do page:SetShown(tabKey == key) end
+        for tabKey, button in pairs(self.subTabButtons) do Widgets:SetButtonActive(button, tabKey == key) end
+        self:Refresh()
+    end
+
+    function frame:SelectNeighborhood(neighborhoodGUID)
+        self.selectedNeighborhoodGUID = neighborhoodGUID
+        local character = Addon.WarbandRoster:GetSelected()
+        if character and Addon.WarbandRoster:IsCurrent(character.key) then
+            service:SelectNeighborhood(neighborhoodGUID)
+        else
+            self:Refresh()
+        end
+    end
+
+    function frame:SwitchTo(neighborhoodGUID)
+        if service:SwitchNeighborhood(neighborhoodGUID) then self.confirm:Hide() end
+    end
+
+    function frame:MaybeOfferSwitch(character, view)
+        local suggestion = view.switchSuggestion
+        if not character or not Addon.WarbandRoster:IsCurrent(character.key) or type(suggestion) ~= "table" then
+            self.confirm:Hide()
+            return
+        end
+        local mode = service:GetSwitchMode()
+        local key = service:GetSwitchKey(character.key, suggestion)
+        if service:IsSwitchIgnored(character.key, suggestion) then self.confirm:Hide(); return end
+        if mode == "automatic" then
+            if not service.runtime.switchPendingGUID then self:SwitchTo(suggestion.targetNeighborhoodGUID) end
+            return
+        end
+        if mode == "ask" and service.runtime.promptedSwitchKey ~= key then
+            service.runtime.promptedSwitchKey = key
+            self.confirm.suggestion = suggestion
+            self.confirm.characterKey = character.key
+            self.confirm.message:SetText(string.format(
+                L.HOUSING_SWITCH_PROMPT,
+                suggestion.sourceTitle or L.HOUSING_HOME_ACTIVE,
+                suggestion.targetTitle or L.HOUSING_HOME_VIEWING,
+                suggestion.targetProgressValue or "--"
+            ))
+            self.confirm:Show()
+            if type(self.confirm.Raise) == "function" then self.confirm:Raise() end
+        end
     end
 
     function frame:Refresh()
         if self.chromeVisible ~= false then service:Open() end
-        syncScrollWidth(self.tasksScroll, self.tasksScrollChild)
-        syncScrollWidth(self.trackedScroll, self.trackedScrollChild)
-        syncScrollWidth(self.milestonesScroll, self.milestonesScrollChild)
-        syncScrollWidth(self.activityScroll, self.activityScrollChild)
+        for _, pair in ipairs({
+            { endeavors.tasksScroll, endeavors.tasksScrollChild },
+            { activity.milestonesScroll, activity.milestonesScrollChild },
+            { activity.logScroll, activity.logScrollChild },
+            { self.trackedScroll, self.trackedScrollChild },
+        }) do syncScrollWidth(pair[1], pair[2]) end
 
         local character = Addon.WarbandRoster:GetSelected()
-        local view = character and service:GetView(character.key) or Addon.HousingLogic:BuildView(nil)
+        local preferred = self.selectedNeighborhoodGUID
+        local view = character and service:GetView(character.key, preferred) or Addon.HousingLogic:BuildView(nil)
         local state = Addon.StateStore:Get("housing.endeavors")
         local message = view.message
         if character and Addon.WarbandRoster:IsCurrent(character.key) and view.available ~= true then
             if state and state.loading then message = L.HOUSING_LOADING
             elseif state and state.unavailable then message = L.HOUSING_UNAVAILABLE end
         end
-        local available = view.available == true
-        showAvailable(available, message)
-        if not available then return end
+        local neighborhoods = type(view.neighborhoods) == "table" and view.neighborhoods or {}
+        local available = view.available == true or #neighborhoods > 0
+        self.contentEmpty:SetShown(not available)
+        self.contentEmpty:SetText(message or "")
+        for _, page in pairs(self.pages) do page:SetShown(available and self.selectedTab == page.key) end
+        if not available then
+            for _, page in pairs(self.pages) do page:Hide() end
+            return
+        end
 
-        local house = view.house or {}
-        self.homeName:SetText(house.title or L.HOUSING_HOME_NONE)
-        self.homeSubtitle:SetText(house.subtitle or "")
-        self.homeSubtitle:SetShown(type(house.subtitle) == "string" and house.subtitle ~= "")
-        self.homeMeta:SetText(house.meta or "")
-        self.homeLevelValue:SetText(house.levelValue or "--")
-        self.homeFavorValue:SetText(house.favorValue or "--")
-        self.homeCouponLabel:SetText(house.couponLabel or L.HOUSING_HOME_COUPONS)
-        self.homeCouponValue:SetText(house.couponValue or "--")
-        Widgets:SetProgress(self.homeFavorBar, house.favorRatio or 0, 1)
+        if not self.selectedNeighborhoodGUID then
+            self.selectedNeighborhoodGUID = view.selectedNeighborhoodGUID or view.activeNeighborhoodGUID
+        end
+        if view.selectedNeighborhoodGUID ~= self.selectedNeighborhoodGUID then
+            view = service:GetView(character.key, self.selectedNeighborhoodGUID)
+            neighborhoods = type(view.neighborhoods) == "table" and view.neighborhoods or neighborhoods
+        end
+
+        ensureNeighborhoodCards(self.sidebarNeighborhoodCards, self.neighborhoodsPanel, #neighborhoods, true)
+        self.neighborhoodsPanel:SetHeight(math.max(88, math.min(244, (#neighborhoods * 78) + 10)))
+        for index, card in ipairs(self.sidebarNeighborhoodCards) do
+            applyNeighborhoodCard(card, neighborhoods[index], neighborhoods[index]
+                and neighborhoods[index].neighborhoodGUID == self.selectedNeighborhoodGUID)
+        end
+
+        local isCurrent = character and Addon.WarbandRoster:IsCurrent(character.key)
+        applySummaryPanel(endeavors.summary, view)
+        applyStatStrip(endeavors.stats, view.statCards)
+        applyRewardSummary(activity.rewardSummary, view.rewardSummary)
+
+        local tasks = type(view.tasks) == "table" and view.tasks or {}
+        ensureTaskRows(#tasks)
+        for index, row in ipairs(endeavors.taskRows) do setTaskRow(row, tasks[index], isCurrent) end
+        endeavors.tasksScrollChild:SetHeight(math.max(10, (#tasks * 58) - 10))
+        endeavors.tasksEmpty:SetText(view.loadingTasks and L.HOUSING_LOADING or L.HOUSING_TASKS_EMPTY)
+        endeavors.tasksEmpty:SetShown(#tasks == 0)
+
+        local milestones = type(view.milestones) == "table" and view.milestones or {}
+        ensureStatusRows(activity.milestoneRows, activity.milestonesScrollChild, #milestones, false)
+        for index, row in ipairs(activity.milestoneRows) do StatusRows:Set(row, milestones[index]) end
+        activity.milestonesScrollChild:SetHeight(math.max(10, (#milestones * 50) - 8))
+        activity.milestonesEmpty:SetShown(#milestones == 0)
+
+        local activityRows = type(view.activity) == "table" and view.activity or {}
+        ensureStatusRows(activity.activityRows, activity.logScrollChild, #activityRows, false)
+        for index, row in ipairs(activity.activityRows) do StatusRows:Set(row, activityRows[index]) end
+        activity.logScrollChild:SetHeight(math.max(10, (#activityRows * 50) - 8))
+        activity.logEmpty:SetShown(#activityRows == 0)
 
         StatusRows:Set(self.weeklyRow, view.weekly or {
             label = L.PVE_WEEKLY_HOUSING_LABEL,
@@ -488,70 +770,91 @@ local function createScreen(_, host)
             StatusRows:Set(row, entry)
             row.taskID = entry and entry.id or nil
             row.taskTracked = entry and entry.tracked == true or false
-            if entry and service:CanToggleTasks() then
-                row.tooltipLines = {}
-                for _, line in ipairs(entry.tooltipLines or {}) do row.tooltipLines[#row.tooltipLines + 1] = line end
-                row.tooltipLines[#row.tooltipLines + 1] = L.HOUSING_TASK_UNTRACK_HINT
-            end
+            row.allowToggle = isCurrent
         end
         self.trackedScrollChild:SetHeight(math.max(10, (#tracked * 50) - 8))
         self.trackedEmpty:SetShown(#tracked == 0)
 
-        self.summaryTitle:SetText(view.title or L.HOUSING_TITLE)
-        self.summarySubtitle:SetText(view.subtitle or "")
-        self.summarySubtitle:SetShown(type(view.subtitle) == "string" and view.subtitle ~= "")
-        for index, card in ipairs(self.statCards) do applyStatCard(card, view.statCards and view.statCards[index]) end
-        local progress = view.progress or {}
-        self.progressLabel:SetText(progress.label or L.HOUSING_PROGRESS_LABEL)
-        self.progressValue:SetText(progress.value or "--")
-        self.progressNote:SetText(progress.note or "")
-        Widgets:SetProgress(self.progressBar, progress.ratio or 0, 1)
-        Widgets:SetProgressBreakpoints(self.progressBar, progress.thresholds, progress.maxThreshold)
-
-        local tasks = type(view.tasks) == "table" and view.tasks or {}
-        ensureTaskRows(#tasks)
-        for index, row in ipairs(self.taskRows) do setTaskRow(row, tasks[index]) end
-        self.tasksScrollChild:SetHeight(math.max(10, (#tasks * 58) - 10))
-        self.tasksEmpty:SetText(view.loadingTasks and L.HOUSING_LOADING or L.HOUSING_TASKS_EMPTY)
-        self.tasksEmpty:SetShown(#tasks == 0)
-
-        local milestones = type(view.milestones) == "table" and view.milestones or {}
-        ensureStatusRows(self.milestoneRows, self.milestonesScrollChild, #milestones, false)
-        for index, row in ipairs(self.milestoneRows) do StatusRows:Set(row, milestones[index]) end
-        self.milestonesScrollChild:SetHeight(math.max(10, (#milestones * 50) - 8))
-        self.milestonesEmpty:SetShown(#milestones == 0)
-
-        local activity = type(view.activity) == "table" and view.activity or {}
-        ensureStatusRows(self.activityRows, self.activityScrollChild, #activity, false)
-        for index, row in ipairs(self.activityRows) do StatusRows:Set(row, activity[index]) end
-        self.activityScrollChild:SetHeight(math.max(10, (#activity * 50) - 8))
-        self.activityEmpty:SetShown(#activity == 0)
+        local activeCard
+        for _, card in ipairs(neighborhoods) do if card.active then activeCard = card break end end
+        self.activeName:SetText(activeCard and activeCard.title or L.HOUSING_HOME_NONE)
+        local switchMode = service:GetSwitchMode()
+        local hasAlternateNeighborhood = #neighborhoods > 1
+        self.modeDescription:SetText(hasAlternateNeighborhood and modeDescription(switchMode)
+            or L.HOUSING_SWITCH_SINGLE_NEIGHBORHOOD)
+        for mode, button in pairs(self.modeButtons) do
+            if hasAlternateNeighborhood then button:Enable() else button:Disable() end
+            button.tooltipBody = hasAlternateNeighborhood and modeDescription(mode)
+                or L.HOUSING_SWITCH_SINGLE_NEIGHBORHOOD
+            Widgets:SetButtonActive(button, hasAlternateNeighborhood and mode == switchMode)
+        end
+        local suggestion = view.switchSuggestion
+        local actionTarget
+        if type(suggestion) == "table" then
+            self.controlMessage:SetText(string.format(
+                L.HOUSING_SWITCH_SUGGESTION,
+                suggestion.targetTitle or L.HOUSING_HOME_VIEWING,
+                suggestion.targetProgressValue or "--"
+            ))
+            self.controlAction.label:SetText(L.HOUSING_SWITCH_NOW)
+            actionTarget = suggestion.targetNeighborhoodGUID
+        elseif not view.isActive then
+            self.controlMessage:SetText(L.HOUSING_ROUTE_VIEWING_DESC)
+            self.controlAction.label:SetText(L.HOUSING_SET_ACTIVE)
+            actionTarget = view.neighborhoodGUID
+        else
+            self.controlMessage:SetText(view.isComplete and L.HOUSING_ACTIVE_COMPLETE or L.HOUSING_ACTIVE_OPEN)
+        end
+        self.controlAction.targetNeighborhoodGUID = actionTarget
+        local showAction = isCurrent and actionTarget ~= nil and service:CanSwitchNeighborhood()
+        self.controlAction:SetShown(showAction)
+        self.controlPanel:SetHeight(showAction and 152 or 106)
+        self:MaybeOfferSwitch(character, view)
     end
 
-    frame.navigation:SetScript("OnClick", function()
-        Addon.Database:GetUI().selectedSubTabs.housing = "endeavors"
+    for key, button in pairs(frame.subTabButtons) do
+        button:SetScript("OnClick", function() frame:SetTab(key) end)
+    end
+    frame.controlAction:SetScript("OnClick", function(self)
+        if self.targetNeighborhoodGUID then frame:SwitchTo(self.targetNeighborhoodGUID) end
     end)
-    frame:SetScript("OnHide", function() frame:SetChromeVisible(false) end)
+    for mode, button in pairs(frame.modeButtons) do
+        local selectedMode = mode
+        button:SetScript("OnClick", function()
+            service:SetSwitchMode(selectedMode)
+            frame:Refresh()
+        end)
+    end
+    frame.decorationsButton:SetScript("OnClick", function()
+        if Addon.Compendium then Addon.Compendium:SetCategory("decorations") end
+        Addon.UI:ShowScreen("compendium")
+    end)
+    frame.dashboardButton:SetScript("OnClick", function() service:OpenDashboard() end)
+    frame.confirm.cancel:SetScript("OnClick", function()
+        if frame.confirm.characterKey and frame.confirm.suggestion then
+            service:IgnoreSwitch(frame.confirm.characterKey, frame.confirm.suggestion)
+        end
+        frame.confirm:Hide()
+    end)
+    frame.confirm.accept:SetScript("OnClick", function()
+        local suggestion = frame.confirm.suggestion
+        if suggestion then frame:SwitchTo(suggestion.targetNeighborhoodGUID) end
+    end)
+    frame:SetScript("OnHide", function() frame.confirm:Hide(); frame:SetChromeVisible(false) end)
     frame:SetScript("OnShow", function()
         if not frame.chromeVisible then frame:SetChromeVisible(true) end
-        frame:Refresh()
-        if C_Timer and type(C_Timer.After) == "function" then
-            C_Timer.After(0, function()
-                if frame:IsShown() then
-                    syncScrollWidth(frame.tasksScroll, frame.tasksScrollChild)
-                    syncScrollWidth(frame.trackedScroll, frame.trackedScrollChild)
-                    syncScrollWidth(frame.milestonesScroll, frame.milestonesScrollChild)
-                    syncScrollWidth(frame.activityScroll, frame.activityScrollChild)
-                end
-            end)
-        end
+        local selected = Addon.Database:GetUI().selectedSubTabs.housing
+        frame:SetTab(frame.pages[selected] and selected or "endeavors")
     end)
     Addon.StateStore:Subscribe("housing.endeavors", frame, function()
         if frame:IsShown() then frame:Refresh() end
     end)
     Addon.StateStore:Subscribe("warband.selection", frame, function()
+        frame.selectedNeighborhoodGUID = nil
         if frame:IsShown() then frame:Refresh() end
     end)
+    for key, page in pairs(frame.pages) do page.key = key end
+    frame.selectedTab = "endeavors"
     return frame
 end
 

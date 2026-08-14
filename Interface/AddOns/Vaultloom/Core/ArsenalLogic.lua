@@ -27,6 +27,16 @@ local SLOT_COLUMNS = {
 }
 
 local TOTAL_EQUIPMENT_SLOTS = #SLOT_COLUMNS.left + #SLOT_COLUMNS.right
+local QUALITY_BY_LINK_COLOR = {
+    ["9d9d9d"] = 0,
+    ["ffffff"] = 1,
+    ["1eff00"] = 2,
+    ["0070dd"] = 3,
+    ["a335ee"] = 4,
+    ["ff8000"] = 5,
+    ["e6cc80"] = 6,
+    ["00ccff"] = 7,
+}
 
 function Logic:GetSlotColumns()
     return SLOT_COLUMNS
@@ -84,8 +94,39 @@ function Logic:GetItemName(itemLink, itemID)
     return Addon.L.UNKNOWN
 end
 
-function Logic:GetQualityColor(quality)
-    local color = type(ITEM_QUALITY_COLORS) == "table" and ITEM_QUALITY_COLORS[tonumber(quality)] or nil
+function Logic:ResolveQuality(quality, itemLink, itemID)
+    quality = tonumber(quality)
+    if quality ~= nil then
+        return quality
+    end
+
+    if type(itemLink) == "string" then
+        local linkColor = itemLink:match("^|c%x%x(%x%x%x%x%x%x)")
+        quality = linkColor and QUALITY_BY_LINK_COLOR[linkColor:lower()] or nil
+        if quality ~= nil then
+            return quality
+        end
+    end
+
+    local item = itemLink or itemID
+    if item and C_Item and type(C_Item.GetItemQualityByID) == "function" then
+        local ok, resolved = pcall(C_Item.GetItemQualityByID, item)
+        if ok and tonumber(resolved) ~= nil then
+            return tonumber(resolved)
+        end
+    end
+    if item and type(GetItemInfo) == "function" then
+        local ok, _, _, resolved = pcall(GetItemInfo, item)
+        if ok and tonumber(resolved) ~= nil then
+            return tonumber(resolved)
+        end
+    end
+    return nil
+end
+
+function Logic:GetQualityColor(quality, itemLink, itemID)
+    quality = self:ResolveQuality(quality, itemLink, itemID)
+    local color = type(ITEM_QUALITY_COLORS) == "table" and ITEM_QUALITY_COLORS[quality] or nil
     if color then
         return { color.r or 1, color.g or 1, color.b or 1, 1 }
     end

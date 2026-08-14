@@ -8,7 +8,8 @@ local auraCategoryIds = addon.Core.AuraCategoryIds
 -- groups on one container render as a single continuous row. Overlap between the categories is
 -- resolved with `!` negation rather than post-hoc dedup (an aura can be flagged both BIG and
 -- EXTERNAL defensive, and importants are frequently defensives too): each aura matches exactly
--- one of the four filters below, in the priority order CC > big > external > important.
+-- one of the filters below, in the priority order CC > disarm > big > external > important
+-- (disarm's own overlap with bare HARMFUL is closed by its spell-ID map, not the string).
 --
 -- These strings are shared by every module that shows the standard categories, which matters
 -- because AddAuraGroup validates the filter string loudly - if a token or a negation turns out
@@ -42,13 +43,24 @@ local auraCategoryIds = addon.Core.AuraCategoryIds
 -- paths where the gate DOES apply the maps, category members with no player PvP ability behind
 -- them (mob and boss CC, PvE-only important buffs) stop showing.
 --
+-- WHICH DISPLAYS DROP THE MAP
+-- Being a curated subset cuts the other way too: wherever the gate applies the maps they also
+-- hide flagged CC no list has heard of, so a new spec's stun goes missing until someone re-runs
+-- the scan. Nameplates and portraits take that coverage over the workaround (GroupSpec's
+-- dropSpellIds), because their units leave little room for the bug - a plate only exists for a
+-- unit the client is drawing, and a portrait shows your own unit or one you picked. A far-away
+-- focus is the gap that leaves. Raid frames, the healer CC display and the alert sounds keep the
+-- maps, since a group member or a BG healer is out of range constantly. Disarm keeps its map
+-- everywhere; see M.Filter.Disarm.
+--
 -- Other candidate filters are NOT identity-gated: dispel types and the booleans (isStealable,
--- isBossAura, nameplateShowPersonal, maxDuration, ...). Precognition uses the maxDuration one for
--- exactly this reason. One of them still has a gate of its own: isFromPlayerOrPlayerPet needs the
--- engine to attribute the aura's caster, which it cannot do for a group member outside the
--- player's visible world (another instance or phase) - UnitCanAssist stays true there, and the
--- unevaluable check is skipped the same silent way. The PLAYER filter-string token shares that
--- failure. Displays using either must also gate on UnitIsVisible (see CustomAuras CanFilterUnit).
+-- isBossAura, nameplateShowPersonal, maxDuration, ...), which is why a display that must work on
+-- a non-assistable unit reaches for one. One of them still has a gate of its own:
+-- isFromPlayerOrPlayerPet needs the engine to attribute the aura's caster, which it cannot do
+-- for a group member outside the player's visible world (another instance or phase) -
+-- UnitCanAssist stays true there, and the unevaluable check is skipped the same silent way.
+-- The PLAYER filter-string token shares that failure. Displays using either must also gate on
+-- UnitIsVisible (see CustomAuras CanFilterUnit).
 
 -- Spell-ID maps per category, keyed to match M.Filter so a caller holding a filter name can look
 -- up both. The generated Defensive list is not split into big/external - it does not have to be,
@@ -58,7 +70,16 @@ local spellIds = {
 	BigDefensive = auraCategoryIds.Defensive,
 	ExternalDefensive = auraCategoryIds.Defensive,
 	Important = auraCategoryIds.Important,
-	ImportantOnly = auraCategoryIds.Important,
+	-- Hand-curated, not generated: the game does not flag disarms as CROWD_CONTROL (or anything
+	-- else), so no scan can find them and no filter token can select them - the map below is the
+	-- disarm group's only real filter. That makes the category enemy-only; see M.Filter.Disarm.
+	Disarm = {
+		[207777] = true, -- Dismantle (Rogue)
+		[236077] = true, -- Disarm (Warrior)
+		[233759] = true, -- Grapple Weapon (Monk)
+		[407028] = true, -- Sticky Tar Bomb (Hunter)
+		[209749] = true, -- Faerie Swarm (Druid)
+	},
 }
 
 -- Memoised canonical spellings; the addon only ever produces a handful of distinct strings.
@@ -73,35 +94,36 @@ addon.Core.AuraFilters = M
 
 M.Filter = {
 	CrowdControl = "HARMFUL|CROWD_CONTROL",
+	-- Disarms carry no category flag, so the spell-ID map is the only filter that narrows this
+	-- group and the string is just "any non-CC debuff". On an assistable unit the identity gate
+	-- above skips the map and the group would show every debuff the unit has, so callers MUST
+	-- budget it to zero there (units:CanAssist, mirroring the RaidFrameAuras helpful-side gate).
+	-- The negation keeps a disarm out of this group if the game ever starts flagging them as CC.
+	Disarm = "HARMFUL|!CROWD_CONTROL",
 	BigDefensive = "HELPFUL|BIG_DEFENSIVE",
 	ExternalDefensive = "HELPFUL|EXTERNAL_DEFENSIVE|!BIG_DEFENSIVE",
 	-- Excludes both defensive categories so a defensive that is also flagged important is only
 	-- ever drawn once (on whichever display shows defensives).
 	Important = "HELPFUL|IMPORTANT|!BIG_DEFENSIVE|!EXTERNAL_DEFENSIVE",
-	-- Unpartitioned importants. TEMPORARY: the only consumer is the Precog module's 12.1 branch,
-	-- which is unreachable (Precog's Init early-returns there); delete this and the matching
-	-- spellIds/CandidateFilters entries together with the 12.0 path.
-	ImportantOnly = "HELPFUL|IMPORTANT",
 }
 
 -- Ready-made candidateFilters tables, keyed to match M.Filter, so a group spec can point straight
 -- at one instead of allocating a wrapper per display (the nameplate and alert pools build these
 -- by the dozen). Shared and read-only: the engine keeps the reference it is handed and nothing
--- here mutates it. Displays needing extra candidate filters (precognition's maxDuration) build
--- their own table instead.
+-- here mutates it. A display needing extra candidate filters builds its own table instead.
 M.CandidateFilters = {
 	CrowdControl = { includeSpellIDs = spellIds.CrowdControl },
 	BigDefensive = { includeSpellIDs = spellIds.BigDefensive },
 	ExternalDefensive = { includeSpellIDs = spellIds.ExternalDefensive },
 	Important = { includeSpellIDs = spellIds.Important },
-	-- TEMPORARY: see M.Filter.ImportantOnly.
-	ImportantOnly = { includeSpellIDs = spellIds.ImportantOnly },
+	Disarm = { includeSpellIDs = spellIds.Disarm },
 }
 
 -- Group keys. Always reference these rather than writing the string inline: SetMaxIcons is the
 -- per-category on/off switch, and a typo there would silently disable a whole category.
 M.GroupKey = {
 	CrowdControl = "cc",
+	Disarm = "disarm",
 	BigDefensive = "bigdef",
 	ExternalDefensive = "extdef",
 	Important = "important",
@@ -158,12 +180,16 @@ end
 ---One standard-category group spec in the shape AuraContainerDisplay's New takes. Returns a
 ---fresh table: New keeps the list it is given for the display's lifetime, so specs must never
 ---be shared between displays.
----@param categoryKey string "CrowdControl"|"BigDefensive"|"ExternalDefensive"|"Important".
+---@param categoryKey string "CrowdControl"|"Disarm"|"BigDefensive"|"ExternalDefensive"|"Important".
 ---@param maxIcons number? Icon budget for the group (New defaults a nil budget to 3).
 ---@param extra table? Further AuraDisplayGroupSpec fields (SortDirection, GlowColor, ...) copied
 ---onto the spec; entries may also override the category defaults.
+---@param dropSpellIds boolean? Leave the category's spell-ID map off, so the group shows
+---everything the filter string selects rather than the curated subset. Only for displays whose
+---units cannot be out of range - see the header. Ignored for disarm, whose map is the only
+---filter narrowing that group.
 ---@return AuraDisplayGroupSpec
-function M:GroupSpec(categoryKey, maxIcons, extra)
+function M:GroupSpec(categoryKey, maxIcons, extra, dropSpellIds)
 	local key = M.GroupKey[categoryKey]
 
 	if not key then
@@ -179,6 +205,11 @@ function M:GroupSpec(categoryKey, maxIcons, extra)
 		MaxIcons = maxIcons,
 	}
 
+	-- Disarm is exempt: with no category flag behind it, the map is all that narrows the group.
+	if dropSpellIds and categoryKey ~= "Disarm" then
+		spec.CandidateFilters = nil
+	end
+
 	if extra then
 		for field, value in pairs(extra) do
 			spec[field] = value
@@ -188,28 +219,45 @@ function M:GroupSpec(categoryKey, maxIcons, extra)
 	return spec
 end
 
----Builds the standard four-category group spec list for a display, in priority order.
+---Builds the standard category group spec list for a display, in priority order (disarm renders
+---directly after the CC icons it belongs with).
 ---Returns a fresh table: `New` keeps the list for the display's lifetime, so it must not be
 ---shared between displays.
 ---@param maxIcons number Initial per-group icon budget (SetMaxIcons re-budgets per category).
+---@param dropSpellIds boolean? Passed to every GroupSpec; see there.
+---@param colors table<string, number[]>? Category tints keyed by M.GroupKey value. Set at
+---creation rather than afterwards because a display built inside an arena can never be restyled,
+---so the tint it is born with is the one it keeps for the match.
 ---@return AuraDisplayGroupSpec[]
-function M:BuildCategoryGroups(maxIcons)
-	return {
-		self:GroupSpec("CrowdControl", maxIcons),
-		self:GroupSpec("BigDefensive", maxIcons),
-		self:GroupSpec("ExternalDefensive", maxIcons),
-		self:GroupSpec("Important", maxIcons),
+function M:BuildCategoryGroups(maxIcons, dropSpellIds, colors)
+	local groups = {
+		self:GroupSpec("CrowdControl", maxIcons, nil, dropSpellIds),
+		self:GroupSpec("Disarm", maxIcons, nil, dropSpellIds),
+		self:GroupSpec("BigDefensive", maxIcons, nil, dropSpellIds),
+		self:GroupSpec("ExternalDefensive", maxIcons, nil, dropSpellIds),
+		self:GroupSpec("Important", maxIcons, nil, dropSpellIds),
 	}
+
+	if colors then
+		for _, spec in ipairs(groups) do
+			spec.GlowColor = colors[spec.Key]
+		end
+	end
+
+	return groups
 end
 
----Applies the per-category toggles to a four-category display. A budget of 0 hides the group.
+---Applies the per-category toggles to a standard-category display. A budget of 0 hides the group.
 ---@param display AuraContainerDisplay
 ---@param maxIcons number Budget for each enabled category.
 ---@param showCC boolean?
 ---@param showDefensives boolean? Covers both the big and external defensive groups.
 ---@param showImportant boolean?
-function M:ApplyCategoryBudgets(display, maxIcons, showCC, showDefensives, showImportant)
+---@param showDisarm boolean? Must be false while the tracked unit is assistable - the disarm
+---group's only real filter is its spell-ID map, which the identity gate skips there.
+function M:ApplyCategoryBudgets(display, maxIcons, showCC, showDefensives, showImportant, showDisarm)
 	display:SetMaxIcons(M.GroupKey.CrowdControl, showCC and maxIcons or 0)
+	display:SetMaxIcons(M.GroupKey.Disarm, showDisarm and maxIcons or 0)
 	display:SetMaxIcons(M.GroupKey.BigDefensive, showDefensives and maxIcons or 0)
 	display:SetMaxIcons(M.GroupKey.ExternalDefensive, showDefensives and maxIcons or 0)
 	display:SetMaxIcons(M.GroupKey.Important, showImportant and maxIcons or 0)

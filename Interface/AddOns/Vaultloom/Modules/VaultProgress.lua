@@ -21,7 +21,9 @@ local TEST_REWARD_REMINDER = {
 
 local REFRESH_EVENTS = {
     "PLAYER_ENTERING_WORLD",
+    "WEEKLY_REWARDS_ITEM_CHANGED",
     "WEEKLY_REWARDS_UPDATE",
+    "CHALLENGE_MODE_COMPLETED",
     "CHALLENGE_MODE_MAPS_UPDATE",
 }
 
@@ -81,8 +83,10 @@ local function countUnlockedSlots(snapshot)
     return math.min(MAX_REWARD_SLOTS, count)
 end
 
-local function archiveExpiredSnapshot(container, snapshot)
-    if type(container) ~= "table" or type(snapshot) ~= "table" then return false end
+local function archiveExpiredSnapshot(characterKey, container, snapshot)
+    if type(characterKey) ~= "string" or type(container) ~= "table" or type(snapshot) ~= "table" then
+        return false
+    end
 
     local unlockedSlots = countUnlockedSlots(snapshot)
     if unlockedSlots > 0 then
@@ -101,13 +105,12 @@ local function archiveExpiredSnapshot(container, snapshot)
 
     -- Archive the small reward marker first, then remove only the expired Vault
     -- snapshot. Every unrelated snapshot in this container remains untouched.
-    container.vault = nil
-    return true
+    return Addon.Database:ClearCharacterSnapshot(characterKey, "vault", "expired") == true
 end
 
 local function trackNextExpiry(resetAt)
     resetAt = tonumber(resetAt) or 0
-    if resetAt <= now() then return end
+    if Addon.WoWApi:GetResetState(resetAt) ~= Addon.WoWApi.RESET_ACTIVE then return end
     if not Service.nextExpiryAt or resetAt < Service.nextExpiryAt then
         Service.nextExpiryAt = resetAt
     end
@@ -121,13 +124,14 @@ function Service:ProcessExpiredSnapshots(force)
 
     local changed = false
     local nextExpiryAt
-    for _, record in pairs(Addon.Database:Get().characters or {}) do
+    for characterKey, record in pairs(Addon.Database:Get().characters or {}) do
         local container = type(record) == "table" and record.snapshots or nil
         local snapshot = type(container) == "table" and container.vault or nil
         local resetAt = type(snapshot) == "table" and tonumber(snapshot.resetAt) or 0
-        if resetAt > 0 and resetAt <= timestamp then
-            changed = archiveExpiredSnapshot(container, snapshot) or changed
-        elseif resetAt > timestamp and (not nextExpiryAt or resetAt < nextExpiryAt) then
+        local resetState = Addon.WoWApi:GetResetState(resetAt, timestamp)
+        if resetState == Addon.WoWApi.RESET_EXPIRED then
+            changed = archiveExpiredSnapshot(characterKey, container, snapshot) or changed
+        elseif resetState == Addon.WoWApi.RESET_ACTIVE and (not nextExpiryAt or resetAt < nextExpiryAt) then
             nextExpiryAt = resetAt
         end
     end
@@ -202,8 +206,8 @@ function Service:GetSnapshot(characterKey)
         return nil
     end
     local resetAt = tonumber(snapshot.resetAt) or 0
-    if resetAt > 0 and resetAt <= now() then
-        archiveExpiredSnapshot(container, snapshot)
+    if Addon.WoWApi:IsResetExpired(resetAt) then
+        archiveExpiredSnapshot(characterKey, container, snapshot)
         return nil
     end
     trackNextExpiry(resetAt)
@@ -216,11 +220,23 @@ local function collectVault()
         return nil
     end
 
+    -- The reward API is already authoritative when it reports true at login.
+    -- Query it as part of every collection so the character-list badge does
+    -- not have to wait for a later WEEKLY_REWARDS_UPDATE event.
+    if Service.skipNextAvailabilityCheck then
+        Service.skipNextAvailabilityCheck = nil
+    else
+        Service:RefreshCurrentRewardAvailability(false)
+    end
+
     local existing = Service:GetSnapshot(identity.key)
     local snapshot = Addon.VaultLogic:BuildSnapshot(existing)
     if snapshot then
-        getSnapshotContainer(identity.key, true).vault = snapshot
-        trackNextExpiry(snapshot.resetAt)
+        if Addon.Database:CommitCharacterSnapshot(identity.key, "vault", snapshot, "refresh") then
+            trackNextExpiry(snapshot.resetAt)
+        else
+            snapshot = existing
+        end
     else
         snapshot = existing
     end
@@ -242,10 +258,19 @@ function Module:OnEnable()
     for _, eventName in ipairs(REFRESH_EVENTS) do
         Addon.EventBus:Subscribe(eventName, self, function(event)
             Service:ProcessExpiredSnapshots(false)
-            if event == "WEEKLY_REWARDS_UPDATE" then
-                Service:RefreshCurrentRewardAvailability(true)
+            if event == "CHALLENGE_MODE_COMPLETED" and C_MythicPlus
+                and type(C_MythicPlus.RequestMapInfo) == "function"
+            then
+                pcall(C_MythicPlus.RequestMapInfo)
             end
-            Addon.RefreshScheduler:Invalidate(Module.id, event == "PLAYER_ENTERING_WORLD" and 0.50 or 0.10)
+            if event == "WEEKLY_REWARDS_UPDATE" or event == "WEEKLY_REWARDS_ITEM_CHANGED" then
+                Service:RefreshCurrentRewardAvailability(true)
+                Service.skipNextAvailabilityCheck = true
+            end
+            local delay = event == "PLAYER_ENTERING_WORLD" and 0.50
+                or event == "CHALLENGE_MODE_COMPLETED" and 0.60
+                or 0.10
+            Addon.RefreshScheduler:Invalidate(Module.id, delay)
         end)
     end
     Addon.EventBus:Subscribe("UPDATE_UI_WIDGET", self, function(_, widgetInfo)

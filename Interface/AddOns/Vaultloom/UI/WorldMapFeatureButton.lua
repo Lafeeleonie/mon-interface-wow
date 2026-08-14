@@ -223,9 +223,9 @@ function Runtime:CreateRow(index)
     row:EnableMouse(true)
     row:SetBackdrop({
         bgFile = Addon.Assets.row,
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
+        edgeFile = Addon.Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     row:SetBackdropColor(0.18, 0.15, 0.11, 0.94)
     row:SetBackdropBorderColor(0.60, 0.45, 0.16, 0.68)

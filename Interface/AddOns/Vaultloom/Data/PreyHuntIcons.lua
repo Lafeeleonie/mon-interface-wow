@@ -100,5 +100,9 @@ Addon.Data.PREY_HUNT_ICONS = {
         [91267] = { difficulty = 3, criteriaID = 105999 },
         [91268] = { difficulty = 3, criteriaID = 106000 },
         [91269] = { difficulty = 3, criteriaID = 106001 },
+        [95021] = { difficulty = 3, criteriaID = 115704, achievementID = 63452 },
+        [95022] = { difficulty = 3, criteriaID = 115705, achievementID = 63452 },
+        [95023] = { difficulty = 3, criteriaID = 115706, achievementID = 63451 },
+        [95024] = { difficulty = 3, criteriaID = 115707, achievementID = 63451 },
     },
 }

@@ -18,10 +18,6 @@ local REFRESH_EVENTS = {
     "BAG_UPDATE_DELAYED",
 }
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
@@ -33,9 +29,8 @@ function Service:GetSnapshot(characterKey)
     if type(snapshot) ~= "table" then
         return nil
     end
-    local resetAt = tonumber(snapshot.resetAt) or 0
-    if resetAt > 0 and resetAt <= now() then
-        record.snapshots.pveEvents = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pveEvents", "expired")
         return nil
     end
     return snapshot
@@ -45,7 +40,10 @@ local function scanStoredCourtCompletion(db, resetAt)
     for _, record in pairs(db.characters or {}) do
         local snapshot = type(record) == "table" and type(record.snapshots) == "table" and record.snapshots.pveEvents or nil
         local snapshotResetAt = type(snapshot) == "table" and tonumber(snapshot.resetAt) or 0
-        if snapshotResetAt > now() and (resetAt <= 0 or math.abs(snapshotResetAt - resetAt) <= 120) then
+        local resetState = Addon.WoWApi:GetResetState(resetAt)
+        if Addon.WoWApi:GetResetState(snapshotResetAt) == Addon.WoWApi.RESET_ACTIVE
+            and (resetState ~= Addon.WoWApi.RESET_ACTIVE or math.abs(snapshotResetAt - resetAt) <= 120)
+        then
             for _, row in ipairs(snapshot.rows or {}) do
                 if row.key == "court_favor" and (row.completed == true or row.status == "complete") then
                     return true
@@ -60,9 +58,8 @@ local function getMemory(resetAt)
     local db = Addon.Database:Get()
     local memory = type(db.pveEventsMemory) == "table" and db.pveEventsMemory or nil
     local savedResetAt = memory and tonumber(memory.resetAt) or 0
-    local expired = savedResetAt > 0 and savedResetAt <= now()
-    local movedToDifferentReset = resetAt > 0 and savedResetAt > 0 and math.abs(savedResetAt - resetAt) > 120
-    if not memory or expired or movedToDifferentReset then
+    local expired = Addon.WoWApi:IsResetExpired(savedResetAt)
+    if not memory or expired then
         memory = { resetAt = resetAt }
         db.pveEventsMemory = memory
     end
@@ -86,8 +83,8 @@ local function collectEvents()
     local _, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
     local snapshot = Addon.PveEventsLogic:BuildSnapshot(getMemory(resetAt), existing)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pveEvents = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(identity.key, "pveEvents", snapshot, "refresh")
+        if not stored then snapshot = existing end
     end
     return {
         characterKey = identity.key,

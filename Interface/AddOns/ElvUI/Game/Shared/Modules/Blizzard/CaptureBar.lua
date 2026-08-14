@@ -8,7 +8,7 @@ function BL:CaptureBarUpdate()
 	local numFrames = _G.NUM_EXTENDED_UI_FRAMES
 	if not numFrames then return end
 
-	for i=1, numFrames do
+	for i = 1, numFrames do
 		local captureBar = _G['WorldStateCaptureBar' .. i]
 		if captureBar and captureBar:IsVisible() then
 			captureBar:ClearAllPoints()
@@ -23,5 +23,9 @@ function BL:CaptureBarUpdate()
 end
 
 function BL:PositionCaptureBar()
-	hooksecurefunc('UIParent_ManageFramePositions', BL.CaptureBarUpdate)
+	if _G.ManageFramePositions then
+		hooksecurefunc('ManageFramePositions', BL.CaptureBarUpdate)
+	elseif _G.UIParent_ManageFramePositions then
+		hooksecurefunc('UIParent_ManageFramePositions', BL.CaptureBarUpdate)
+	end
 end

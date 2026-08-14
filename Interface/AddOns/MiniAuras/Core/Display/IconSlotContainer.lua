@@ -3,12 +3,13 @@ local _, addon = ...
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 local Masque = LibStub and LibStub("Masque", true)
 local fontUtil = addon.Utils.FontUtil
+local iconUtil = addon.Utils.IconUtil
 local wowEx = addon.Utils.WoWEx
 local glowStyles = addon.Core.GlowStyles
 
--- Hoisted out of UpdateGlow: that runs per slot on every icon update, and the value never
--- changes for the life of the session.
-local USE_AURA_CONTAINERS = wowEx:UseAuraContainers()
+-- The icon crop (Utils/IconUtil) leaves the artwork reaching the icon's edge, so our own border
+-- sits flush and the swipe covers exactly the visible square. A Masque skin overrides it with its
+-- own crop, which is what we want - the skin owns the icon's shape.
 
 -- Style name -> the field its built frame is cached under on a parent, so a frame is never
 -- built twice per layer. Membership doubles as "this style is texture-based": the shared
@@ -18,7 +19,7 @@ for name in pairs(glowStyles.Specs) do
 	STATIC_GLOW_FIELDS[name] = "_StaticGlow_" .. name
 end
 
--- Debounce table keyed by group object: one deferred ReSkin per group per frame
+-- Debounce table keyed by container: one deferred ReSkin per container per frame
 local masqueReskinPending = {}
 local cachedDb = nil
 -- Reused across Layout() calls to avoid a table allocation on the hot path
@@ -33,6 +34,13 @@ local frameIdCounter = 0
 -- secret aura durations are never read. One shared ticker serves every container.
 local coloredCooldowns = {}
 local colorTicker
+-- Fallbacks while db.CountdownColors is missing (a profile snapshot from before the setting
+-- existed round-trips without it); must match BAND_DEFAULTS in Core/Auras/AuraCountdownText.
+local COUNTDOWN_FALLBACKS = {
+	Under5s = { R = 1, G = 0, B = 0 },
+	Under60s = { R = 1, G = 0.8, B = 0 },
+	Over60s = { R = 1, G = 1, B = 1 },
+}
 
 ---@class IconSlotContainer
 local M = {}
@@ -76,12 +84,19 @@ local function GetCooldownText(cd)
 	return cd.MiniAurasFontString
 end
 
----Colour bands by remaining seconds; must match COUNTDOWN_COLOR_STOPS in AuraContainerDisplay
----so these icons show exactly what the curve-bound 12.1 aura icons show.
+---Colour bands by remaining seconds, tinted by db.CountdownColors; must match the curve stops in
+---Core/Auras/AuraCountdownText so these icons show exactly what the curve-bound 12.1 aura icons
+---show. Compared by the colour actually applied rather than by band, so a colour changed in the
+---options repaints on the next tick.
 local function ApplyCountdownColor(cd, remaining)
-	local band = (remaining < 5 and 1) or (remaining < 60 and 2) or 3
+	local db = GetDb()
+	local colors = (db and db.CountdownColors) or COUNTDOWN_FALLBACKS
+	local band = (remaining < 5 and (colors.Under5s or COUNTDOWN_FALLBACKS.Under5s))
+		or (remaining < 60 and (colors.Under60s or COUNTDOWN_FALLBACKS.Under60s))
+		or colors.Over60s or COUNTDOWN_FALLBACKS.Over60s
+	local r, g, b = band.R or 1, band.G or 1, band.B or 1
 
-	if cd.MiniAurasColorBand == band then
+	if cd.MiniAurasColorR == r and cd.MiniAurasColorG == g and cd.MiniAurasColorB == b then
 		return
 	end
 
@@ -91,27 +106,44 @@ local function ApplyCountdownColor(cd, remaining)
 		return
 	end
 
-	cd.MiniAurasColorBand = band
-
-	if band == 1 then
-		text:SetTextColor(1, 0.102, 0.102)
-	elseif band == 2 then
-		text:SetTextColor(1, 1, 0.102)
-	else
-		text:SetTextColor(1, 1, 1)
-	end
+	cd.MiniAurasColorR, cd.MiniAurasColorG, cd.MiniAurasColorB = r, g, b
+	text:SetTextColor(r, g, b)
 end
 
 local function ResetCountdownColor(cd)
 	coloredCooldowns[cd] = nil
 
-	if cd.MiniAurasColorBand then
-		cd.MiniAurasColorBand = nil
+	if cd.MiniAurasColorR then
+		cd.MiniAurasColorR, cd.MiniAurasColorG, cd.MiniAurasColorB = nil, nil, nil
 		local text = GetCooldownText(cd)
 		if text then
 			text:SetTextColor(1, 1, 1)
 		end
 	end
+end
+
+---A fixed colour for a preview countdown, routed through the same fields the timed colouring
+---uses so ResetCountdownColor can always put white back. The timed colouring wins while it holds
+---this cooldown, and white is skipped because that is already the reset state.
+local function ApplyStaticCountdownColor(cd, color)
+	if coloredCooldowns[cd] then
+		return
+	end
+
+	local r, g, b = color.r or 1, color.g or 1, color.b or 1
+
+	if r == 1 and g == 1 and b == 1 then
+		return
+	end
+
+	local text = GetCooldownText(cd)
+
+	if not text then
+		return
+	end
+
+	cd.MiniAurasColorR, cd.MiniAurasColorG, cd.MiniAurasColorB = r, g, b
+	text:SetTextColor(r, g, b)
 end
 
 local function OnColorTick()
@@ -156,14 +188,30 @@ local function RegisterCountdownColor(cd, durationObject)
 	end
 end
 
-local function ScheduleMasqueReSkin(group)
-	if not group or masqueReskinPending[group] then
+---Re-fits the skin to the container's current icon size, debounced to one pass per container per
+---frame. Scoped to the slots this container owns: a Masque group is shared by every container
+---using the same name, and on 12.1 by the aura displays too, whose buttons must only ever be
+---touched from their own restriction-gated restyle.
+---@param instance IconSlotContainer
+local function ScheduleMasqueReSkin(instance)
+	local group = instance.MasqueGroup
+
+	if not group or masqueReskinPending[instance] then
 		return
 	end
-	masqueReskinPending[group] = true
+
+	masqueReskinPending[instance] = true
 	C_Timer.After(0, function()
-		masqueReskinPending[group] = nil
-		group:ReSkin()
+		masqueReskinPending[instance] = nil
+
+		for i = 1, instance.Count do
+			local slot = instance.Slots[i]
+			local container = slot and slot.Container
+
+			if container then
+				group:ReSkin(container.Frame)
+			end
+		end
 	end)
 end
 
@@ -178,6 +226,7 @@ local function CreateLayer(parentFrame, level, iconSize, noBorder)
 	-- place our icons on the 1st draw layer of background
 	local icon = f:CreateTexture(nil, "BACKGROUND", nil, 1)
 	icon:SetAllPoints()
+	icon:SetTexCoord(iconUtil:TexCoord())
 
 	local cd = CreateFrame("Cooldown", NextFrameName("Cooldown"), f, "CooldownFrameTemplate")
 	cd:SetAllPoints()
@@ -185,6 +234,7 @@ local function CreateLayer(parentFrame, level, iconSize, noBorder)
 	cd:SetDrawBling(false)
 	cd:SetHideCountdownNumbers(false)
 	cd:SetSwipeColor(0, 0, 0, 0.8)
+	glowStyles:SquareSwipe(cd)
 	-- When the cooldown expires naturally the frame hides itself via OnCooldownDone without
 	-- any external code calling SetSlot again. Clear desaturation immediately so the icon
 	-- doesn't stay grey until the next UpdateDisplay (e.g. the delayed ARENA_COOLDOWNS_UPDATE).
@@ -408,20 +458,26 @@ local function FillColorScratch(options)
 	end
 end
 
+---@return string
+local function ResolveGlowType()
+	local db = GetDb()
+	local glowType = (db and db.GlowType) or "Slot Glow"
+
+	-- Aura icons render through AuraContainerDisplay, which can only use the texture-based glows
+	-- (LibCustomGlow cannot attach to AuraButtons). Kick and test icons still render here, so
+	-- clamp them to the same set and every glow stays visually consistent.
+	if not STATIC_GLOW_FIELDS[glowType] then
+		return "Slot Glow"
+	end
+
+	return glowType
+end
+
 ---Updates glow effects on a layer frame
 ---@param layerFrame table The layer frame to update glow on
 ---@param options IconLayerOptions Options containing glow settings
 local function UpdateGlow(layerFrame, options)
-	local db = GetDb()
-	local glowType = (db and db.GlowType) or "Slot Glow"
-
-	-- 12.1: aura icons render through AuraContainerDisplay, which can only use the texture-based
-	-- glows (LibCustomGlow can't attach to AuraButtons). Kick and test icons still render here,
-	-- so clamp to the same set to keep all glows visually consistent; the config offers only
-	-- these on 12.1. TEMPORARY: remove with the legacy path once 12.1 is live.
-	if USE_AURA_CONTAINERS and not STATIC_GLOW_FIELDS[glowType] then
-		glowType = "Slot Glow"
-	end
+	local glowType = ResolveGlowType()
 
 	if not options.Glow then
 		StopLCGGlowsExcept(layerFrame, nil)
@@ -521,6 +577,27 @@ local function UpdateGlow(layerFrame, options)
 			end
 		end
 	end
+end
+
+---Rounds a layer's icon off while it wears one of the catalog's overlays, since those all have
+---rounded inner corners. LibCustomGlow's glows trace a rectangle instead, so an icon under one
+---keeps its square corners.
+---@param layer table
+---@param options IconLayerOptions
+local function ApplyIconCorners(layer, options)
+	-- Portrait icons carry a round mask and a swipe to match; leave both alone.
+	if layer.CustomShape then
+		return
+	end
+
+	local rounded = (options.Glow and STATIC_GLOW_FIELDS[ResolveGlowType()]) and true or false
+
+	if layer.CornersRounded == rounded then
+		return
+	end
+
+	layer.CornersRounded = rounded
+	layer.CornerMask = glowStyles:SetIconCorners(layer.Frame, layer.Icon, layer.Cooldown, layer.CornerMask, rounded)
 end
 
 ---Creates a new IconSlotContainer instance
@@ -729,7 +806,7 @@ function M:Layout()
 	end
 
 	-- testing to see if this helps with the weird issue with randomly large Masque borders and icons
-	ScheduleMasqueReSkin(self.MasqueGroup)
+	ScheduleMasqueReSkin(self)
 end
 
 ---Sets the spacing between slots
@@ -876,7 +953,7 @@ function M:SetIconSize(newSize)
 	end
 
 	-- Re-apply the Masque skin at the new size, debounced per group.
-	ScheduleMasqueReSkin(self.MasqueGroup)
+	ScheduleMasqueReSkin(self)
 
 	self:Layout()
 end
@@ -933,10 +1010,19 @@ end
 ---@field Alpha number|boolean? Control alpha: number sets it directly, boolean uses SetAlphaFromBoolean
 ---@field Glow boolean? Whether to show glow effect (requires LibCustomGlow)
 ---@field ReverseCooldown boolean? Whether to reverse the cooldown animation
+---@field HideSwipe boolean? Drop the cooldown swipe, whatever the global setting says
+---@field HideNumbers boolean? Drop the countdown text
 ---@field Color table? RGBA color table {r, g, b, a} for glow and border color
+---@field Border boolean? Show the coloured border even while a glow is active
 ---@field FontScale number? Font scale multiplier for cooldown text (default: 1.0)
 ---@field Layer number? Which layer to render on (1 = base, 2+ = stacked above; default: 1)
 ---@field SpellId number? Spell ID for tooltip on hover
+---@field ChargeText string? Stand-in charge or stack count text
+---@field ChargeTextCenter boolean? Centre the charge text where the countdown sits, at its size,
+---instead of in the corner
+---@field TextColor table? {r, g, b} for the countdown and charge text. Setting one replaces the
+---global colour-by-time countdown (white included), so pass nil rather than white for the
+---default colouring
 function M:SetSlot(slotIndex, options)
 	if slotIndex < 1 or slotIndex > self.Count then
 		return
@@ -1002,14 +1088,24 @@ function M:SetSlot(slotIndex, options)
 	local db = GetDb()
 	layer.Icon:SetTexture(options.Texture)
 	layer.Cooldown:SetReverse(options.ReverseCooldown)
+	layer.Cooldown:SetHideCountdownNumbers(options.HideNumbers == true)
 	if layer.Cooldown.SetCountdownMillisecondsThreshold then
 		layer.Cooldown:SetCountdownMillisecondsThreshold(options.ShowMilliseconds and (db and db.MillisecondsThreshold or 5) or 0)
 	end
 
 	if options.DurationObject then
 		layer.Cooldown:SetCooldownFromDurationObject(options.DurationObject)
-		layer.Cooldown:SetDrawSwipe(not (db and db.DisableSwipe))
-		RegisterCountdownColor(layer.Cooldown, options.DurationObject)
+		layer.Cooldown:SetDrawSwipe(options.HideSwipe ~= true and not (db and db.DisableSwipe))
+
+		-- A slot with its own text colour never registers for the timed colouring: the fixed
+		-- colour replaces it, whatever the global setting says. Matches StyleCountdown, where a
+		-- set TextColor takes the countdown off the ramp.
+		if options.TextColor then
+			ResetCountdownColor(layer.Cooldown)
+			ApplyStaticCountdownColor(layer.Cooldown, options.TextColor)
+		else
+			RegisterCountdownColor(layer.Cooldown, options.DurationObject)
+		end
 	else
 		layer.Cooldown:Clear()
 		layer.Cooldown:SetDrawSwipe(false)
@@ -1026,8 +1122,61 @@ function M:SetSlot(slotIndex, options)
 			overlay:SetFrameLevel(layer.Cooldown:GetFrameLevel() + 1)
 			layer.ChargeText = overlay:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
 			layer.ChargeText:SetPoint("BOTTOMRIGHT", layer.Frame, "BOTTOMRIGHT", -3, 1)
+			layer.ChargeTextCentered = false
+			-- The template face, kept so the centred stand-in (which borrows the countdown's
+			-- face below) can be put back in the corner state.
+			local face, _, flags = layer.ChargeText:GetFont()
+			layer.ChargeTextFace, layer.ChargeTextFlags = face, flags
 		end
-		UpdateChargeTextFontSize(layer.ChargeText, self.Size, options.FontScale or layer.Cooldown.FontScale)
+
+		-- Centred the text stands in for the countdown, so it takes that text's spot, face and
+		-- size rather than the corner's, matching what the live icons draw.
+		local centered = options.ChargeTextCenter == true
+
+		if layer.ChargeTextCentered ~= centered then
+			layer.ChargeTextCentered = centered
+			layer.ChargeText:ClearAllPoints()
+
+			if centered then
+				layer.ChargeText:SetPoint("CENTER", layer.Frame, "CENTER", 0, 0)
+			else
+				layer.ChargeText:SetPoint("BOTTOMRIGHT", layer.Frame, "BOTTOMRIGHT", -3, 1)
+
+				if layer.ChargeTextFace then
+					local _, currentSize = layer.ChargeText:GetFont()
+
+					layer.ChargeText:SetFont(layer.ChargeTextFace, currentSize or 10,
+						layer.ChargeTextFlags)
+				end
+			end
+		end
+
+		local chargeScale = options.FontScale or layer.Cooldown.FontScale
+
+		if centered then
+			local cdText = GetCooldownText(layer.Cooldown)
+			local face, _, flags
+
+			if cdText then
+				face, _, flags = cdText:GetFont()
+			end
+
+			if face then
+				layer.ChargeText:SetFont(face,
+					math.max(1, math.floor(self.Size * 0.4 * (chargeScale or 1.0))), flags)
+			else
+				fontUtil:UpdateFontSize(layer.ChargeText, self.Size, nil, chargeScale)
+			end
+		else
+			UpdateChargeTextFontSize(layer.ChargeText, self.Size, chargeScale)
+		end
+
+		local textColor = options.TextColor
+		layer.ChargeText:SetTextColor(
+			textColor and textColor.r or 1,
+			textColor and textColor.g or 1,
+			textColor and textColor.b or 1
+		)
 		layer.ChargeText:SetText(options.ChargeText)
 		layer.ChargeText:Show()
 	elseif layer.ChargeText then
@@ -1036,8 +1185,10 @@ function M:SetSlot(slotIndex, options)
 
 	ApplyAlpha(layer.Frame, options.Alpha)
 
-	-- Hide the coloured border when a glow is active so the glow ring and border don't double up.
-	if options.Color and layer.Border and not options.Glow then
+	-- The coloured border normally gives way to an active glow so the two rings don't double up.
+	-- Border forces both, for icons standing in for aura buttons - the engine draws border and
+	-- glow together on those, and a preview rendered here must not look different from live.
+	if options.Color and layer.Border and (options.Border == true or not options.Glow) then
 		layer.Border:SetVertexColor(
 			options.Color.r or 1,
 			options.Color.g or 1,
@@ -1055,6 +1206,7 @@ function M:SetSlot(slotIndex, options)
 	end
 
 	UpdateGlow(layer.Frame, options)
+	ApplyIconCorners(layer, options)
 end
 
 -- Clears all layers on a slot

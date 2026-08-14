@@ -11,6 +11,7 @@ Addon.Focus = Service
 local SOURCE_SLICES = {
     "vault.progress",
     "pve.weekly",
+    "pve.coiled_isle",
     "pve.void_invasion",
     "pve.daily",
     "pve.events",

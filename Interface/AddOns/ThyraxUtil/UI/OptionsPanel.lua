@@ -1873,6 +1873,7 @@ local MOUSE_SHAPE_OPTIONS = {
 local CHANNEL_OPTIONS = {
     { value = "AUTO", display = "Auto" },
     { value = "PARTY", display = "Party" },
+    { value = "RAID", display = "Raid" },
     { value = "INSTANCE_CHAT", display = "Instance Chat" },
 }
 

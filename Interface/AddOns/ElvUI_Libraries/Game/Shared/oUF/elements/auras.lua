@@ -66,7 +66,7 @@ local HIDDEN = 0
 local CREATED = 2
 
 local floor, wipe, next = floor, wipe, next
-local pcall, tinsert = pcall, tinsert
+local tinsert = tinsert
 
 local CreateFrame = CreateFrame
 local GameTooltip = GameTooltip
@@ -353,7 +353,7 @@ local function filterIcons(frame, which, unit, filter, limit, offset, dontHide)
 	local element = frame[which]
 	local forceShow = element.forceShow
 
-	local unitAuraFiltered = (element.GetBlizzardAuras and element:GetBlizzardAuras(frame)) or AuraFiltered[filter][unit]
+	local unitAuraFiltered = AuraFiltered[filter][unit]
 	local auraInstanceID, aura = next(unitAuraFiltered)
 	while (aura or forceShow) and (visible < limit) do
 		local result = updateAura(frame, which, unit, aura, index, offset, filter, visible)
@@ -387,9 +387,7 @@ local function filterIcons(frame, which, unit, filter, limit, offset, dontHide)
 end
 
 local function UpdateAuras(self, event, unit, updateInfo)
-	if self.usingBlizzardAuras then
-		if event == 'UNIT_AURA' then return end -- we send a fake event: FAKE_REFRESH_AURAS
-	elseif oUF:ShouldSkipAuraUpdate(self, event, unit, updateInfo) then
+	if oUF:ShouldSkipAuraUpdate(self, event, unit, updateInfo) then
 		return
 	end
 
@@ -493,7 +491,7 @@ local function Enable(self)
 		if(buffs) then
 			buffs.__owner = self
 			-- check if there's any anchoring restrictions
-			buffs.__restricted = not pcall(self.GetCenter, self)
+			buffs.__restricted = self:IsAnchoringRestricted()
 			buffs.ForceUpdate = ForceUpdate
 			buffs.UpdateAuras = UpdateAuras
 			buffs.active = {}
@@ -511,7 +509,7 @@ local function Enable(self)
 		if(debuffs) then
 			debuffs.__owner = self
 			-- check if there's any anchoring restrictions
-			debuffs.__restricted = not pcall(self.GetCenter, self)
+			debuffs.__restricted = self:IsAnchoringRestricted()
 			debuffs.ForceUpdate = ForceUpdate
 			debuffs.UpdateAuras = UpdateAuras
 			debuffs.active = {}
@@ -529,7 +527,7 @@ local function Enable(self)
 		if(auras) then
 			auras.__owner = self
 			-- check if there's any anchoring restrictions
-			auras.__restricted = not pcall(self.GetCenter, self)
+			auras.__restricted = self:IsAnchoringRestricted()
 			auras.ForceUpdate = ForceUpdate
 			auras.UpdateAuras = UpdateAuras
 			auras.active = {}
@@ -557,4 +555,6 @@ local function Disable(self)
 	end
 end
 
-oUF:AddElement('Auras', Update, Enable, Disable)
+if oUF.wowtoc < 120100 then
+	oUF:AddElement('Auras', Update, Enable, Disable)
+end

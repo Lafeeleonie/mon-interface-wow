@@ -128,8 +128,8 @@ local function BuildAddonCard(parent, def, cardWidth)
 	descLabel:SetText(L[def.Desc])
 	descLabel:SetTextColor(0.72, 0.72, 0.72, 1)
 
-	-- Most cards link to a CurseForge project named after the addon; third-party projects
-	-- (MiniCE) carry an explicit Url where the slug differs.
+	-- Cards link to a CurseForge project named after the addon; a card whose slug differs can
+	-- carry an explicit Url instead.
 	local url = def.Url or (CURSE_BASE .. def.Name:lower())
 
 	card:EnableMouse(true)
@@ -210,21 +210,15 @@ function M:Build(panel)
 	-- lines up with the cards instead of clipping at the panel edge.
 	url.EditBox:SetPoint("TOPLEFT", lastMainRowFirst, "BOTTOMLEFT", 6, -verticalSpacing)
 
-	-- TEMPORARY: neither styling addon works with the 12.1 AuraButtons (Masque cannot skin
-	-- them, MiniCE cannot restyle their countdown text), so the whole section is only offered
-	-- on the legacy path; drop the gate with the 12.0 path unless support returns.
-	if not addon.Utils.WoWEx:UseAuraContainers() then
-		local styleSubtitle = mini:TextLine({
-			Parent = panel,
-			Text   = L["Other addons to customize MiniAuras further:"],
-		})
-		styleSubtitle:SetPoint("TOPLEFT", url.EditBox, "BOTTOMLEFT", -6, -verticalSpacing)
+	local styleSubtitle = mini:TextLine({
+		Parent = panel,
+		Text   = L["Other addons to customize MiniAuras further:"],
+	})
+	styleSubtitle:SetPoint("TOPLEFT", url.EditBox, "BOTTOMLEFT", -6, -verticalSpacing)
 
-		local styleAddons = {
-			{ Name = "MiniCE", Desc = "Customize the cooldown timers.", Url = CURSE_BASE .. "minice-cooldown-styler" },
-			{ Name = "Masque", Desc = "Powerful icon skinning tool." },
-		}
+	local styleAddons = {
+		{ Name = "Masque", Desc = "Powerful icon skinning tool." },
+	}
 
-		BuildGrid(panel, styleSubtitle, styleAddons, cardWidth)
-	end
+	BuildGrid(panel, styleSubtitle, styleAddons, cardWidth)
 end

@@ -19,24 +19,30 @@ local MODES = {
     { key = "bags", label = function() return L.ARSENAL_TAB_BAGS end },
     { key = "bank", label = function() return L.ARSENAL_TAB_BANK end },
     { key = "warband", label = function() return L.ARSENAL_TAB_WARBAND end },
+    { key = "mail", label = function() return L.ARSENAL_TAB_MAIL end },
 }
 
 local MODE_COPY = {
     bags = {
         title = function() return L.ARSENAL_INVENTORY_BAGS_TITLE end,
-        subtitle = function() return L.ARSENAL_INVENTORY_BAGS_SUBTITLE end,
         empty = function() return L.ARSENAL_NO_BAGS end,
     },
     bank = {
         title = function() return L.ARSENAL_INVENTORY_BANK_TITLE end,
-        subtitle = function() return L.ARSENAL_INVENTORY_BANK_SUBTITLE end,
         empty = function() return L.ARSENAL_NO_BANK end,
     },
     warband = {
         title = function() return L.ARSENAL_INVENTORY_WARBAND_TITLE end,
-        subtitle = function() return L.ARSENAL_INVENTORY_WARBAND_SUBTITLE end,
         empty = function() return L.ARSENAL_NO_WARBAND_BANK end,
     },
+}
+
+local MAIL_FILTERS = {
+    { key = "all", labelKey = "MAILBOX_FILTER_ALL" },
+    { key = "items", labelKey = "MAILBOX_FILTER_ITEMS" },
+    { key = "money", labelKey = "MAILBOX_FILTER_MONEY" },
+    { key = "auction", labelKey = "MAILBOX_FILTER_AUCTION" },
+    { key = "expiring", labelKey = "MAILBOX_FILTER_EXPIRING" },
 }
 
 local function unpackColor(color)
@@ -110,9 +116,9 @@ local function addCircularMask(owner, texture)
     return mask
 end
 
-local function setQualityBorder(frame, quality, alpha)
+local function setQualityBorder(frame, quality, alpha, itemLink, itemID)
     if not frame or type(frame.SetBackdropBorderColor) ~= "function" then return end
-    local color = Addon.ArsenalLogic:GetQualityColor(quality)
+    local color = Addon.ArsenalLogic:GetQualityColor(quality, itemLink, itemID)
     frame:SetBackdropBorderColor(color[1], color[2], color[3], alpha or 0.92)
 end
 
@@ -202,7 +208,7 @@ local function applySlotCard(card, definition, entry)
 
     if type(card.icon.SetDesaturated) == "function" then card.icon:SetDesaturated(false) end
     card.name:SetText(entry.itemName or Addon.ArsenalLogic:GetItemName(entry.itemLink, entry.itemID))
-    local qualityColor = Addon.ArsenalLogic:GetQualityColor(entry.quality)
+    local qualityColor = Addon.ArsenalLogic:GetQualityColor(entry.quality, entry.itemLink, entry.itemID)
     card.name:SetTextColor(unpackColor(qualityColor))
     card.level:SetText(entry.itemLevel and tostring(entry.itemLevel) or "?")
     card.detail:SetText(entry.upgradeTrack or "")
@@ -227,12 +233,10 @@ local function applySlotCard(card, definition, entry)
         end
     end
 
-    if issue.missingEnchant then
+    if issue.missingEnchant or issue.emptySockets > 0 then
         card:SetBackdropBorderColor(0.72, 0.18, 0.14, 0.92)
-    elseif issue.emptySockets > 0 or issue.upgradeable then
-        card:SetBackdropBorderColor(0.80, 0.58, 0.16, 0.88)
     else
-        setQualityBorder(card, entry.quality, 0.58)
+        setQualityBorder(card, entry.quality, 0.78, entry.itemLink, entry.itemID)
     end
 end
 
@@ -266,6 +270,7 @@ local function createInventorySlot(parent)
     slot.icon:SetSize(37, 37)
     slot.icon:SetPoint("CENTER", 0, 0)
     slot.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    slot.iconMask = Widgets:AddRoundedIconMask(slot, slot.icon)
     slot.count = Widgets:CreateLabel(slot, "GameFontHighlightSmall", "RIGHT")
     slot.count:SetPoint("BOTTOMRIGHT", -4, 3)
     slot.count:SetTextColor(1, 1, 1, 1)
@@ -295,6 +300,114 @@ local function getContainerLabel(container, listIndex)
     return tostring(listIndex)
 end
 
+local function formatMailRemaining(message)
+    local expiresAt = math.max(0, tonumber(message and message.expiresAt) or 0)
+    local current = type(GetServerTime) == "function" and tonumber(GetServerTime())
+        or type(time) == "function" and tonumber(time()) or 0
+    if expiresAt <= 0 then return L.MAILBOX_EXPIRY_UNKNOWN end
+    local remaining = math.max(0, expiresAt - current)
+    if remaining <= 0 then return L.MAILBOX_EXPIRY_EXPIRED end
+    if remaining < 3600 then
+        return string.format(L.MAILBOX_EXPIRY_MINUTES, math.max(1, math.ceil(remaining / 60)))
+    end
+    if remaining < 172800 then
+        return string.format(L.MAILBOX_EXPIRY_HOURS, math.max(1, math.ceil(remaining / 3600)))
+    end
+    return string.format(L.MAILBOX_EXPIRY_DAYS, math.max(1, math.ceil(remaining / 86400)))
+end
+
+local function createMailRow(parent)
+    local row = CreateFrame("Button", nil, parent, BACKDROP_TEMPLATE)
+    row:SetHeight(58)
+    row:RegisterForClicks("LeftButtonUp")
+    Widgets:ApplyPanelStyle(row, "cardInset")
+
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(40, 40)
+    row.icon:SetPoint("LEFT", 8, 0)
+    row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+    row.sender = Widgets:CreateLabel(row, "GameFontNormal", "LEFT")
+    row.sender:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 9, -4)
+    row.sender:SetPoint("TOPRIGHT", -150, -4)
+    row.sender:SetHeight(15)
+    row.sender:SetWordWrap(false)
+
+    row.subject = Widgets:CreateLabel(row, "GameFontHighlightSmall", "LEFT")
+    row.subject:SetPoint("TOPLEFT", row.sender, "BOTTOMLEFT", 0, -1)
+    row.subject:SetPoint("TOPRIGHT", -150, -20)
+    row.subject:SetHeight(14)
+    row.subject:SetWordWrap(false)
+
+    row.detail = Widgets:CreateLabel(row, "GameFontDisableSmall", "LEFT")
+    row.detail:SetPoint("TOPLEFT", row.subject, "BOTTOMLEFT", 0, -1)
+    row.detail:SetPoint("RIGHT", -150, 0)
+    row.detail:SetHeight(12)
+    row.detail:SetWordWrap(false)
+
+    row.expiry = Widgets:CreateLabel(row, "GameFontHighlightSmall", "RIGHT")
+    row.expiry:SetPoint("TOPRIGHT", -10, -8)
+    row.expiry:SetSize(132, 16)
+
+    row.flags = Widgets:CreateLabel(row, "GameFontDisableSmall", "RIGHT")
+    row.flags:SetPoint("TOPRIGHT", row.expiry, "BOTTOMRIGHT", 0, -6)
+    row.flags:SetSize(132, 24)
+    row.flags:SetWordWrap(true)
+
+    row:SetScript("OnEnter", function(self)
+        showItemTooltip(self, self.itemLink)
+    end)
+    row:SetScript("OnLeave", hideTooltip)
+    row:SetScript("OnClick", function(self)
+        if self.itemLink and type(HandleModifiedItemClick) == "function" then
+            HandleModifiedItemClick(self.itemLink)
+        end
+    end)
+    return row
+end
+
+local function applyMailRow(row, message, warningDays)
+    local attachments = type(message and message.attachments) == "table" and message.attachments or {}
+    local firstItem = attachments[1]
+    row.itemLink = firstItem and firstItem.itemLink or nil
+    row.icon:SetTexture(firstItem and firstItem.icon
+        or message.packageIcon
+        or "Interface\\Icons\\INV_Letter_15")
+    row.sender:SetText(message.sender ~= "" and message.sender or L.UNKNOWN)
+    row.subject:SetText(message.subject ~= "" and message.subject or L.MAILBOX_NO_SUBJECT)
+
+    local detail = {}
+    if #attachments > 0 then
+        detail[#detail + 1] = string.format(L.MAILBOX_ROW_ITEMS, #attachments)
+    end
+    if (tonumber(message.money) or 0) > 0 and Addon.Mailbox then
+        detail[#detail + 1] = Addon.Mailbox:FormatMoney(message.money)
+    end
+    if #detail == 0 then detail[1] = L.MAILBOX_ROW_LETTER end
+    row.detail:SetText(table.concat(detail, "  |  "))
+    row.expiry:SetText(formatMailRemaining(message))
+
+    local flags = {}
+    if (tonumber(message.cod) or 0) > 0 then flags[#flags + 1] = L.MAILBOX_FLAG_COD end
+    if message.isAuction == true then flags[#flags + 1] = L.MAILBOX_FLAG_AUCTION end
+    if message.isGM == true then flags[#flags + 1] = L.MAILBOX_FLAG_GM end
+    row.flags:SetText(table.concat(flags, "  |  "))
+
+    local timestamp = type(GetServerTime) == "function" and tonumber(GetServerTime())
+        or type(time) == "function" and tonumber(time()) or 0
+    local expiryState = Addon.MailLogic:GetExpiryState(message, warningDays, timestamp)
+    if expiryState == "expired" or expiryState == "urgent" then
+        row:SetBackdropBorderColor(Theme.colors.raid[1], Theme.colors.raid[2], Theme.colors.raid[3], 0.95)
+        row.expiry:SetTextColor(Theme.colors.raid[1], Theme.colors.raid[2], Theme.colors.raid[3], 1)
+    elseif expiryState == "warning" then
+        row:SetBackdropBorderColor(Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], 0.90)
+        row.expiry:SetTextColor(Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], 1)
+    else
+        row:SetBackdropBorderColor(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.72)
+        row.expiry:SetTextColor(Theme.colors.muted[1], Theme.colors.muted[2], Theme.colors.muted[3], 1)
+    end
+end
+
 local function createScreen(_, host)
     local frame = CreateFrame("Frame", nil, host)
     frame:SetAllPoints(host)
@@ -303,6 +416,9 @@ local function createScreen(_, host)
     frame.slotCards = { left = {}, right = {} }
     frame.inventorySlots = {}
     frame.containerButtons = {}
+    frame.mailRows = {}
+    frame.mailFilterButtons = {}
+    frame.mailFilter = "all"
     frame.selectedContainerByMode = {
         bags = 1,
         bank = 1,
@@ -317,15 +433,31 @@ local function createScreen(_, host)
 
     local previousModeButton
     for _, mode in ipairs(MODES) do
-        local button = Widgets:CreateButton(frame.navigation, mode.label(), 174, 30, "tab")
+        local button = Widgets:CreateButton(frame.navigation, mode.label(), 138, 30, "tab")
         if previousModeButton then
             button:SetPoint("LEFT", previousModeButton, "RIGHT", 5, 0)
         else
             button:SetPoint("LEFT", 0, 0)
         end
         button.modeKey = mode.key
+        if mode.key == "mail" then
+            button.newBadge = Widgets:CreateLabel(button, "GameFontNormalSmall", "RIGHT")
+            button.newBadge:SetPoint("TOPRIGHT", -4, -1)
+            button.newBadge:SetText(L.OPTIONS_NEW_BADGE)
+            button.newBadge:SetTextColor(unpackColor(Theme.colors.gold))
+        end
         button:SetScript("OnClick", function(self)
-            Addon.Database:GetUI().selectedSubTabs.arsenal = self.modeKey
+            local ui = Addon.Database:GetUI()
+            if ui.selectedSubTabs.arsenal ~= self.modeKey and Addon.Sound then
+                Addon.Sound:Play(
+                    (self.modeKey == "equipment" or self.modeKey == "mail")
+                        and "tabSwitch" or "bagSwitch"
+                )
+            end
+            if self.modeKey == "mail" and Addon.UI then
+                Addon.UI:MarkNewInterfaceSeen("arsenal_mail")
+            end
+            ui.selectedSubTabs.arsenal = self.modeKey
             frame:Refresh()
         end)
         frame.modeButtons[mode.key] = button
@@ -439,16 +571,13 @@ local function createScreen(_, host)
     frame.inventoryPanel:SetAllPoints(frame.content)
     frame.inventoryTitle = Widgets:CreateLabel(frame.inventoryPanel, "GameFontNormalLarge", "LEFT")
     frame.inventoryTitle:SetPoint("TOPLEFT", 14, -12)
-    frame.inventorySubtitle = Widgets:CreateLabel(frame.inventoryPanel, "GameFontDisableSmall", "LEFT")
-    frame.inventorySubtitle:SetPoint("TOPLEFT", frame.inventoryTitle, "BOTTOMLEFT", 0, -3)
-    frame.inventorySubtitle:SetPoint("TOPRIGHT", -220, 0)
     frame.inventoryTimestamp = Widgets:CreateLabel(frame.inventoryPanel, "GameFontDisableSmall", "RIGHT")
     frame.inventoryTimestamp:SetPoint("TOPRIGHT", -14, -14)
     frame.inventoryTimestamp:SetWidth(205)
 
     frame.containerSelector = CreateFrame("Frame", nil, frame.inventoryPanel)
-    frame.containerSelector:SetPoint("TOPLEFT", 14, -57)
-    frame.containerSelector:SetPoint("TOPRIGHT", -14, -57)
+    frame.containerSelector:SetPoint("TOPLEFT", 14, -44)
+    frame.containerSelector:SetPoint("TOPRIGHT", -14, -44)
     frame.containerSelector:SetHeight(28)
 
     frame.containerUsage = Widgets:CreateLabel(frame.inventoryPanel, "GameFontHighlightSmall", "LEFT")
@@ -470,11 +599,84 @@ local function createScreen(_, host)
     frame.inventoryEmpty:SetWordWrap(true)
     frame.inventoryEmpty:Hide()
 
+    frame.mailPanel = CreateFrame("Frame", nil, frame.content)
+    frame.mailPanel:SetAllPoints(frame.content)
+    frame.mailTitle = Widgets:CreateLabel(frame.mailPanel, "GameFontNormalLarge", "LEFT")
+    frame.mailTitle:SetPoint("TOPLEFT", 14, -12)
+    frame.mailTitle:SetText(L.MAILBOX_ARSENAL_TITLE)
+    frame.mailTimestamp = Widgets:CreateLabel(frame.mailPanel, "GameFontDisableSmall", "RIGHT")
+    frame.mailTimestamp:SetPoint("TOPRIGHT", -14, -14)
+    frame.mailTimestamp:SetWidth(205)
+
+    frame.mailSearch = CreateFrame("EditBox", nil, frame.mailPanel, "SearchBoxTemplate")
+    frame.mailSearch:SetPoint("TOPLEFT", 14, -44)
+    frame.mailSearch:SetSize(258, 28)
+    frame.mailSearch:SetAutoFocus(false)
+    frame.mailSearch:SetScript("OnTextChanged", function()
+        if frame:IsShown() and Addon.Database:GetUI().selectedSubTabs.arsenal == "mail" then
+            frame:RefreshMail()
+        end
+    end)
+    frame.mailSearch:SetScript("OnEscapePressed", function(self)
+        if (self:GetText() or "") ~= "" then self:SetText("") else self:ClearFocus() end
+    end)
+
+    frame.mailFilters = CreateFrame("Frame", nil, frame.mailPanel)
+    frame.mailFilters:SetPoint("LEFT", frame.mailSearch, "RIGHT", 12, 0)
+    frame.mailFilters:SetPoint("RIGHT", -14, 0)
+    frame.mailFilters:SetHeight(28)
+    local previousMailFilter
+    for _, definition in ipairs(MAIL_FILTERS) do
+        local button = Widgets:CreateButton(
+            frame.mailFilters,
+            L[definition.labelKey] or definition.key,
+            82,
+            24
+        )
+        if previousMailFilter then
+            button:SetPoint("LEFT", previousMailFilter, "RIGHT", 5, 0)
+        else
+            button:SetPoint("LEFT", 0, 0)
+        end
+        button.filterKey = definition.key
+        button:SetScript("OnClick", function(selfButton)
+            if frame.mailFilter ~= selfButton.filterKey and Addon.Sound then
+                Addon.Sound:Play("option")
+            end
+            frame.mailFilter = selfButton.filterKey
+            frame:RefreshMail()
+        end)
+        frame.mailFilterButtons[definition.key] = button
+        previousMailFilter = button
+    end
+
+    frame.mailSummary = Widgets:CreateLabel(frame.mailPanel, "GameFontHighlightSmall", "LEFT")
+    frame.mailSummary:SetPoint("TOPLEFT", frame.mailSearch, "BOTTOMLEFT", 0, -10)
+    frame.mailSummary:SetPoint("TOPRIGHT", -14, -10)
+    frame.mailSummary:SetHeight(18)
+
+    frame.mailScroll = CreateFrame("ScrollFrame", nil, frame.mailPanel, "UIPanelScrollFrameTemplate")
+    frame.mailScroll:SetPoint("TOPLEFT", frame.mailSummary, "BOTTOMLEFT", 0, -8)
+    frame.mailScroll:SetPoint("BOTTOMRIGHT", -31, 14)
+    frame.mailChild = CreateFrame("Frame", nil, frame.mailScroll)
+    frame.mailChild:SetSize(700, 10)
+    frame.mailScroll:SetScrollChild(frame.mailChild)
+    ScrollFrames:Style(frame.mailScroll, { autoHide = true })
+
+    frame.mailEmpty = Widgets:CreateLabel(frame.mailPanel, "GameFontDisable", "CENTER")
+    frame.mailEmpty:SetPoint("TOPLEFT", 26, -130)
+    frame.mailEmpty:SetPoint("BOTTOMRIGHT", -26, 28)
+    frame.mailEmpty:SetWordWrap(true)
+    frame.mailEmpty:Hide()
+
     function frame:EnsureContainerButtons(count)
         while #self.containerButtons < count do
             local button = Widgets:CreateButton(self.containerSelector, "", 100, 24)
             button:SetScript("OnClick", function(selfButton)
                 local mode = Addon.Database:GetUI().selectedSubTabs.arsenal
+                if frame.selectedContainerByMode[mode] ~= selfButton.containerIndex and Addon.Sound then
+                    Addon.Sound:Play("option")
+                end
                 frame.selectedContainerByMode[mode] = selfButton.containerIndex
                 frame:RefreshInventory()
             end)
@@ -485,6 +687,12 @@ local function createScreen(_, host)
     function frame:EnsureInventorySlots(count)
         while #self.inventorySlots < count do
             self.inventorySlots[#self.inventorySlots + 1] = createInventorySlot(self.inventoryChild)
+        end
+    end
+
+    function frame:EnsureMailRows(count)
+        while #self.mailRows < count do
+            self.mailRows[#self.mailRows + 1] = createMailRow(self.mailChild)
         end
     end
 
@@ -604,7 +812,6 @@ local function createScreen(_, host)
         local available = #containers > 0
 
         self.inventoryTitle:SetText(copy.title())
-        self.inventorySubtitle:SetText(copy.subtitle())
         self.inventoryTimestamp:SetText(formatTimestamp(snapshot and snapshot.updatedAt, view and view.current and mode == "bags"))
         self.inventoryEmpty:SetText(copy.empty())
         self.inventoryEmpty:SetShown(not available)
@@ -676,6 +883,72 @@ local function createScreen(_, host)
         ScrollFrames:Refresh(self.inventoryScroll, true)
     end
 
+    function frame:RefreshMail()
+        local character = Addon.WarbandRoster:GetSelected()
+        local view = character and Addon.Arsenal:GetView("mail", character.key) or nil
+        local snapshot = view and view.snapshot
+        local messages = type(snapshot and snapshot.messages) == "table" and snapshot.messages or {}
+        local warningDays = Addon.FeatureRegistry:GetSetting("mailbox", "expiry_warning_days") or 3
+        local timestamp = type(GetServerTime) == "function" and tonumber(GetServerTime())
+            or type(time) == "function" and tonumber(time()) or 0
+        local search = self.mailSearch:GetText() or ""
+        local filtered = Addon.MailLogic:FilterMessages(
+            messages,
+            search,
+            self.mailFilter,
+            warningDays,
+            timestamp
+        )
+        local live = view and view.current and Addon.Mailbox and Addon.Mailbox:IsOpen()
+
+        self.mailTimestamp:SetText(formatTimestamp(snapshot and snapshot.updatedAt, live))
+        for key, button in pairs(self.mailFilterButtons) do
+            Widgets:SetButtonActive(button, key == self.mailFilter)
+        end
+
+        local summary = type(snapshot and snapshot.summary) == "table"
+            and snapshot.summary
+            or Addon.MailLogic:BuildSummary(messages, warningDays, timestamp)
+        self.mailSummary:SetText(string.format(
+            L.MAILBOX_ARSENAL_SUMMARY,
+            #filtered,
+            summary.messages or 0,
+            summary.attachments or 0,
+            Addon.Mailbox and Addon.Mailbox:FormatMoney(summary.money or 0) or tostring(summary.money or 0),
+            summary.expiring or 0
+        ))
+
+        self:EnsureMailRows(#filtered)
+        local previous
+        for rowIndex, row in ipairs(self.mailRows) do
+            local message = filtered[rowIndex]
+            row:SetShown(message ~= nil)
+            if message then
+                row:ClearAllPoints()
+                row:SetPoint("LEFT", 0, 0)
+                row:SetPoint("RIGHT", -4, 0)
+                if previous then
+                    row:SetPoint("TOP", previous, "BOTTOM", 0, -5)
+                else
+                    row:SetPoint("TOP", self.mailChild, "TOP", 0, 0)
+                end
+                applyMailRow(row, message, warningDays)
+                previous = row
+            end
+        end
+
+        local hasSnapshot = type(snapshot) == "table" and (tonumber(snapshot.updatedAt) or 0) > 0
+        local hasSearch = search:match("%S") ~= nil
+        self.mailEmpty:SetText(not hasSnapshot and L.MAILBOX_ARSENAL_EMPTY_SNAPSHOT
+            or #messages == 0 and L.MAILBOX_ARSENAL_EMPTY
+            or hasSearch and string.format(L.MAILBOX_ARSENAL_NO_SEARCH, search)
+            or L.MAILBOX_ARSENAL_NO_FILTER)
+        self.mailEmpty:SetShown(#filtered == 0)
+        self.mailScroll:SetShown(#filtered > 0)
+        self.mailChild:SetHeight(math.max(10, (#filtered * 58) + (math.max(0, #filtered - 1) * 5)))
+        ScrollFrames:Refresh(self.mailScroll, false)
+    end
+
     function frame:Refresh()
         local mode = Addon.Database:GetUI().selectedSubTabs.arsenal
         if not self.modeButtons[mode] then
@@ -684,11 +957,17 @@ local function createScreen(_, host)
         end
         for key, button in pairs(self.modeButtons) do
             Widgets:SetButtonActive(button, key == mode)
+            if button.newBadge and Addon.UI then
+                button.newBadge:SetShown(Addon.UI:IsNewInterface("arsenal_mail"))
+            end
         end
         self.equipmentPanel:SetShown(mode == "equipment")
-        self.inventoryPanel:SetShown(mode ~= "equipment")
+        self.inventoryPanel:SetShown(mode == "bags" or mode == "bank" or mode == "warband")
+        self.mailPanel:SetShown(mode == "mail")
         if mode == "equipment" then
             self:RefreshEquipment()
+        elseif mode == "mail" then
+            self:RefreshMail()
         else
             self:RefreshInventory()
         end
@@ -703,6 +982,9 @@ local function createScreen(_, host)
         if frame:IsShown() then frame:Refresh() end
     end)
     Addon.StateStore:Subscribe("warband.selection", frame, function()
+        if frame:IsShown() then frame:Refresh() end
+    end)
+    Addon.StateStore:Subscribe("mailbox.snapshots", frame, function()
         if frame:IsShown() then frame:Refresh() end
     end)
     frame:Hide()

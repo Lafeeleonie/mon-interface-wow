@@ -25,10 +25,6 @@ for _, zone in ipairs(Addon.Data.PVE_RARES.zones) do
     end
 end
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
@@ -110,9 +106,8 @@ function Service:GetSnapshot(characterKey)
     if type(snapshot) ~= "table" then
         return nil
     end
-    local resetAt = tonumber(snapshot.resetAt) or 0
-    if resetAt > 0 and resetAt <= now() then
-        record.snapshots.pveRares = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pveRares", "expired")
         return nil
     end
     return snapshot
@@ -164,8 +159,8 @@ local function collectRares()
     local existing = Service:GetSnapshot(identity.key)
     local snapshot = Addon.PveRaresLogic:BuildSnapshot(existing)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pveRares = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(identity.key, "pveRares", snapshot, "refresh")
+        if not stored then snapshot = existing end
     end
     return {
         characterKey = identity.key,

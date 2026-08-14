@@ -76,13 +76,13 @@ function ProfessionBadges:CreateButton(parent, size)
     button.ring:SetTexture(PORTRAIT_MASK)
 
     button.inner = button:CreateTexture(nil, "ARTWORK", nil, 1)
-    button.inner:SetSize(size - 4, size - 4)
+    button.inner:SetSize(size - 3, size - 3)
     button.inner:SetPoint("CENTER")
     button.inner:SetTexture(PORTRAIT_MASK)
     button.inner:SetVertexColor(0.055, 0.047, 0.038, 0.96)
 
     button.icon = button:CreateTexture(nil, "OVERLAY")
-    button.icon:SetSize(size - 8, size - 8)
+    button.icon:SetSize(size - 7, size - 7)
     button.icon:SetPoint("CENTER")
     if type(button.CreateMaskTexture) == "function"
         and type(button.icon.AddMaskTexture) == "function"

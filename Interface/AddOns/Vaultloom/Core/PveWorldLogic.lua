@@ -7,17 +7,43 @@ local DATA = Addon.Data.PVE_WORLD
 local Logic = {}
 Addon.PveWorldLogic = Logic
 
-local function containsBossPattern(name)
-    name = type(name) == "string" and string.lower(name) or ""
-    for _, pattern in ipairs(DATA.worldBossNamePatterns) do
-        if string.find(name, string.lower(pattern), 1, true) then
-            return true
-        end
+local function worldBossDefinitions()
+    if type(DATA.worldBosses) == "table" and #DATA.worldBosses > 0 then
+        return DATA.worldBosses
     end
-    return false
+    local definitions = {}
+    for index, questID in ipairs(DATA.worldBossQuestIDs or {}) do
+        definitions[#definitions + 1] = {
+            key = "world-boss-" .. tostring(questID),
+            questID = questID,
+            contentType = "world_boss",
+            namePatterns = { DATA.worldBossNamePatterns and DATA.worldBossNamePatterns[index] },
+        }
+    end
+    return definitions
 end
 
-local function getSavedWorldBossName()
+local function findWorldBossByQuestID(questID)
+    for _, definition in ipairs(worldBossDefinitions()) do
+        if tonumber(definition.questID) == tonumber(questID) then return definition end
+    end
+    return nil
+end
+
+local function findWorldBossByName(name)
+    name = type(name) == "string" and string.lower(name) or ""
+    for _, definition in ipairs(worldBossDefinitions()) do
+        for _, pattern in ipairs(definition.namePatterns or {}) do
+            pattern = type(pattern) == "string" and string.lower(pattern) or ""
+            if pattern ~= "" and string.find(name, pattern, 1, true) then
+                return definition
+            end
+        end
+    end
+    return nil
+end
+
+local function getSavedWorldBoss()
     if type(GetNumSavedWorldBosses) ~= "function" or type(GetSavedWorldBossInfo) ~= "function" then
         return nil
     end
@@ -25,16 +51,35 @@ local function getSavedWorldBossName()
     count = ok and math.max(0, tonumber(count) or 0) or 0
     for index = 1, count do
         local infoOk, name = pcall(GetSavedWorldBossInfo, index)
-        if infoOk and containsBossPattern(name) then
-            return name
+        local definition = infoOk and findWorldBossByName(name) or nil
+        if definition then
+            return name, definition
         end
     end
     return nil
 end
 
+local function buildWorldBossIdentity(definition, questID, savedBossName)
+    if type(definition) ~= "table" then
+        return L.PVE_WORLD_ROW_WORLD_BOSS, nil, nil
+    end
+    local bossName = savedBossName or (questID and QuestApi:GetTitle(questID, definition.fallbackName))
+        or definition.fallbackName
+    local zoneName = definition.mapID and Addon.WoWApi:GetMapName(definition.mapID)
+        or definition.fallbackZoneName
+    if type(zoneName) ~= "string" or zoneName == "" then zoneName = definition.fallbackZoneName end
+    if type(bossName) ~= "string" or bossName == "" then bossName = definition.fallbackName end
+    local label = bossName
+    if type(bossName) == "string" and bossName ~= "" and type(zoneName) == "string" and zoneName ~= "" then
+        label = string.format(L.PVE_WORLD_BOSS_LABEL_FORMAT, bossName, zoneName)
+    end
+    return label or L.PVE_WORLD_ROW_WORLD_BOSS, bossName, zoneName
+end
+
 local function buildWorldBossRow()
     local completedQuestID, activeQuestID
-    for _, questID in ipairs(DATA.worldBossQuestIDs) do
+    for _, definition in ipairs(worldBossDefinitions()) do
+        local questID = definition.questID
         if QuestApi:IsCompleted(questID) then
             completedQuestID = questID
             break
@@ -43,21 +88,35 @@ local function buildWorldBossRow()
             activeQuestID = questID
         end
     end
-    local savedBossName = not completedQuestID and getSavedWorldBossName() or nil
+    local savedBossName, savedDefinition
+    if not completedQuestID then savedBossName, savedDefinition = getSavedWorldBoss() end
     if completedQuestID or savedBossName then
+        local definition = findWorldBossByQuestID(completedQuestID) or savedDefinition
+        local label, bossName, zoneName = buildWorldBossIdentity(
+            definition,
+            completedQuestID,
+            savedBossName
+        )
         return {
             key = "world_boss_weekly",
-            label = L.PVE_WORLD_ROW_WORLD_BOSS,
+            label = label,
             text = L.PVE_WORLD_STATUS_DONE,
             status = "complete",
             seen = true,
             completed = true,
             questID = completedQuestID,
-            tooltipTitle = savedBossName or L.PVE_WORLD_ROW_WORLD_BOSS,
+            contentType = definition and definition.contentType or "world_boss",
+            contentKey = definition and definition.key or nil,
+            bossName = bossName,
+            zoneName = zoneName,
+            zoneMapID = definition and definition.mapID or nil,
+            tooltipTitle = label,
             tooltipLines = { L.PVE_WORLD_BOSS_DONE_HINT },
         }
     end
 
+    local definition = findWorldBossByQuestID(activeQuestID)
+    local label, bossName, zoneName = buildWorldBossIdentity(definition, activeQuestID)
     local ready = activeQuestID and QuestApi:IsTurnInReady(activeQuestID) or false
     local tooltipLines = activeQuestID and QuestApi:GetObjectiveLines(activeQuestID) or {}
     if #tooltipLines == 0 then
@@ -65,7 +124,7 @@ local function buildWorldBossRow()
     end
     return {
         key = "world_boss_weekly",
-        label = L.PVE_WORLD_ROW_WORLD_BOSS,
+        label = label,
         text = ready and L.PVE_WORLD_STATUS_TURNIN
             or (activeQuestID and QuestApi:GetObjectiveProgressText(activeQuestID) or nil)
             or L.PVE_WORLD_STATUS_OPEN,
@@ -74,8 +133,12 @@ local function buildWorldBossRow()
         completed = false,
         questID = activeQuestID,
         turnInQuestID = ready and activeQuestID or nil,
-        tooltipTitle = activeQuestID and QuestApi:GetTitle(activeQuestID, L.PVE_WORLD_ROW_WORLD_BOSS)
-            or L.PVE_WORLD_ROW_WORLD_BOSS,
+        contentType = definition and definition.contentType or "world_boss",
+        contentKey = definition and definition.key or nil,
+        bossName = bossName,
+        zoneName = zoneName,
+        zoneMapID = definition and definition.mapID or nil,
+        tooltipTitle = label,
         tooltipLines = tooltipLines,
     }
 end
@@ -208,6 +271,12 @@ local function mergeRows(rows, existingSnapshot)
         local old = oldByKey[row.key]
         if type(old) == "table" then
             if row.key == "world_boss_weekly" and old.completed == true and row.completed ~= true then
+                old.label = row.label or old.label
+                old.contentType = row.contentType or old.contentType
+                old.contentKey = row.contentKey or old.contentKey
+                old.bossName = row.bossName or old.bossName
+                old.zoneName = row.zoneName or old.zoneName
+                old.zoneMapID = row.zoneMapID or old.zoneMapID
                 rows[index] = old
             elseif row.key == "special_assignments" then
                 row.count = math.max(tonumber(row.count) or 0, tonumber(old.count) or 0)
@@ -256,7 +325,9 @@ function Logic:BuildSnapshot(existingSnapshot)
             completed = completed + 1
         end
     end
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
     return {
         generatedAt = type(time) == "function" and time() or 0,
         resetAt = resetAt,

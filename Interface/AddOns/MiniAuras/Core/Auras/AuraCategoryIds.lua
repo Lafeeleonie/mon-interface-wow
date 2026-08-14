@@ -12,7 +12,7 @@ local _, addon = ...
 -- Core/AuraFilters) - so a gap in these lists now costs a missing ICON, not just a missing sound.
 
 addon.Core.AuraCategoryIds = {
-	-- CC (1032 ids)
+	-- CC (1033 ids)
 	CC = {
 		[33390] = true, -- Arcane Torrent
 		[36022] = true, -- Arcane Torrent
@@ -991,6 +991,7 @@ addon.Core.AuraCategoryIds = {
 		[415087] = true, -- Time Stop
 		[10326] = true, -- Turn Evil
 		[145067] = true, -- Turn Evil
+		[1234195] = true, -- Void Nova
 		[114404] = true, -- Void Tendrils
 		[131039] = true, -- Void Tendrils
 		[245049] = true, -- Void Tendrils
@@ -1067,56 +1068,101 @@ addon.Core.AuraCategoryIds = {
 		[235450] = true, -- Prismatic Barrier
 	},
 
-	Unflagged = {
-		[228050] = true, -- Guardian of the Forgotten Queen
-		[325174] = true, -- Spirit Link
-		[378078] = true, -- Spiritwalker's Aegis
-		[79206] = true, -- Spiritwalker's Grace
-		[389422] = true, -- Invoke Yu'lon, the Jade Serpent
-		[209584] = true, -- Zen Focus Tea
-		[116841] = true, -- Tiger's Lust
-		[1309793] = true, -- Refractive Images
-		[389794] = true, -- Snowdrift
-		[235450] = true, -- Prismatic Barrier
-		[11426] = true, -- Ice Barrier
-		[235313] = true, -- Blazing Barrier
-		[110960] = true, -- Greater Invisibility
-		[414664] = true, -- Mass Invisibility
-		[354610] = true, -- Glimpse
-		[203819] = true, -- Demon Spikes
-		[61336] = true, -- Survival Instincts
+	-- Spells the game flags as neither important nor defensive. Only a display that filters by
+	-- spell id can track them at all (the raid frames), and that display still has a toggle per
+	-- category, so they are split the same way the flagged lists are. TTS keys on the bare spell
+	-- id, so the missing flag costs nothing there and scripts/GenerateTtsAudio.py voices both
+	-- halves under the matching toggle. The bottom of this file merges them into Unflagged,
+	-- which is what the spell pickers and the search read.
+	UnflaggedImportant = {
+		[1784] = true, -- Stealth
+		[5215] = true, -- Stealth
 		[5217] = true, -- Tiger's Fury
+		[10060] = true, -- Power Infusion
+		[29166] = true, -- Innervate
+		[42650] = true, -- Army of the Dead
 		[117679] = true, -- Incarnation: Tree of Life
-		[108416] = true, -- Dark Pact
+		[162264] = true, -- Metamorphosis
+		[188501] = true, -- Spectral Sight
+		[191634] = true, -- Stormkeeper
+		[199261] = true, -- Death Wish
+		[210256] = true, -- Blessing of Sanctuary
+		[357210] = true, -- Deep Breath
+		[389794] = true, -- Snowdrift
+		[390260] = true, -- Commander of the Dead
 		[442726] = true, -- Malevolence
 		[1276767] = true, -- Tyrant's Oblation
+	},
+
+	UnflaggedDefensive = {
+		[740] = true, -- Tranquility
+		[1966] = true, -- Feint
+		[11426] = true, -- Ice Barrier
+		[31821] = true, -- Aura Mastery
+		[49039] = true, -- Lichborne
+		[61336] = true, -- Survival Instincts
+		[79206] = true, -- Spiritwalker's Grace
+		[81256] = true, -- Dancing Rune Weapon
+		[97463] = true, -- Rallying Cry
+		[108416] = true, -- Dark Pact
+		[110960] = true, -- Greater Invisibility
+		[116841] = true, -- Tiger's Lust
+		[145629] = true, -- Anti-Magic Zone
+		[200183] = true, -- Apotheosis
+		[203819] = true, -- Demon Spikes
+		[209426] = true, -- Darkness
+		[209584] = true, -- Zen Focus Tea
+		[228050] = true, -- Guardian of the Forgotten Queen
+		[235313] = true, -- Blazing Barrier
+		[235450] = true, -- Prismatic Barrier
+		[325174] = true, -- Spirit Link
+		[354610] = true, -- Glimpse
 		[363534] = true, -- Rewind
 		[370960] = true, -- Emerald Communion
 		[374227] = true, -- Zephyr
-		[162264] = true, -- Metamorphosis
-		[209426] = true, -- Darkness
-		[188501] = true, -- Spectral Sight
-		[473909] = true, -- Ancient of Lore
-		[5215] = true, -- Stealth
-		[29166] = true, -- Innervate
-		[740] = true, -- Tranquility
-		[191634] = true, -- Stormkeeper
-		[409293] = true, -- Burrow
-		[10060] = true, -- Power Infusion
-		[200183] = true, -- Apotheosis
-		[1966] = true, -- Feint
-		[1784] = true, -- Stealth
-		[42650] = true, -- Army of the Dead
-		[145629] = true, -- Anti-Magic Zone
-		[81256] = true, -- Dancing Rune Weapon
-		[49039] = true, -- Lichborne
-		[210256] = true, -- Blessing of Sanctuary
-		[31821] = true, -- Aura Mastery
-		[390260] = true, -- Commander of the Dead
+		[378078] = true, -- Spiritwalker's Aegis
 		[384100] = true, -- Berserker Shout
-		[199261] = true, -- Death Wish
-		[97463] = true, -- Rallying Cry
+		[389422] = true, -- Invoke Yu'lon, the Jade Serpent
+		[409293] = true, -- Burrow
+		[414664] = true, -- Mass Invisibility
 		[421453] = true, -- Ultimate Penitence
+		[473909] = true, -- Ancient of Lore
+		[1309793] = true, -- Refractive Images
+	},
+
+	-- HAND-MAINTAINED, unlike everything above it. Enemy cooldowns that land on your side as a
+	-- debuff rather than on the caster as a buff. Announced on the player and the party by
+	-- their own toggle. The scan can still pick one up when the game flags the debuff itself
+	-- important (Deathmark), so scripts/GenerateTtsAudio.py strips these ids from the plate
+	-- clip maps and Modules/Alerts/Sound.lua keeps them out of the plate sound registrations:
+	-- a plate gaining one of these means an ally cast it.
+	--
+	-- One id per ability, not every variant the name index knows: two variants landing together
+	-- would speak the name twice.
+	EnemyDebuff = {
+		[360194] = true, -- Deathmark
+		[385627] = true, -- Kingsbane
+		[222509] = true, -- Feral Frenzy
+	},
+
+	-- Announced only when the player asks for them. These land often enough that a spoken name
+	-- every time is noise, so the TTS Spells tab shows them unticked until they are switched on.
+	-- Unrelated to DefaultOff above, which is the raid frame display's own list.
+	TtsDefaultOff = {
+		[5217] = true, -- Tiger's Fury
+		[11426] = true, -- Ice Barrier
+		[29166] = true, -- Innervate
+		[81256] = true, -- Dancing Rune Weapon
+		[116841] = true, -- Tiger's Lust
+		[145629] = true, -- Anti-Magic Zone
+		[203819] = true, -- Demon Spikes
+		[235313] = true, -- Blazing Barrier
+		[235450] = true, -- Prismatic Barrier
+		[354610] = true, -- Glimpse
+		[389422] = true, -- Invoke Yu'lon, the Jade Serpent
+		[442726] = true, -- Malevolence
+		[1276767] = true, -- Tyrant's Oblation
+		[1309793] = true, -- Refractive Images
 	},
 
 	-- Spell id -> the class that owns it, for grouping in the options UI only. Never used
@@ -1166,6 +1212,7 @@ addon.Core.AuraCategoryIds = {
 		[363534] = "EVOKER", -- Rewind
 		[374227] = "EVOKER", -- Zephyr
 		[375087] = "EVOKER", -- Dragonrage
+		[357210] = "EVOKER", -- Deep Breath
 		[378464] = "EVOKER", -- Nullifying Shroud
 		[363916] = "EVOKER", -- Obsidian Scales
 		[357170] = "EVOKER", -- Time Dilation
@@ -1365,7 +1412,24 @@ addon.Core.AuraCategoryIds = {
 	},
 }
 
+-- Merge both unflagged halves so there is still one searchable superset.
+local categoryIds = addon.Core.AuraCategoryIds
+categoryIds.Unflagged = {}
+
+for _, ids in ipairs({ categoryIds.UnflaggedImportant, categoryIds.UnflaggedDefensive }) do
+	for id in pairs(ids) do
+		categoryIds.Unflagged[id] = true
+	end
+end
+
 ---@class AuraCategoryIds
 ---@field CC table<number, boolean>
 ---@field Important table<number, boolean>
 ---@field Defensive table<number, boolean>
+---@field EnemyDebuff table<number, boolean>
+---@field UnflaggedImportant table<number, boolean>
+---@field UnflaggedDefensive table<number, boolean>
+---@field Unflagged table<number, boolean> Both unflagged halves, merged at load.
+---@field TtsDefaultOff table<number, boolean> Spells the TTS tab starts with switched off.
+---@field DefaultOff table<number, boolean>
+---@field Classes table<number, string>

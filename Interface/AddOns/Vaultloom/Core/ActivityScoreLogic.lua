@@ -36,8 +36,7 @@ local function isCurrentSnapshot(snapshot)
     if type(snapshot) ~= "table" then
         return false
     end
-    local resetAt = tonumber(snapshot.resetAt) or 0
-    return resetAt <= 0 or type(time) ~= "function" or resetAt > time()
+    return Addon.WoWApi:GetResetState(snapshot.resetAt) ~= Addon.WoWApi.RESET_EXPIRED
 end
 
 local function isAvailable(row)

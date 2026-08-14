@@ -1,7 +1,7 @@
 local addonName, Addon = ...
 
 Addon.name = addonName
-Addon.version = "1.0.6-beta"
+Addon.version = "1.1.2-beta"
 
 Addon.Identity = {
     displayName = "Vaultloom",

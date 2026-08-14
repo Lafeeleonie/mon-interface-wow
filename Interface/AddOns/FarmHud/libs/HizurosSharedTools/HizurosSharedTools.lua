@@ -1,5 +1,5 @@
 
-local MAJOR, MINOR = "HizurosSharedTools", tonumber((gsub("r64","r",""))) or 9999;
+local MAJOR, MINOR = "HizurosSharedTools", tonumber((gsub("r65","r",""))) or 9999;
 ---@class HizurosSharedTools
 local lib = LibStub:NewLibrary(MAJOR, MINOR);
 if not lib then return end

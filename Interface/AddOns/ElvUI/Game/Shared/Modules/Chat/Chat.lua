@@ -12,14 +12,13 @@ local strlower, strsub, strlen, strupper, strtrim, strmatch = strlower, strsub, 
 local tostring, tinsert, tremove, tconcat = tostring, tinsert, tremove, table.concat
 
 local Ambiguate = Ambiguate
-local BetterDate = BetterDate
+local BetterDate = TimeUtil and TimeUtil.BetterDate or BetterDate
 local BNGetNumFriendInvites = BNGetNumFriendInvites
 local BNGetNumFriends = BNGetNumFriends
 local CreateFrame = CreateFrame
 local FlashClientIcon = FlashClientIcon
 local GetBNPlayerCommunityLink = GetBNPlayerCommunityLink
 local GetChannelName = GetChannelName
-local GetChatWindowInfo = GetChatWindowInfo
 local GetCursorPosition = GetCursorPosition
 local GetNumGroupMembers = GetNumGroupMembers
 local GetPlayerCommunityLink = GetPlayerCommunityLink
@@ -44,6 +43,8 @@ local ToggleQuickJoinPanel = ToggleQuickJoinPanel
 local UIParent = UIParent
 local UnitName = UnitName
 
+local EncodeBase64 = C_EncodingUtil.EncodeBase64
+local DecodeBase64 = C_EncodingUtil.DecodeBase64
 local C_BattleNet_GetAccountInfoByID = C_BattleNet.GetAccountInfoByID
 local C_BattleNet_GetFriendAccountInfo = C_BattleNet.GetFriendAccountInfo
 local C_BattleNet_GetFriendGameAccountInfo = C_BattleNet.GetFriendGameAccountInfo
@@ -80,6 +81,8 @@ local GetTitleIconTexture = C_Texture.GetTitleIconTexture
 local IsRecentAllyByGUID = C_RecentAllies and C_RecentAllies.IsRecentAllyByGUID
 local GetClientTexture = BNet_GetClientEmbeddedAtlas or BNet_GetClientEmbeddedTexture
 
+local DiscordDisplayNameType = Enum.DiscordDisplayNameType
+local FormatDiscordMessage = ChatFrameUtil and ChatFrameUtil.FormatDiscordMessage
 local ChatEditSetLastTellTarget = (ChatFrameUtil and ChatFrameUtil.SetLastTellTarget) or ChatEdit_SetLastTellTarget
 local ChatEditSetLastActiveWindow = (ChatFrameUtil and ChatFrameUtil.SetLastActiveWindow) or ChatEdit_SetLastActiveWindow
 local GetMobileEmbeddedTexture = (ChatFrameUtil and ChatFrameUtil.GetMobileEmbeddedTexture) or ChatFrame_GetMobileEmbeddedTexture
@@ -149,13 +152,6 @@ local hyperlinkTypes = {
 	spell = true,
 	talent = true,
 	unit = true
-}
-
-local tabTexs = {
-	'',
-	'Selected',
-	'Active',
-	'Highlight'
 }
 
 local historyTypes = { -- most of these events are set in FindURL_Events, this is mainly used to ignore types
@@ -248,6 +244,10 @@ do
 		else
 			return GetLink(_G.LinkTypes.Player, displayText, characterName)
 		end
+	end
+
+	function CH:GetDiscordLink(linkDisplayText, bnetIDAccount, discordUserID, lineID, chatGroup, chatTarget)
+		return GetLink(_G.LinkTypes.DiscordUser, linkDisplayText, bnetIDAccount, discordUserID, lineID or 0, chatGroup, chatTarget or '')
 	end
 
 	function CH:GetBNPlayerLink(name, displayText, bnetIDAccount, lineID, chatType, chatTarget)
@@ -660,7 +660,7 @@ function CH:InsertEmotions(msg)
 		local pattern = E:EscapeString(word)
 		local emoji = CH.Smileys[pattern]
 		if emoji and strmatch(msg, '[%s%p]-'..pattern..'[%s%p]*') then
-			local encode = E.Libs.Deflate:EncodeForPrint(word) -- btw keep `|h|cFFffffff|r|h` as it is
+			local encode = EncodeBase64(word) -- btw keep `|h|cFFffffff|r|h` as it is
 			msg = gsub(msg, '([%s%p]-)'..pattern..'([%s%p]*)', (encode and ('%1|Helvmoji:%%'..encode..'|h|cFFffffff|r|h') or '%1')..emoji..'%2')
 		end
 	end
@@ -909,7 +909,7 @@ function CH:UpdateEditboxFont(chatFrame)
 	end
 
 	local id = chatFrame:GetID()
-	local font, outline = LSM:Fetch('font', CH.db.font), CH.db.fontOutline
+	local font, outline = CH.db.font, CH.db.fontOutline
 	local _, fontSize = _G.FCF_GetChatWindowInfo(id)
 
 	local editbox = ChooseBoxForSend(chatFrame)
@@ -937,13 +937,30 @@ function CH:PositionButtonFrame(chat)
 	chat.buttonFrame:SetClipsChildren(true)
 end
 
+do
+	local tabTexs = { '', 'Selected', 'Active', 'Highlight' }
+	function CH:ClearTabTextures(name)
+		for _, tex in next, tabTexs do
+			local t, l, m, r = name..'Tab', tex..'Left', tex..'Middle', tex..'Right'
+			local main = _G[t]
+			local left = _G[t..l] or (main and main[l])
+			local middle = _G[t..m] or (main and main[m])
+			local right = _G[t..r] or (main and main[r])
+
+			if left then left:SetTexture() end
+			if middle then middle:SetTexture() end
+			if right then right:SetTexture() end
+		end
+	end
+end
+
 function CH:StyleChat(frame)
 	local name = frame:GetName()
 	local tab = CH:GetTab(frame)
 
 	local id = frame:GetID()
 	local _, fontSize = _G.FCF_GetChatWindowInfo(id)
-	local font, size, outline = LSM:Fetch('font', CH.db.font), fontSize, CH.db.fontOutline
+	local font, size, outline = CH.db.font, fontSize, CH.db.fontOutline
 	frame:FontTemplate(font, size, outline)
 
 	frame:SetTimeVisible(CH.db.inactivityTimer)
@@ -970,10 +987,6 @@ function CH:StyleChat(frame)
 		end
 	end
 
-	if not frame.isDocked then
-		PanelTemplates_TabResize(tab, tab.sizePadding or 0)
-	end
-
 	if frame.styled then return end
 
 	frame:SetFrameLevel(4)
@@ -992,24 +1005,11 @@ function CH:StyleChat(frame)
 	charCount:Width(40)
 	editbox.characterCount = charCount
 
-	for _, texName in pairs(tabTexs) do
-		local t, l, m, r = name..'Tab', texName..'Left', texName..'Middle', texName..'Right'
-		local main = _G[t]
-		local left = _G[t..l] or (main and main[l])
-		local middle = _G[t..m] or (main and main[m])
-		local right = _G[t..r] or (main and main[r])
-
-		if left then left:SetTexture() end
-		if middle then middle:SetTexture() end
-		if right then right:SetTexture() end
-	end
+	hooksecurefunc(tab, 'SetAlpha', CH.ChatFrameTab_SetAlpha)
+	tab:Height(22)
 
 	tab.Text:ClearAllPoints()
 	tab.Text:Point('CENTER', tab, 0, -1)
-
-	hooksecurefunc(tab, 'SetAlpha', CH.ChatFrameTab_SetAlpha)
-
-	tab:Height(22)
 
 	if tab.conversationIcon then
 		tab.conversationIcon:ClearAllPoints()
@@ -1022,7 +1022,7 @@ function CH:StyleChat(frame)
 		editbox.focusMid:SetAlpha(0)
 	end
 
-	-- stuff to hide
+	CH:ClearTabTextures(name)
 	CH:PositionButtonFrame(frame)
 
 	local scrollBar = frame.ScrollBar
@@ -1149,7 +1149,7 @@ do
 	local stripTextureFunc = function(w, x, y) if x=='' then return (w~='' and w) or (y~='' and y) or '' end end
 	local hyperLinkFunc = function(w, x, y) if w~='' then return end
 		local emoji = (x~='' and x) and strmatch(x, 'elvmoji:%%(.+)')
-		return (emoji and E.Libs.Deflate:DecodeForPrint(emoji)) or y
+		return (emoji and DecodeBase64(emoji)) or y
 	end
 	local fourString = function(v, w, x, y)
 		return format('%s%s%s', v, w, (v and v == '1' and x) or y)
@@ -1875,7 +1875,7 @@ function CH:GetBNFriendColor(name, id, useBTag)
 	end
 
 	local info = C_BattleNet_GetAccountInfoByID(id)
-	local BNET_TAG = info and info.isBattleTagFriend and info.battleTag and strmatch(info.battleTag,'([^#]+)')
+	local BNET_TAG = info and info.battleTag and strmatch(info.battleTag,'([^#]+)')
 	local TAG = (useBTag or CH.db.useBTagName) and BNET_TAG
 
 	local Class
@@ -1918,7 +1918,7 @@ function CH:AddPluginMessageFilter(func, position)
 end
 
 --Modified copy from FrameXML ChatFrame.lua to add CUSTOM_CLASS_COLORS (args were changed)
-function CH:GetColoredName(event, _, arg2, _, _, _, _, _, arg8, _, _, _, arg12)
+function CH:GetColoredName(event, _, arg2, _, _, _, _, _, arg8, _, _, _, arg12, _, _, arg18) -- arg12, arg13, arg14, arg18
 	if E:IsSecretValue(arg12) then -- guid is blocked so use uncached
 		local _, englishClass = GetPlayerInfoByGUID(arg12)
 		local classColor = C_ClassColor_GetClassColor(englishClass)
@@ -1940,6 +1940,18 @@ function CH:GetColoredName(event, _, arg2, _, _, _, _, _, arg8, _, _, _, arg12)
 
 	-- ambiguate guild chat names
 	local name = Ambiguate(arg2, (chatType == 'GUILD' and 'guild') or 'none')
+
+	-- handle discord colors
+	local discordInfo, isFromDiscord = CH:GetDiscordInfo(arg18)
+	if isFromDiscord then
+		local shouldShowGlobalName = discordInfo.type == DiscordDisplayNameType.GlobalName
+		if discordInfo.globalName and shouldShowGlobalName then -- Names of user from Discord have a fixed color
+			return _G.ChatFrameUtil.DiscordNameColorize(discordInfo.globalName)
+		end
+
+		name = discordInfo.lastOnlineName
+		arg12 = discordInfo.lastOnlineGUID
+	end
 
 	-- handle the class color
 	local info = name and arg12 and _G.ChatTypeInfo[chatType]
@@ -2007,6 +2019,8 @@ function CH:GetPFlag(specialFlag, zoneChannelID, unitGUID)
 			if CH.db.mentorshipIcon and GetMentorChannelStatus(PLAYERMENTORSHIPSTATUS_NEWCOMER, GetChannelRulesetForChannelID(zoneChannelID)) == PLAYERMENTORSHIPSTATUS_NEWCOMER then
 				flag = _G.NPEV2_CHAT_USER_TAG_NEWCOMER
 			end
+		elseif specialFlag == 'DISCORD' then -- UI-ChatIcon-Discord
+			flag = [[|A:UI-ChatIcon-Discord:0:0:0:0|a ]]
 		else
 			flag = _G['CHAT_FLAG_'..specialFlag]
 		end
@@ -2075,7 +2089,7 @@ local function FlashTabIfNotShown(frame, info, chatType, chatGroup, chatTarget)
 	end
 end
 
-function CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, channelLength, coloredName, historySavedName, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, isHistory, historyTime, historyName, historyBTag)
+function CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, channelLength, coloredName, historySavedName, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, isHistory, historyTime, historyName, historyBTag)
 	if chatType == 'WHISPER_INFORM' and GMChatFrame_IsGM and GMChatFrame_IsGM(arg2) then
 		return
 	end
@@ -2127,6 +2141,7 @@ function CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, chann
 		playerLinkDisplayText = format('[%s]', coloredName)
 	end
 
+	local discordInfo, isFromDiscord = CH:GetDiscordInfo(arg18)
 	local playerName = (nameWithRealm ~= arg2 and nameWithRealm) or arg2
 	if chatType == 'COMMUNITIES_CHANNEL' then -- isCommunityType
 		local messageInfo, clubId, streamId = C_Club_GetInfoFromLastCommunityChatLine()
@@ -2141,12 +2156,18 @@ function CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, chann
 		end
 	elseif chatType == 'BN_WHISPER' or chatType == 'BN_WHISPER_INFORM' then -- arg11: lineID
 		playerLink = CH:GetBNPlayerLink(playerName, playerLinkDisplayText, arg13, arg11, chatGroup, chatTarget)
+	elseif (chatType == 'GUILD_DISCORD' or chatType == 'GUILD') and isFromDiscord then
+		playerLink = CH:GetDiscordLink(playerLinkDisplayText, arg13, discordInfo.userID, arg11, chatGroup, chatTarget);
 	else
 		playerLink = CH:GetPlayerLink(playerName, playerLinkDisplayText, arg11, chatGroup, chatTarget)
 	end
 
 	local isMobile = arg14 and GetMobileEmbeddedTexture(info.r, info.g, info.b)
 	local message = format('%s%s', isMobile or '', arg1)
+
+	if isFromDiscord then
+		message = FormatDiscordMessage(discordInfo, message)
+	end
 
 	-- Player Flags
 	local pflag = CH:GetPFlag(arg6, arg7, arg12)
@@ -2196,6 +2217,8 @@ function CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, chann
 		body = format(header..'[%s] %s', pflag..sender, arg3, message) -- arg3 is language
 	elseif chatType == 'GUILD_ITEM_LOOTED' then
 		body = not isProtected and gsub(message, '$s', sender, 1) or message
+	elseif chatType == 'GUILD_DISCORD' and isFromDiscord then
+		body = format(header..message, pflag..' '..playerLink)
 	elseif chatType == 'TEXT_EMOTE' then
 		local classLink = realm and playerLink and not isProtected and (info.colorNameByClass and gsub(playerLink, '(|h|c.-)|r|h$','%1-'..realm..'|r|h') or gsub(playerLink, '(|h.-)|h$','%1-'..realm..'|h'))
 		body = (classLink and gsub(message, arg2..'%-'..realm, pflag..classLink, 1)) or ((E:NotSecretValue(arg2) and arg2 ~= sender) and gsub(message, arg2, sender, 1)) or message
@@ -2220,12 +2243,16 @@ function CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, chann
 	return body
 end
 
+function CH:GetDiscordInfo(info)
+	return info, info and E:NotSecretValue(info.userID) and info.userID and info.userID ~= 0
+end
+
 -- we dont have a good way to check: attempted to index a forbidden table
 function CH:ChatFrame_GetZoneChannel(frame, index)
 	return frame.zoneChannelList[index]
 end
 
-function CH:ChatFrame_MessageEventHandler(frame, event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, isHistory, historyTime, historyName, historyBTag)
+function CH:ChatFrame_MessageEventHandler(frame, event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, isHistory, historyTime, historyName, historyBTag)
 	-- ElvUI Chat History Note: isHistory, historyTime, historyName, and historyBTag are passed from CH:DisplayChatHistory() and need to be on the end to prevent issues in other addons that listen on ChatFrame_MessageEventHandler.
 	-- we also send isHistory and historyTime into CH:AddMessage so that we don't have to override the timestamp.
 
@@ -2276,7 +2303,7 @@ function CH:ChatFrame_MessageEventHandler(frame, event, arg1, arg2, arg3, arg4, 
 		end
 
 		-- fetch the name color to use
-		local coloredName = historySavedName or CH:GetColoredName(event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14)
+		local coloredName = historySavedName or CH:GetColoredName(event, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg18)
 
 		local channelLength = strlen(arg4)
 		local infoType = chatType
@@ -2504,10 +2531,10 @@ function CH:ChatFrame_MessageEventHandler(frame, event, arg1, arg2, arg3, arg4, 
 			-- step is the only code that needs these arguments. See ItemRef.lua "censoredmessage".
 			local isChatLineCensored, eventArgs, msgFormatter = IsChatLineCensored and IsChatLineCensored(arg11) -- arg11: lineID
 			if isChatLineCensored then
-				eventArgs = _G.SafePack(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17)
+				eventArgs = _G.SafePack(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18)
 
 				msgFormatter = function(msg) -- to translate the message on click [Show Message]
-					local body = CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, channelLength, coloredName, historySavedName, msg, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, isHistory, historyTime, historyName, historyBTag)
+					local body = CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, channelLength, coloredName, historySavedName, msg, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, isHistory, historyTime, historyName, historyBTag)
 					return CH:AddMessageEdits(frame, body, isHistory, historyTime)
 				end
 			end
@@ -2523,7 +2550,7 @@ function CH:ChatFrame_MessageEventHandler(frame, event, arg1, arg2, arg3, arg4, 
 
 			local accessID = CH:GetAccessID(chatGroup, chatTarget)
 			local typeID = CH:GetAccessID(infoType, chatTarget, arg12 or arg13)
-			local body = isChatLineCensored and arg1 or CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, channelLength, coloredName, historySavedName, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, isHistory, historyTime, historyName, historyBTag)
+			local body = isChatLineCensored and arg1 or CH:MessageFormatter(frame, info, chatType, chatGroup, chatTarget, channelLength, coloredName, historySavedName, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, isHistory, historyTime, historyName, historyBTag)
 
 			frame:AddMessage(body, info.r, info.g, info.b, info.id, accessID, typeID, event, eventArgs, msgFormatter, isHistory, historyTime)
 		end
@@ -2571,11 +2598,27 @@ function CH:ChatFrame_OnEvent(frame, ...)
 	if CH:ChatFrame_MessageEventHandler(frame, ...) then return end
 end
 
-function CH:FloatingChatFrame_OnEvent(...)
-	CH:ChatFrame_OnEvent(...)
+function CH:FloatingChatFrame_OnEvent(frame, event, ...)
+	CH:ChatFrame_OnEvent(frame, event, ...)
 
-	if _G.FloatingChatFrame_OnEvent then
-		_G.FloatingChatFrame_OnEvent(...)
+	-- copy of FloatingChatFrameMixin:OnEvent without `ChatFrameMixin.OnEvent`
+	if event == 'UPDATE_CHAT_WINDOWS' or event == 'UPDATE_FLOATING_CHAT_WINDOWS' then
+		_G.FloatingChatFrame_Update(frame:GetID(), 1)
+
+		frame.isInitialized = 1 -- set but not used for a check, shouldnt be an issue with tainting
+	elseif event == 'UPDATE_CHAT_COLOR' then
+		local chatType, r, g, b = ...
+		if not (frame.isTemporary and frame.chatType == chatType) then return end
+
+		local tab = CH:GetTab(frame)
+		if not tab then return end
+
+		local selected = tab.selectedColorTable
+		if selected then
+			selected.r, selected.g, selected.b = r, g, b
+		end
+
+		_G.FCFTab_UpdateColors(tab, not frame.isDocked or frame == _G.FCFDock_GetSelectedWindow(_G.GeneralDockManager))
 	end
 end
 
@@ -2867,7 +2910,7 @@ function CH:SetChatFont(dropDown, chatFrame, fontSize)
 	if not chatFrame then chatFrame = _G.FCF_GetCurrentChatFrame() end
 	if not fontSize then fontSize = dropDown.value end
 
-	chatFrame:FontTemplate(LSM:Fetch('font', CH.db.font), fontSize, CH.db.fontOutline)
+	chatFrame:FontTemplate(CH.db.font, fontSize, CH.db.fontOutline)
 
 	CH:UpdateEditboxFont(chatFrame)
 end
@@ -2958,7 +3001,7 @@ function CH:DisplayChatHistory()
 						end
 						if not skip and gsub(strsub(d[50],10),'_INFORM','') == messageType then
 							if d[1] and not CH:MessageIsProtected(d[1]) then
-								CH:ChatFrame_MessageEventHandler(chat,d[50],d[1],d[2],d[3],d[4],d[5],d[6],d[7],d[8],d[9],d[10],d[11],d[12],d[13],d[14],d[15],d[16],d[17],'ElvUI_ChatHistory',d[51],d[52],d[53])
+								CH:ChatFrame_MessageEventHandler(chat,d[50],d[1],d[2],d[3],d[4],d[5],d[6],d[7],d[8],d[9],d[10],d[11],d[12],d[13],d[14],d[15],d[16],d[17],d[18],'ElvUI_ChatHistory',d[51],d[52],d[53])
 							end
 						end
 					end
@@ -3675,7 +3718,7 @@ function CH:FCFTab_UpdateColors(tab, selected)
 			tab.Text:SetTextColor(1, 1, 1)
 		end
 
-		local name = GetChatWindowInfo(tab:GetID())
+		local name = _G.FCF_GetChatWindowInfo(tab:GetID())
 		if name and E:NotSecretValue(name) then
 			tab.Text:SetText(name)
 		end
@@ -3976,7 +4019,14 @@ function CH:Tab_OnUpdate(elapsed)
 	self.lastUpdate = (self.lastUpdate or 0) + elapsed
 
 	if self.lastUpdate > 0.1 and self.Text:GetFontObject() == _G.GameFontNormalSmall then
-		self.Text:FontTemplate(LSM:Fetch('font', CH.db.tabFont), CH.db.tabFontSize, CH.db.tabFontOutline)
+		self.Text:FontTemplate(CH.db.tabFont, CH.db.tabFontSize, CH.db.tabFontOutline)
+
+		local chat = CH:GetOwner(self)
+		if chat and chat.isDocked then
+			_G.FCF_DockUpdate()
+		else
+			PanelTemplates_TabResize(self, self.sizePadding or 0)
+		end
 	end
 end
 
@@ -4044,6 +4094,8 @@ function CH:Initialize()
 	CH:UpdateEditboxAnchors()
 	CH:HandleChatVoiceIcons()
 
+	CH:SecureHook(_G.EditModeManagerFrame, 'UpdateLayoutInfo', 'ResnapDock')
+
 	if _G.ChatFrameUtil and _G.ChatFrameUtil.ActivateChat then
 		CH:SecureHook(_G.ChatFrameUtil, 'ActivateChat', 'ChatEdit_ActivateChat')
 		CH:SecureHook(_G.ChatFrameUtil, 'DeactivateChat', 'ChatEdit_DeactivateChat')
@@ -4057,16 +4109,16 @@ function CH:Initialize()
 	CH:SecureHook('FCFTab_UpdateColors')
 	CH:SecureHook('FCFDock_SelectWindow')
 	CH:SecureHook('FCFDock_ScrollToSelectedTab')
-	CH:SecureHook('FCF_SetWindowAlpha')
-	CH:SecureHook('FCF_SetButtonSide', 'PositionButtonFrame')
+	CH:SecureHook('FCFDockOverflowButton_UpdatePulseState')
 	CH:SecureHook('FCF_Close', 'PostChatClose')
 	CH:SecureHook('FCF_DockFrame', 'SnappingChanged')
 	CH:SecureHook('FCF_ResetChatWindows', 'ClearSnapping')
 	CH:SecureHook('FCF_SavePositionAndDimensions', 'SnappingChanged')
+	CH:SecureHook('FCF_SetButtonSide', 'PositionButtonFrame')
 	CH:SecureHook('FCF_SetChatWindowFontSize', 'SetChatFont')
 	CH:SecureHook('FCF_UnDockFrame', 'SnappingChanged')
+	CH:SecureHook('FCF_SetWindowAlpha')
 	CH:SecureHook('RedockChatWindows', 'ClearSnapping')
-	CH:SecureHook('FCFDockOverflowButton_UpdatePulseState')
 	CH:SecureHook('UIDropDownMenu_AddButton')
 	CH:SecureHook('GetPlayerInfoByGUID')
 
@@ -4083,10 +4135,6 @@ function CH:Initialize()
 	CH:RegisterEvent('GROUP_ROSTER_UPDATE', 'CheckLFGRoles')
 	CH:RegisterEvent('PET_BATTLE_CLOSE')
 	CH:RegisterEvent('CVAR_UPDATE')
-
-	if E.hasEditMode then
-		CH:SecureHook(_G.EditModeManagerFrame, 'UpdateLayoutInfo', 'ResnapDock')
-	end
 
 	if E.Retail then
 		CH:RegisterEvent('SOCIAL_QUEUE_UPDATE', 'SocialQueueEvent')

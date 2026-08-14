@@ -16,6 +16,13 @@ local TOGGLE_BINDING_BUTTON_NAME = "VaultloomToggleBindingButton"
 local TOGGLE_BINDING_COMMAND = "CLICK " .. TOGGLE_BINDING_BUTTON_NAME .. ":LeftButton"
 local MAIN_TAB_MIN_WIDTH = 88
 local MAIN_TAB_TEXT_PADDING = 34
+local UTILITY_RESOURCE_ROW_HEIGHT = 28
+local UTILITY_RESOURCE_ROW_STRIDE = 32
+local SIDEBAR_SPEC_BACKGROUND_ALPHA = 0.50
+local SIDEBAR_CLASS_BACKGROUND_ALPHA = 0.32
+local SIDEBAR_BACKGROUND_BRIGHTNESS = 0.55
+local PLAYER_SPELLS_ADDON = "Blizzard_PlayerSpells"
+local playerSpellsAssetsReady = false
 local BLIZZARD_FRONT_MENUS = {
     "GameMenuFrame",
     "SettingsPanel",
@@ -53,6 +60,16 @@ local function callFrameMethod(frame, methodName, ...)
     if type(method) ~= "function" then return nil, false end
     local ok, value = pcall(method, frame, ...)
     return value, ok
+end
+
+local function registerEscapeCloseFrame(globalName)
+    if type(globalName) ~= "string" or globalName == "" then return false end
+    if type(_G.UISpecialFrames) ~= "table" then _G.UISpecialFrames = {} end
+    for _, frameName in ipairs(_G.UISpecialFrames) do
+        if frameName == globalName then return true end
+    end
+    table.insert(_G.UISpecialFrames, globalName)
+    return true
 end
 
 function Shell:RestoreBlizzardMenuLayer(frame)
@@ -232,6 +249,100 @@ local function setClassIcon(texture, classFile)
     end
 end
 
+local function getSpecializationBackground(specID)
+    specID = tonumber(specID)
+    if not specID then return nil end
+
+    if type(ClassTalentUtil) == "table"
+        and type(ClassTalentUtil.GetVisualsForSpecID) == "function"
+    then
+        local ok, visuals = pcall(ClassTalentUtil.GetVisualsForSpecID, specID)
+        if ok and type(visuals) == "table"
+            and type(visuals.background) == "string" and visuals.background ~= ""
+        then
+            return visuals.background
+        end
+    end
+    local backgrounds = Assets.specializationBackgrounds
+    return backgrounds and backgrounds[specID] or nil
+end
+
+local function ensurePlayerSpellsAssets()
+    if playerSpellsAssetsReady then return true end
+    local loadAddOn = C_AddOns and C_AddOns.LoadAddOn or LoadAddOn
+    if type(loadAddOn) == "function" then
+        local ok, loaded = pcall(loadAddOn, PLAYER_SPELLS_ADDON)
+        playerSpellsAssetsReady = ok and loaded == true
+    end
+    return playerSpellsAssetsReady
+end
+
+local function applyAtlasStretch(texture, atlas)
+    if not texture or type(texture.SetTexture) ~= "function" then return false end
+    ensurePlayerSpellsAssets()
+
+    local atlasInfo
+    if C_Texture and type(C_Texture.GetAtlasInfo) == "function" then
+        local ok, info = pcall(C_Texture.GetAtlasInfo, atlas)
+        if ok and type(info) == "table" then atlasInfo = info end
+    end
+    local file = atlasInfo and atlasInfo.file
+    if not atlasInfo or not file
+        or pcall(texture.SetTexture, texture, file) ~= true
+    then
+        return false
+    end
+    local left = tonumber(atlasInfo and atlasInfo.leftTexCoord)
+    local right = tonumber(atlasInfo and atlasInfo.rightTexCoord)
+    local top = tonumber(atlasInfo and atlasInfo.topTexCoord)
+    local bottom = tonumber(atlasInfo and atlasInfo.bottomTexCoord)
+    if left and right and top and bottom then
+        texture:SetTexCoord(left, right, top, bottom)
+    end
+    texture:ClearAllPoints()
+    texture:SetPoint("TOPLEFT", 2, -2)
+    texture:SetPoint("BOTTOMRIGHT", -2, 2)
+    texture.vaultloomAtlas = atlas
+    return true
+end
+
+local function applySidebarCharacterBackground(card, character, enabled)
+    local texture = card and card.specializationBackground
+    if not texture then return end
+    texture:Hide()
+    if enabled ~= true then return end
+
+    local specializationAtlas = getSpecializationBackground(character and character.specID)
+    local usingSpecializationArt = specializationAtlas
+        and applyAtlasStretch(texture, specializationAtlas) or false
+    local applied = usingSpecializationArt
+    if not applied then
+        local classTexture = Assets.classHeroPlates
+            and character and Assets.classHeroPlates[character.classFile]
+        if classTexture then
+            texture:ClearAllPoints()
+            texture:SetPoint("TOPLEFT", 2, -2)
+            texture:SetPoint("BOTTOMRIGHT", -2, 2)
+            texture:SetTexture(classTexture)
+            texture:SetTexCoord(0, 1, 0, 1)
+            texture.vaultloomAtlas = nil
+            applied = true
+        end
+    end
+    if not applied then return end
+
+    if type(texture.SetDesaturated) == "function" then texture:SetDesaturated(false) end
+    texture:SetVertexColor(
+        SIDEBAR_BACKGROUND_BRIGHTNESS,
+        SIDEBAR_BACKGROUND_BRIGHTNESS,
+        SIDEBAR_BACKGROUND_BRIGHTNESS,
+        1
+    )
+    texture:SetAlpha(usingSpecializationArt
+        and SIDEBAR_SPEC_BACKGROUND_ALPHA or SIDEBAR_CLASS_BACKGROUND_ALPHA)
+    texture:Show()
+end
+
 local function applyHeroPlate(frame, classFile)
     local hero = frame and frame.hero
     if not hero then
@@ -319,12 +430,55 @@ end
 
 local function createUtilitySectionTitle(parent, text)
     local title = CreateFrame("Frame", nil, parent)
-    title:SetHeight(24)
+    title:SetHeight(20)
     title.label = Widgets:CreateLabel(title, "GameFontNormalLarge", "CENTER")
     title.label:SetAllPoints(title)
     title.label:SetText(text or "")
     title.label:SetTextColor(unpackColor(Theme.colors.parchment))
+    if type(title.label.GetFont) == "function" and type(title.label.SetFont) == "function" then
+        local fontFile, fontHeight, fontFlags = title.label:GetFont()
+        if fontFile and tonumber(fontHeight) then
+            title.label:SetFont(fontFile, math.max(9, tonumber(fontHeight) - 2), fontFlags)
+        end
+    end
     return title
+end
+
+local function createUtilityCurrencyButton(parent)
+    local button = CreateFrame("Frame", nil, parent)
+    button:SetSize(40, 52)
+    button:EnableMouse(true)
+    button.iconBorder = CreateFrame("Frame", nil, button, BACKDROP_TEMPLATE)
+    button.iconBorder:SetSize(34, 34)
+    button.iconBorder:SetPoint("TOP", 0, -2)
+    Widgets:ApplyStandardGoldFrame(button.iconBorder, nil, Theme.colors.goldDim)
+    button.icon = button.iconBorder:CreateTexture(nil, "ARTWORK")
+    button.icon:SetSize(32, 32)
+    button.icon:SetPoint("CENTER", 0, 0)
+    button.icon:SetTexCoord(2 / 32, 30 / 32, 2 / 32, 30 / 32)
+    button.iconMask = Widgets:AddRoundedIconMask(button.iconBorder, button.icon)
+    button.count = Widgets:CreateLabel(button, "GameFontHighlightSmall", "CENTER")
+    button.count:SetPoint("TOP", button.iconBorder, "BOTTOM", 0, -4)
+    button.count:SetWidth(42)
+    button:SetScript("OnEnter", function(selfButton)
+        showUtilityTooltip(selfButton, selfButton.currencyID, nil)
+    end)
+    button:SetScript("OnLeave", hideGameTooltip)
+    return button
+end
+
+local function layoutUtilityCurrencyButtons(panel, buttons)
+    local total = #buttons
+    if total == 0 then return end
+    local totalWidth = (total * 40) + ((total - 1) * 8)
+    for index, button in ipairs(buttons) do
+        button:ClearAllPoints()
+        if index == 1 then
+            button:SetPoint("TOPLEFT", panel, "TOP", -(totalWidth / 2), -10)
+        else
+            button:SetPoint("LEFT", buttons[index - 1], "RIGHT", 8, 0)
+        end
+    end
 end
 
 local SIDEBAR_META_SEPARATOR = "  |  "
@@ -594,7 +748,6 @@ local function applyCharacterPortrait(texture, character, usePlayerPortrait)
 end
 
 local SORT_OPTIONS = {
-    { key = false, label = function() return L.SIDEBAR_SORT_MANUAL end },
     { key = "name", label = function() return L.SIDEBAR_SORT_NAME end },
     { key = "level", label = function() return L.SIDEBAR_SORT_LEVEL end },
     { key = "itemLevel", label = function() return L.SIDEBAR_SORT_ITEM_LEVEL end },
@@ -633,14 +786,19 @@ function Shell:ApplyDisplaySettings()
         return
     end
     local ui = Addon.Database:GetUI()
-    self.frame:SetScale(ui.scale)
-    self.frame:SetAlpha(ui.opacity)
+    if math.abs((tonumber(self.frame:GetScale()) or 1) - ui.scale) > 0.0001 then
+        self.frame:SetScale(ui.scale)
+    end
+    if math.abs((tonumber(self.frame:GetAlpha()) or 1) - ui.opacity) > 0.0001 then
+        self.frame:SetAlpha(ui.opacity)
+    end
 end
 
 function Shell:SetScale(value)
     local ui = Addon.Database:GetUI()
     ui.scale = math.max(0.70, math.min(1.25, tonumber(value) or 1))
     self:ApplyDisplaySettings()
+    self:ApplyWindowPosition()
     return ui.scale
 end
 
@@ -655,12 +813,22 @@ function Shell:ApplyWindowPosition()
     if not self.frame then
         return
     end
-    local window = Addon.Database:GetUI().window
+    local ui = Addon.Database:GetUI()
+    local window = ui.window
+    local scale = math.max(0.01, tonumber(ui.scale) or 1)
     self.frame:ClearAllPoints()
-    self.frame:SetPoint(window.point, UIParent, window.relativePoint, window.x, window.y)
+    -- StopMoving stores screen-space offsets. SetPoint offsets on a scaled
+    -- frame are frame-local, so undo the frame scale when restoring them.
+    self.frame:SetPoint(
+        window.point,
+        UIParent,
+        window.relativePoint,
+        (tonumber(window.x) or 0) / scale,
+        (tonumber(window.y) or 0) / scale
+    )
 end
 
-function Shell:StoreWindowPosition()
+function Shell:StoreWindowPosition(positionFromMoving)
     if not self.frame then
         return
     end
@@ -671,8 +839,34 @@ function Shell:StoreWindowPosition()
     local window = Addon.Database:GetUI().window
     window.point = point
     window.relativePoint = relativePoint or point
-    window.x = tonumber(x) or 0
-    window.y = tonumber(y) or 0
+    local scale = math.max(0.01, tonumber(self.frame:GetScale()) or 1)
+    local coordinateScale = positionFromMoving == true and 1 or scale
+    window.x = (tonumber(x) or 0) * coordinateScale
+    window.y = (tonumber(y) or 0) * coordinateScale
+end
+
+function Shell:StartWindowDrag()
+    local frame = self.frame
+    if not frame then return false end
+
+    -- StartMoving can mark globally named frames as user placed. Keep the
+    -- position under Vaultloom's SavedVariables control.
+    frame:SetUserPlaced(false)
+    frame:StartMoving()
+    return true
+end
+
+function Shell:StopWindowDrag()
+    local frame = self.frame
+    if not frame then return false end
+
+    frame:StopMovingOrSizing()
+    self:StoreWindowPosition(true)
+    frame:SetUserPlaced(false)
+    -- Replace Blizzard's transient drag anchor with one stable UIParent
+    -- anchor so later layout updates cannot make the next drag jump.
+    self:ApplyWindowPosition()
+    return true
 end
 
 function Shell:ApplySessionOpenDefaults()
@@ -705,6 +899,7 @@ end
 function Shell:ResetDisplaySettings()
     Addon.Database:ResetDisplaySettings()
     self:ApplyDisplaySettings()
+    self:ApplyWindowPosition()
 end
 
 function Shell:ResetWindowPosition()
@@ -717,11 +912,10 @@ function Shell:CreateTitleBar(frame)
         handle:EnableMouse(true)
         handle:RegisterForDrag("LeftButton")
         handle:SetScript("OnDragStart", function()
-            frame:StartMoving()
+            Shell:StartWindowDrag()
         end)
         handle:SetScript("OnDragStop", function()
-            frame:StopMovingOrSizing()
-            Shell:StoreWindowPosition()
+            Shell:StopWindowDrag()
         end)
     end
 
@@ -759,14 +953,14 @@ function Shell:CreateTitleBar(frame)
     frame.titleBarBottomLine:SetColorTexture(0.05, 0.035, 0.025, 0.82)
 
     frame.titleMedallion = frame.titleBar:CreateTexture(nil, "OVERLAY", nil, 6)
-    frame.titleMedallion:SetSize(64, 64)
-    frame.titleMedallion:SetPoint("CENTER", frame.titleBar, "LEFT", 13, -5)
+    frame.titleMedallion:SetSize(69, 69)
+    frame.titleMedallion:SetPoint("CENTER", frame.titleBar, "LEFT", 19, -8)
     frame.titleMedallion:SetTexture(Assets.titleMedallion)
     frame.titleMedallion:SetTexCoord(0, 1, 0, 1)
 
     frame.titleMedallionDrag = CreateFrame("Frame", nil, frame.titleBar)
-    frame.titleMedallionDrag:SetSize(56, 56)
-    frame.titleMedallionDrag:SetPoint("CENTER", frame.titleBar, "LEFT", 13, -5)
+    frame.titleMedallionDrag:SetSize(61, 61)
+    frame.titleMedallionDrag:SetPoint("CENTER", frame.titleBar, "LEFT", 19, -8)
     enableWindowDrag(frame.titleMedallionDrag)
 
     frame.brand = Widgets:CreateLabel(frame.titleBar, "GameFontNormal", "CENTER")
@@ -846,8 +1040,28 @@ function Shell:CreateTabs(frame)
             button:SetPoint("LEFT", 0, 0)
         end
         button.screenID = definition.id
+        if definition.id == "housing" or definition.id == "compendium" then
+            button.newBadge = Widgets:CreateLabel(button, "GameFontNormalSmall", "RIGHT")
+            button.newBadge:SetPoint("TOPRIGHT", -3, -1)
+            button.newBadge:SetText(L.OPTIONS_NEW_BADGE)
+            button.newBadge:SetTextColor(unpackColor(Theme.colors.gold))
+            button.newBadge:Hide()
+        end
         button:SetScript("OnClick", function(self)
-            Shell:ShowScreen(self.screenID)
+            local changed = Shell.activeScreenID ~= self.screenID
+                or Shell.optionsOpen == true
+                or Shell.wishlistOpen == true
+                or Shell.featuresOpen == true
+            if changed and Addon.Sound then
+                Addon.Sound:Play("tabSwitch")
+            end
+            if Shell:ShowScreen(self.screenID) then
+                if self.screenID == "housing" then
+                    Shell:MarkNewInterfaceSeen("housing_tab")
+                elseif self.screenID == "compendium" then
+                    Shell:MarkNewInterfaceSeen("compendium_tab")
+                end
+            end
         end)
         self.tabButtons[definition.id] = button
         previous = button
@@ -1152,6 +1366,92 @@ function Shell:MarkFeatureSeen(featureID)
     return true
 end
 
+function Shell:GetNewIndicatorSettings()
+    local ui = Addon.Database:GetUI()
+    ui.newIndicators = type(ui.newIndicators) == "table" and ui.newIndicators or {}
+    ui.newIndicators.seenReleases = type(ui.newIndicators.seenReleases) == "table"
+        and ui.newIndicators.seenReleases or {}
+    return ui.newIndicators
+end
+
+function Shell:GetCurrentNewInterfaceRelease()
+    local release = Addon.ReleaseNotes and Addon.ReleaseNotes.current or nil
+    if not release or type(release.version) ~= "string"
+        or type(release.newInterfaceIDs) ~= "table"
+    then
+        return nil, nil
+    end
+    return release.version, release.newInterfaceIDs
+end
+
+function Shell:IsNewInterface(indicatorID)
+    if type(indicatorID) ~= "string" or indicatorID == "" then return false end
+    local version, indicatorIDs = self:GetCurrentNewInterfaceRelease()
+    if not version then return false end
+    local listed = false
+    for _, candidate in ipairs(indicatorIDs) do
+        if candidate == indicatorID then
+            listed = true
+            break
+        end
+    end
+    if not listed then return false end
+    return self:GetNewIndicatorSettings().seenReleases[indicatorID] ~= version
+end
+
+function Shell:RefreshNewInterfaceBadges()
+    local frame = self.frame
+    local specializationArtIsNew = self:IsNewInterface("warband_specialization_art")
+    local sidebarSettingsButton = frame and frame.sidebarSettingsButton
+    if sidebarSettingsButton and sidebarSettingsButton.newBadge then
+        sidebarSettingsButton.newBadge:SetShown(specializationArtIsNew)
+    end
+    local specializationArtButton = frame and frame.warbandFieldButtons
+        and frame.warbandFieldButtons.specializationArt
+    if specializationArtButton and specializationArtButton.newBadge then
+        specializationArtButton.newBadge:SetShown(specializationArtIsNew)
+    end
+
+    local housingButton = self.tabButtons and self.tabButtons.housing
+    if housingButton and housingButton.newBadge then
+        housingButton.newBadge:SetShown(self:IsNewInterface("housing_tab"))
+    end
+
+    local compendiumButton = self.tabButtons and self.tabButtons.compendium
+    if compendiumButton and compendiumButton.newBadge then
+        compendiumButton.newBadge:SetShown(self:IsNewInterface("compendium_tab"))
+    end
+
+    local utilitySettingsButton = frame and frame.utilitySettingsButton
+    if utilitySettingsButton and utilitySettingsButton.newBadge then
+        utilitySettingsButton.newBadge:SetShown(
+            self:IsNewInterface("utility_resource_settings")
+        )
+    end
+
+    local sortButton = frame and frame.sidebarSortButton
+    local manualButton = frame and frame.sidebarManualOrderButton
+    if sortButton and sortButton.newBadge then
+        sortButton.newBadge:SetShown(self:IsNewInterface("warband_manual_order"))
+    end
+    if manualButton and manualButton.newBadge then
+        manualButton.newBadge:SetShown(self:IsNewInterface("warband_manual_order"))
+    end
+    local arsenal = Addon.ScreenRegistry.instances and Addon.ScreenRegistry.instances.arsenal
+    local mailButton = arsenal and arsenal.modeButtons and arsenal.modeButtons.mail
+    if mailButton and mailButton.newBadge then
+        mailButton.newBadge:SetShown(self:IsNewInterface("arsenal_mail"))
+    end
+end
+
+function Shell:MarkNewInterfaceSeen(indicatorID)
+    if not self:IsNewInterface(indicatorID) then return false end
+    local version = self:GetCurrentNewInterfaceRelease()
+    self:GetNewIndicatorSettings().seenReleases[indicatorID] = version
+    self:RefreshNewInterfaceBadges()
+    return true
+end
+
 function Shell:MarkReleaseRead(version)
     version = tostring(version or "")
     if version ~= "" then
@@ -1207,7 +1507,13 @@ function Shell:CreateSidebar(frame)
     frame.sidebarTitle:SetPoint("TOPRIGHT", -130, -16)
     frame.sidebarTitle:SetText(L.SIDEBAR_TITLE)
 
-    frame.sidebarSettingsButton = Widgets:CreateSimpleGoldButton(frame.sidebar, "", 24, 24)
+    frame.sidebarSettingsButton = Widgets:CreateSimpleGoldButton(
+        frame.sidebar,
+        "",
+        24,
+        24,
+        Assets.cardInset
+    )
     frame.sidebarSettingsButton:SetPoint("TOPRIGHT", -14, -13)
     frame.sidebarSettingsButton.icon = frame.sidebarSettingsButton:CreateTexture(nil, "ARTWORK")
     frame.sidebarSettingsButton.icon:SetSize(15, 15)
@@ -1217,8 +1523,30 @@ function Shell:CreateSidebar(frame)
     else
         frame.sidebarSettingsButton.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
     end
+    frame.sidebarSettingsButton.newBadge = Widgets:CreateLabel(
+        frame.sidebarSettingsButton,
+        "GameFontNormalSmall",
+        "CENTER"
+    )
+    frame.sidebarSettingsButton.newBadge:SetPoint(
+        "BOTTOM",
+        frame.sidebarSettingsButton,
+        "TOP",
+        0,
+        0
+    )
+    frame.sidebarSettingsButton.newBadge:SetWidth(42)
+    frame.sidebarSettingsButton.newBadge:SetText(L.OPTIONS_NEW_BADGE)
+    frame.sidebarSettingsButton.newBadge:SetTextColor(unpackColor(Theme.colors.gold))
+    frame.sidebarSettingsButton.newBadge:Hide()
 
-    frame.sidebarOverviewButton = Widgets:CreateSimpleGoldButton(frame.sidebar, "", 24, 24)
+    frame.sidebarOverviewButton = Widgets:CreateSimpleGoldButton(
+        frame.sidebar,
+        "",
+        24,
+        24,
+        Assets.cardInset
+    )
     frame.sidebarOverviewButton:SetPoint(
         "RIGHT",
         frame.sidebarSettingsButton,
@@ -1287,6 +1615,16 @@ function Shell:CreateSidebar(frame)
     frame.sidebarCurrent:SetPoint("TOPRIGHT", -16, -12)
     frame.sidebarCurrent:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     frame.sidebarCurrent.label:Hide()
+
+    frame.sidebarCurrent.specializationBackground = frame.sidebarCurrent:CreateTexture(
+        nil,
+        "ARTWORK",
+        nil,
+        -8
+    )
+    frame.sidebarCurrent.specializationBackground:SetPoint("TOPLEFT", 2, -2)
+    frame.sidebarCurrent.specializationBackground:SetPoint("BOTTOMRIGHT", -2, 2)
+    frame.sidebarCurrent.specializationBackground:Hide()
 
     frame.sidebarCurrent.iconBackplate = frame.sidebarCurrent:CreateTexture(nil, "ARTWORK")
     frame.sidebarCurrent.iconBackplate:SetSize(59, 59)
@@ -1358,6 +1696,14 @@ function Shell:CreateSidebar(frame)
 
     frame.sidebarSortButton = Widgets:CreateButton(frame.sidebar, L.SIDEBAR_SORT_SHORT, 115, 24)
     frame.sidebarSortButton:SetPoint("TOPLEFT", frame.sidebarCurrent, "BOTTOMLEFT", 0, -8)
+    frame.sidebarSortButton.newBadge = Widgets:CreateLabel(
+        frame.sidebarSortButton,
+        "GameFontNormalSmall",
+        "RIGHT"
+    )
+    frame.sidebarSortButton.newBadge:SetPoint("TOPRIGHT", -3, -1)
+    frame.sidebarSortButton.newBadge:SetText(L.OPTIONS_NEW_BADGE)
+    frame.sidebarSortButton.newBadge:SetTextColor(unpackColor(Theme.colors.gold))
     frame.sidebarVisibilityButton = Widgets:CreateButton(frame.sidebar, L.SIDEBAR_CHARACTERS_SHORT, 115, 24)
     frame.sidebarVisibilityButton:SetPoint("TOPRIGHT", frame.sidebarCurrent, "BOTTOMRIGHT", 0, -8)
     frame.sidebarSortButton:SetScript("OnClick", function() Shell:ToggleSidebarMenu("sort") end)
@@ -1365,22 +1711,44 @@ function Shell:CreateSidebar(frame)
 
     frame.sidebarSortMenu = Widgets:CreatePanel(frame.sidebar, "inset")
     frame.sidebarSortMenu:SetPoint("TOPLEFT", frame.sidebarSortButton, "BOTTOMLEFT", 0, -3)
-    frame.sidebarSortMenu:SetSize(236, 64 + (#SORT_OPTIONS * 25))
+    frame.sidebarSortMenu:SetSize(236, 64 + ((#SORT_OPTIONS + 1) * 25))
     frame.sidebarSortMenu:SetFrameLevel(frame.sidebar:GetFrameLevel() + 20)
+    frame.sidebarManualOrderButton = Widgets:CreateButton(
+        frame.sidebarSortMenu,
+        L.SIDEBAR_SORT_MANUAL,
+        224,
+        24
+    )
+    frame.sidebarManualOrderButton:SetPoint("TOPLEFT", 6, -6)
+    frame.sidebarManualOrderButton.newBadge = Widgets:CreateLabel(
+        frame.sidebarManualOrderButton,
+        "GameFontNormalSmall",
+        "RIGHT"
+    )
+    frame.sidebarManualOrderButton.newBadge:SetPoint("TOPRIGHT", -5, -1)
+    frame.sidebarManualOrderButton.newBadge:SetText(L.OPTIONS_NEW_BADGE)
+    frame.sidebarManualOrderButton.newBadge:SetTextColor(unpackColor(Theme.colors.gold))
+    frame.sidebarManualOrderButton:SetScript("OnClick", function()
+        Shell:MarkNewInterfaceSeen("warband_manual_order")
+        Addon.WarbandRoster:SetSortMode(nil)
+        frame.sidebarSortMenu:Hide()
+        Shell:RefreshSidebar()
+        Shell:OpenCharacterOrderDialog()
+    end)
     frame.sidebarSortMenu.rows = {}
     for index, option in ipairs(SORT_OPTIONS) do
         local row = Widgets:CreateButton(frame.sidebarSortMenu, option.label(), 224, 24)
-        row:SetPoint("TOPLEFT", 6, -6 - ((index - 1) * 25))
+        row:SetPoint("TOPLEFT", 6, -31 - ((index - 1) * 25))
         row.sortKey = option.key
         row:SetScript("OnClick", function(selfButton)
-            Addon.WarbandRoster:SetSortMode(selfButton.sortKey or nil)
+            Addon.WarbandRoster:SetSortMode(selfButton.sortKey)
             frame.sidebarSortMenu:Hide()
             Shell:RefreshSidebar()
         end)
         frame.sidebarSortMenu.rows[index] = row
     end
     frame.sidebarSortRealmLabel = Widgets:CreateLabel(frame.sidebarSortMenu, "GameFontHighlightSmall", "LEFT")
-    frame.sidebarSortRealmLabel:SetPoint("TOPLEFT", 8, -10 - (#SORT_OPTIONS * 25))
+    frame.sidebarSortRealmLabel:SetPoint("TOPLEFT", 8, -10 - ((#SORT_OPTIONS + 1) * 25))
     frame.sidebarSortRealmLabel:SetText(L.SIDEBAR_REALM_FILTER)
     frame.sidebarRealmButton = Widgets:CreateButton(frame.sidebarSortMenu, "", 220, 24)
     frame.sidebarRealmButton:SetPoint("TOPLEFT", frame.sidebarSortRealmLabel, "BOTTOMLEFT", 0, -6)
@@ -1461,6 +1829,7 @@ function Shell:CreateSidebar(frame)
         { key = "realm", label = L.SIDEBAR_FIELD_REALM },
         { key = "professions", label = L.SIDEBAR_FIELD_PROFESSIONS },
         { key = "vault", label = L.SIDEBAR_FIELD_VAULT },
+        { key = "specializationArt", label = L.SIDEBAR_FIELD_SPECIALIZATION_ART },
     }
     frame.warbandFieldButtons = {}
     for index, definition in ipairs(fieldDefinitions) do
@@ -1469,7 +1838,17 @@ function Shell:CreateSidebar(frame)
         local row = math.floor((index - 1) / 2)
         button:SetPoint("TOPLEFT", frame.sidebarFieldsLabel, "BOTTOMLEFT", column * 166, -7 - (row * 28))
         button.fieldKey = definition.key
+        if definition.key == "specializationArt" then
+            button.newBadge = Widgets:CreateLabel(button, "GameFontNormalSmall", "RIGHT")
+            button.newBadge:SetPoint("TOPRIGHT", -3, -1)
+            button.newBadge:SetText(L.OPTIONS_NEW_BADGE)
+            button.newBadge:SetTextColor(unpackColor(Theme.colors.gold))
+            button.newBadge:Hide()
+        end
         button:SetScript("OnClick", function(selfButton)
+            if selfButton.fieldKey == "specializationArt" then
+                Shell:MarkNewInterfaceSeen("warband_specialization_art")
+            end
             local settings = Addon.WarbandRoster:GetSettings()
             Addon.WarbandRoster:SetCardField(selfButton.fieldKey, not settings.fields[selfButton.fieldKey])
             Shell:RefreshWarbandSettings()
@@ -1567,6 +1946,13 @@ function Shell:ToggleSidebarMenu(menuName)
     if not sortMenu or not visibilityMenu or not settingsMenu then
         return
     end
+    if self.frame.utilitySettingsMenu then self.frame.utilitySettingsMenu:Hide() end
+    if self.frame.utilitySettingsButton then
+        Widgets:SetButtonActive(self.frame.utilitySettingsButton, false)
+    end
+    local targetMenu = menuName == "sort" and sortMenu
+        or menuName == "visibility" and visibilityMenu or settingsMenu
+    local wasShown = targetMenu:IsShown()
     if menuName == "sort" then
         visibilityMenu:Hide()
         settingsMenu:Hide()
@@ -1593,6 +1979,9 @@ function Shell:ToggleSidebarMenu(menuName)
             self.frame.sidebarDeleteConfirm:Hide()
         end
     end
+    if Addon.Sound then
+        Addon.Sound:Play(wasShown and "menuClose" or "menuOpen")
+    end
 end
 
 function Shell:CloseSidebarMenus()
@@ -1601,6 +1990,10 @@ function Shell:CloseSidebarMenus()
     if self.frame.sidebarVisibilityMenu then self.frame.sidebarVisibilityMenu:Hide() end
     if self.frame.sidebarSettingsMenu then self.frame.sidebarSettingsMenu:Hide() end
     if self.frame.sidebarDeleteConfirm then self.frame.sidebarDeleteConfirm:Hide() end
+    if self.frame.utilitySettingsMenu then self.frame.utilitySettingsMenu:Hide() end
+    if self.frame.utilitySettingsButton then
+        Widgets:SetButtonActive(self.frame.utilitySettingsButton, false)
+    end
 end
 
 function Shell:CreateUtility(frame)
@@ -1612,120 +2005,94 @@ function Shell:CreateUtility(frame)
     frame.utilityStandard = CreateFrame("Frame", nil, frame.utility)
     frame.utilityStandard:SetAllPoints(frame.utility)
 
-    frame.utilityTitle = Widgets:CreateLabel(frame.utilityStandard, "GameFontNormalLarge", "LEFT")
-    frame.utilityTitle:SetPoint("TOPLEFT", 16, -16)
-    frame.utilityTitle:SetPoint("TOPRIGHT", -16, -16)
-    frame.utilityTitle:SetText(L.UTILITY_TITLE)
-
-    frame.utilitySubtitle = Widgets:CreateLabel(frame.utilityStandard, "GameFontHighlightSmall", "LEFT")
-    frame.utilitySubtitle:SetPoint("TOPLEFT", frame.utilityTitle, "BOTTOMLEFT", 0, -8)
-    frame.utilitySubtitle:SetPoint("TOPRIGHT", -16, -8)
-    frame.utilitySubtitle:SetText(L.UTILITY_SUBTITLE)
+    frame.utilitySettingsButton = Widgets:CreateSimpleGoldButton(
+        frame.utilityStandard,
+        "",
+        24,
+        24,
+        Assets.cardInset
+    )
+    frame.utilitySettingsButton:SetPoint("TOPRIGHT", -14, -13)
+    frame.utilitySettingsButton.icon = frame.utilitySettingsButton:CreateTexture(nil, "ARTWORK")
+    frame.utilitySettingsButton.icon:SetSize(15, 15)
+    frame.utilitySettingsButton.icon:SetPoint("CENTER", 0, 0)
+    if type(frame.utilitySettingsButton.icon.SetAtlas) == "function" then
+        frame.utilitySettingsButton.icon:SetAtlas("optionsicon-brown")
+    else
+        frame.utilitySettingsButton.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+    end
+    frame.utilitySettingsButton.newBadge = Widgets:CreateLabel(
+        frame.utilitySettingsButton,
+        "GameFontNormalSmall",
+        "CENTER"
+    )
+    frame.utilitySettingsButton.newBadge:SetPoint(
+        "BOTTOM",
+        frame.utilitySettingsButton,
+        "TOP",
+        0,
+        0
+    )
+    frame.utilitySettingsButton.newBadge:SetWidth(42)
+    frame.utilitySettingsButton.newBadge:SetText(L.OPTIONS_NEW_BADGE)
+    frame.utilitySettingsButton.newBadge:SetTextColor(unpackColor(Theme.colors.gold))
+    frame.utilitySettingsButton.newBadge:Hide()
+    frame.utilitySettingsButton:SetScript("OnEnter", function(selfButton)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(selfButton, "ANCHOR_CURSOR_RIGHT")
+        GameTooltip:AddLine(L.UTILITY_SETTINGS_TITLE, 1.00, 0.82, 0.18)
+        GameTooltip:AddLine(L.UTILITY_SETTINGS_TOOLTIP, 0.82, 0.78, 0.66, true)
+        GameTooltip:Show()
+    end)
+    frame.utilitySettingsButton:SetScript("OnLeave", hideGameTooltip)
 
     frame.utilityUpgradeHeader = createUtilitySectionTitle(frame.utilityStandard, L.UPGRADE_SECTION)
-    frame.utilityUpgradeHeader:SetPoint("TOPLEFT", frame.utilitySubtitle, "BOTTOMLEFT", 0, -14)
-    frame.utilityUpgradeHeader:SetPoint("TOPRIGHT", -16, -14)
+    frame.utilityUpgradeHeader:SetPoint("TOPLEFT", frame.utilityStandard, "TOPLEFT", 16, -19)
+    frame.utilityUpgradeHeader:SetPoint("TOPRIGHT", frame.utilityStandard, "TOPRIGHT", -48, -19)
 
     frame.utilityUpgradePanel = Widgets:CreatePanel(frame.utilityStandard, "inset")
-    frame.utilityUpgradePanel:SetPoint("TOPLEFT", frame.utilityUpgradeHeader, "BOTTOMLEFT", 0, -8)
-    frame.utilityUpgradePanel:SetPoint("TOPRIGHT", frame.utilityUpgradeHeader, "BOTTOMRIGHT", 0, -8)
-    frame.utilityUpgradePanel:SetHeight(88)
+    frame.utilityUpgradePanel:SetPoint("TOPLEFT", frame.utilityUpgradeHeader, "BOTTOMLEFT", 0, -6)
+    frame.utilityUpgradePanel:SetPoint("TOPRIGHT", frame.utilityStandard, "TOPRIGHT", -16, -6)
+    frame.utilityUpgradePanel:SetHeight(72)
     frame.utilityUpgradeButtons = {}
 
     for index = 1, #(Addon.Data.MID_UTILITY_UPGRADE_CRESTS or {}) do
-        local button = CreateFrame("Frame", nil, frame.utilityUpgradePanel)
-        button:SetSize(40, 52)
-        if index == 1 then
-            button:SetPoint("TOPLEFT", frame.utilityUpgradePanel, "TOP", -116, -16)
-        else
-            button:SetPoint("LEFT", frame.utilityUpgradeButtons[index - 1], "RIGHT", 8, 0)
-        end
-        button:EnableMouse(true)
-
-        button.iconBorder = CreateFrame("Frame", nil, button, BACKDROP_TEMPLATE)
-        -- Keep both the 34px frame and the 32px icon on whole pixels. The old
-        -- odd-sized frame landed on half pixels and exposed/clipped one edge.
-        button.iconBorder:SetSize(34, 34)
-        button.iconBorder:SetPoint("TOP", 0, -6)
-        button.iconBorder:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-        })
-        button.iconBorder:SetBackdropColor(0, 0, 0, 0.55)
-        button.icon = button.iconBorder:CreateTexture(nil, "ARTWORK")
-        button.icon:SetSize(32, 32)
-        button.icon:SetPoint("CENTER", 0, 0)
-        -- Crop two source pixels from every edge so the border baked into the
-        -- currency icon is hidden beneath Vaultloom's own quality frame.
-        button.icon:SetTexCoord(2 / 32, 30 / 32, 2 / 32, 30 / 32)
-        button.iconInlay = CreateFrame("Frame", nil, button.iconBorder)
-        button.iconInlay:SetSize(32, 32)
-        button.iconInlay:SetPoint("CENTER", button.iconBorder, "CENTER", 0, 0)
-        button.iconInlay:SetFrameLevel(button.iconBorder:GetFrameLevel() + 1)
-        button.iconInlay.edges = {}
-        local top = button.iconInlay:CreateTexture(nil, "OVERLAY")
-        top:SetPoint("TOPLEFT", 0, 0)
-        top:SetPoint("TOPRIGHT", 0, 0)
-        top:SetHeight(2)
-        local bottom = button.iconInlay:CreateTexture(nil, "OVERLAY")
-        bottom:SetPoint("BOTTOMLEFT", 0, 0)
-        bottom:SetPoint("BOTTOMRIGHT", 0, 0)
-        bottom:SetHeight(2)
-        local left = button.iconInlay:CreateTexture(nil, "OVERLAY")
-        left:SetPoint("TOPLEFT", 0, -2)
-        left:SetPoint("BOTTOMLEFT", 0, 2)
-        left:SetWidth(2)
-        local right = button.iconInlay:CreateTexture(nil, "OVERLAY")
-        right:SetPoint("TOPRIGHT", 0, -2)
-        right:SetPoint("BOTTOMRIGHT", 0, 2)
-        right:SetWidth(2)
-        button.iconInlay.edges = { top, bottom, left, right }
-        for _, edge in ipairs(button.iconInlay.edges) do
-            edge:SetColorTexture(unpackColor(Theme.colors.goldDim))
-        end
-        button.count = Widgets:CreateLabel(button, "GameFontHighlightSmall", "CENTER")
-        button.count:SetPoint("TOP", button.iconBorder, "BOTTOM", 0, -4)
-        button.count:SetWidth(42)
-        button:SetScript("OnEnter", function(selfButton)
-            showUtilityTooltip(selfButton, selfButton.currencyID, nil)
-        end)
-        button:SetScript("OnLeave", hideGameTooltip)
+        local button = createUtilityCurrencyButton(frame.utilityUpgradePanel)
         frame.utilityUpgradeButtons[index] = button
     end
+    layoutUtilityCurrencyButtons(frame.utilityUpgradePanel, frame.utilityUpgradeButtons)
+
+    frame.utilityPvpHeader = createUtilitySectionTitle(frame.utilityStandard, L.PVP_CURRENCY_SECTION)
+    frame.utilityPvpHeader:SetPoint("TOPLEFT", frame.utilityUpgradePanel, "BOTTOMLEFT", 0, -12)
+    frame.utilityPvpHeader:SetPoint("TOPRIGHT", frame.utilityUpgradePanel, "BOTTOMRIGHT", 0, -12)
+
+    frame.utilityPvpPanel = Widgets:CreatePanel(frame.utilityStandard, "inset")
+    frame.utilityPvpPanel:SetPoint("TOPLEFT", frame.utilityPvpHeader, "BOTTOMLEFT", 0, -6)
+    frame.utilityPvpPanel:SetPoint("TOPRIGHT", frame.utilityPvpHeader, "BOTTOMRIGHT", 0, -6)
+    frame.utilityPvpPanel:SetHeight(72)
+    frame.utilityPvpButtons = {}
+    for index = 1, #(Addon.Data.MID_UTILITY_PVP_CURRENCIES or {}) do
+        frame.utilityPvpButtons[index] = createUtilityCurrencyButton(frame.utilityPvpPanel)
+    end
+    layoutUtilityCurrencyButtons(frame.utilityPvpPanel, frame.utilityPvpButtons)
 
     frame.utilityResourceHeader = createUtilitySectionTitle(frame.utilityStandard, L.RESOURCE_SECTION)
-    frame.utilityResourceHeader:SetPoint("TOPLEFT", frame.utilityUpgradePanel, "BOTTOMLEFT", 0, -14)
-    frame.utilityResourceHeader:SetPoint("TOPRIGHT", frame.utilityUpgradePanel, "BOTTOMRIGHT", 0, -14)
+    frame.utilityResourceHeader:SetPoint("TOPLEFT", frame.utilityPvpPanel, "BOTTOMLEFT", 0, -12)
+    frame.utilityResourceHeader:SetPoint("TOPRIGHT", frame.utilityPvpPanel, "BOTTOMRIGHT", 0, -12)
 
     frame.utilityResourcePanel = Widgets:CreatePanel(frame.utilityStandard, "inset")
-    frame.utilityResourcePanel:SetPoint("TOPLEFT", frame.utilityResourceHeader, "BOTTOMLEFT", 0, -8)
+    frame.utilityResourcePanel:SetPoint("TOPLEFT", frame.utilityResourceHeader, "BOTTOMLEFT", 0, -6)
     frame.utilityResourcePanel:SetPoint("BOTTOMRIGHT", frame.utilityStandard, "BOTTOMRIGHT", -16, 16)
 
-    frame.utilityRestoreButton = Widgets:CreateButton(frame.utilityResourcePanel, L.RESOURCE_SHOW_ALL, 132, 24)
-    frame.utilityRestoreButton:SetPoint("TOPLEFT", 14, -10)
-    frame.utilityRestoreButton:SetScript("OnClick", function()
-        Addon.UtilityResources:ClearHidden()
-    end)
-    frame.utilityRestoreButton:SetScript("OnEnter", function(selfButton)
-        local hiddenCount = tonumber(selfButton.hiddenCount) or 0
-        if GameTooltip then
-            GameTooltip:SetOwner(selfButton, "ANCHOR_CURSOR_RIGHT")
-            GameTooltip:AddLine(hiddenCount > 0
-                and string.format(L.RESOURCE_SHOW_ALL_TOOLTIP, hiddenCount)
-                or L.RESOURCE_SHOW_ALL_TOOLTIP_NONE, 0.93, 0.89, 0.77, true)
-            GameTooltip:Show()
-        end
-    end)
-    frame.utilityRestoreButton:SetScript("OnLeave", hideGameTooltip)
-
     frame.utilityResourceScroll = CreateFrame("ScrollFrame", nil, frame.utilityResourcePanel, "UIPanelScrollFrameTemplate")
-    frame.utilityResourceScroll:SetPoint("TOPLEFT", frame.utilityRestoreButton, "BOTTOMLEFT", 0, -10)
+    frame.utilityResourceScroll:SetPoint("TOPLEFT", 14, -10)
     frame.utilityResourceScroll:SetPoint("BOTTOMRIGHT", -26, 10)
     frame.utilityResourceScroll:EnableMouseWheel(true)
     frame.utilityResourceList = CreateFrame("Frame", nil, frame.utilityResourceScroll)
     frame.utilityResourceList:SetSize(216, 10)
     frame.utilityResourceScroll:SetScrollChild(frame.utilityResourceList)
     frame.utilityResourceScroll:SetScript("OnMouseWheel", function(selfScroll, delta)
-        local nextValue = selfScroll:GetVerticalScroll() - (delta * 29)
+        local nextValue = selfScroll:GetVerticalScroll() - (delta * UTILITY_RESOURCE_ROW_STRIDE)
         selfScroll:SetVerticalScroll(math.max(0, math.min(selfScroll:GetVerticalScrollRange(), nextValue)))
     end)
     ScrollFrames:Style(frame.utilityResourceScroll)
@@ -1735,9 +2102,15 @@ function Shell:CreateUtility(frame)
         total = math.max(0, math.floor(tonumber(total) or 0))
         while #self.utilityResourceRows < total do
             local index = #self.utilityResourceRows + 1
-            local row = Widgets:CreateButton(self.utilityResourceList, "", 216, 25, "row")
-            row:SetPoint("TOPLEFT", 0, -((index - 1) * 29))
-            row:SetPoint("TOPRIGHT", 0, -((index - 1) * 29))
+            local row = Widgets:CreateButton(
+                self.utilityResourceList,
+                "",
+                216,
+                UTILITY_RESOURCE_ROW_HEIGHT,
+                "row"
+            )
+            row:SetPoint("TOPLEFT", 0, -((index - 1) * UTILITY_RESOURCE_ROW_STRIDE))
+            row:SetPoint("TOPRIGHT", 0, -((index - 1) * UTILITY_RESOURCE_ROW_STRIDE))
             row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             row.label:Hide()
             row.name = Widgets:CreateLabel(row, "GameFontHighlightSmall", "LEFT")
@@ -1745,11 +2118,27 @@ function Shell:CreateUtility(frame)
             row.name:SetPoint("RIGHT", -88, 0)
             if type(row.name.SetWordWrap) == "function" then row.name:SetWordWrap(false) end
             row.value = Widgets:CreateLabel(row, "GameFontNormalSmall", "RIGHT")
-            row.value:SetPoint("RIGHT", -31, 0)
+            row.value:SetPoint("RIGHT", -32, 0)
             row.value:SetWidth(52)
             row.icon = row:CreateTexture(nil, "ARTWORK")
             row.icon:SetSize(20, 20)
             row.icon:SetPoint("RIGHT", -8, 0)
+            row.icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+            row.iconMask = Widgets:AddRoundedIconMask(row, row.icon)
+            if row.iconMask then
+                row.iconMask:ClearAllPoints()
+                row.iconMask:SetPoint("TOPLEFT", row.icon, "TOPLEFT", 1, -1)
+                row.iconMask:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", -1, 1)
+            end
+            row.iconQualityBorder = Widgets:CreateRoundedIconBorder(
+                row,
+                row.icon,
+                0,
+                Theme.colors.goldDim
+            )
+            row.iconQualityBorder:ClearAllPoints()
+            row.iconQualityBorder:SetPoint("TOPLEFT", row.icon, "TOPLEFT", 1, -1)
+            row.iconQualityBorder:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", -1, 1)
             row:SetScript("OnEnter", function(selfRow)
                 showUtilityTooltip(selfRow, selfRow.currencyID, selfRow.itemID, L.RESOURCE_HIDE_HINT)
             end)
@@ -1767,6 +2156,144 @@ function Shell:CreateUtility(frame)
         return #self.utilityResourceRows
     end
     frame:EnsureUtilityResourceRows(#(Addon.Data.MID_UTILITY_RESOURCE_ENTRIES or {}))
+
+    frame.utilitySettingsMenu = Widgets:CreatePanel(frame, "card")
+    frame.utilitySettingsMenu:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    frame.utilitySettingsMenu:SetSize(360, 230)
+    frame.utilitySettingsMenu:SetFrameStrata("DIALOG")
+    frame.utilitySettingsMenu:SetFrameLevel(frame:GetFrameLevel() + 50)
+    frame.utilitySettingsMenu:SetMovable(true)
+    frame.utilitySettingsMenu:EnableMouse(true)
+    frame.utilitySettingsMenu:SetClampedToScreen(true)
+    Widgets:ApplyStandardGoldFrame(frame.utilitySettingsMenu, Assets.menuPlate)
+
+    frame.utilitySettingsTitleBar = CreateFrame("Frame", nil, frame.utilitySettingsMenu)
+    frame.utilitySettingsTitleBar:SetPoint("TOPLEFT", 16, -12)
+    frame.utilitySettingsTitleBar:SetPoint("TOPRIGHT", -16, -12)
+    frame.utilitySettingsTitleBar:SetHeight(28)
+    frame.utilitySettingsTitleBar:EnableMouse(true)
+    frame.utilitySettingsTitleBar:RegisterForDrag("LeftButton")
+    frame.utilitySettingsTitleBar:SetScript("OnDragStart", function()
+        frame.utilitySettingsMenu:StartMoving()
+    end)
+    frame.utilitySettingsTitleBar:SetScript("OnDragStop", function()
+        frame.utilitySettingsMenu:StopMovingOrSizing()
+    end)
+    frame.utilitySettingsDivider = frame.utilitySettingsTitleBar:CreateTexture(nil, "OVERLAY")
+    frame.utilitySettingsDivider:SetPoint("BOTTOMLEFT", 8, 0)
+    frame.utilitySettingsDivider:SetPoint("BOTTOMRIGHT", -8, 0)
+    frame.utilitySettingsDivider:SetHeight(1)
+    frame.utilitySettingsDivider:SetColorTexture(unpackColor(Theme.colors.goldDim))
+    frame.utilitySettingsTitle = Widgets:CreateLabel(frame.utilitySettingsTitleBar, "GameFontNormalLarge", "LEFT")
+    frame.utilitySettingsTitle:SetPoint("LEFT", 12, 0)
+    frame.utilitySettingsTitle:SetPoint("RIGHT", -50, 0)
+    frame.utilitySettingsTitle:SetText(L.UTILITY_SETTINGS_TITLE)
+    frame.utilitySettingsTitle:SetTextColor(unpackColor(Theme.colors.gold))
+    frame.utilitySettingsCloseButton = Widgets:CreateButton(frame.utilitySettingsTitleBar, "X", 26, 24)
+    frame.utilitySettingsCloseButton:SetPoint("RIGHT", -8, 0)
+    frame.utilitySettingsCloseButton:SetScript("OnClick", function()
+        Shell:CloseSidebarMenus()
+    end)
+
+    frame.utilityUpgradeToggle = Widgets:CreateButton(
+        frame.utilitySettingsMenu,
+        L.UTILITY_SHOW_UPGRADES,
+        310,
+        26,
+        "row"
+    )
+    frame.utilityUpgradeToggle:SetPoint("TOPLEFT", 24, -58)
+    frame.utilityPvpToggle = Widgets:CreateButton(
+        frame.utilitySettingsMenu,
+        L.UTILITY_SHOW_PVP,
+        310,
+        26,
+        "row"
+    )
+    frame.utilityPvpToggle:SetPoint("TOPLEFT", frame.utilityUpgradeToggle, "BOTTOMLEFT", 0, -8)
+    frame.utilitySettingsHint = Widgets:CreateLabel(
+        frame.utilitySettingsMenu,
+        "GameFontHighlightSmall",
+        "LEFT"
+    )
+    frame.utilitySettingsHint:SetPoint("TOPLEFT", frame.utilityPvpToggle, "BOTTOMLEFT", 2, -12)
+    frame.utilitySettingsHint:SetPoint("TOPRIGHT", frame.utilityPvpToggle, "BOTTOMRIGHT", -2, -12)
+    frame.utilitySettingsHint:SetWordWrap(true)
+    frame.utilitySettingsHint:SetText(L.UTILITY_SECTION_SEPARATE_HINT)
+
+    frame.utilitySettingsRestoreButton = Widgets:CreateButton(
+        frame.utilitySettingsMenu,
+        L.RESOURCE_SHOW_ALL,
+        190,
+        24
+    )
+    frame.utilitySettingsRestoreButton:SetPoint("BOTTOMLEFT", 24, 18)
+    frame.utilitySettingsRestoreButton:SetScript("OnClick", function()
+        Addon.UtilityResources:ClearHidden()
+        Shell:RefreshUtilitySettings()
+    end)
+    frame.utilitySettingsRestoreButton:SetScript("OnEnter", function(selfButton)
+        local hiddenCount = tonumber(selfButton.hiddenCount) or 0
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(selfButton, "ANCHOR_CURSOR_RIGHT")
+        GameTooltip:AddLine(hiddenCount > 0
+            and string.format(L.RESOURCE_SHOW_ALL_TOOLTIP, hiddenCount)
+            or L.RESOURCE_SHOW_ALL_TOOLTIP_NONE, 0.93, 0.89, 0.77, true)
+        GameTooltip:Show()
+    end)
+    frame.utilitySettingsRestoreButton:SetScript("OnLeave", hideGameTooltip)
+    frame.utilityUpgradeToggle:SetScript("OnClick", function()
+        local settings = Addon.UtilityResources:GetSettings()
+        Addon.UtilityResources:SetSectionVisible("upgrades", not settings.showUpgradeSection)
+        Shell:RefreshUtilitySettings()
+    end)
+    frame.utilityPvpToggle:SetScript("OnClick", function()
+        local settings = Addon.UtilityResources:GetSettings()
+        Addon.UtilityResources:SetSectionVisible("pvp", not settings.showPvpSection)
+        Shell:RefreshUtilitySettings()
+    end)
+    frame.utilitySettingsMenu:SetScript("OnHide", function()
+        Widgets:SetButtonActive(frame.utilitySettingsButton, false)
+    end)
+    frame.utilitySettingsMenu:Hide()
+    frame.utilitySettingsButton:SetScript("OnClick", function()
+        if Shell:ToggleUtilitySettings() then
+            Shell:MarkNewInterfaceSeen("utility_resource_settings")
+        end
+    end)
+end
+
+function Shell:RefreshUtilitySettings()
+    local frame = self.frame
+    if not frame or not frame.utilitySettingsMenu or not Addon.UtilityResources then return end
+    local settings = Addon.UtilityResources:GetSettings()
+    Widgets:SetButtonActive(frame.utilityUpgradeToggle, settings.showUpgradeSection == true)
+    Widgets:SetButtonActive(frame.utilityPvpToggle, settings.showPvpSection == true)
+    local hiddenCount = math.max(
+        0,
+        tonumber(frame.utilitySettingsRestoreButton.hiddenCount) or 0
+    )
+    frame.utilitySettingsRestoreButton.hiddenCount = hiddenCount
+    frame.utilitySettingsRestoreButton.label:SetText(hiddenCount > 0
+        and string.format(L.RESOURCE_SHOW_ALL_COUNT, hiddenCount) or L.RESOURCE_SHOW_ALL)
+    Widgets:SetButtonActive(frame.utilitySettingsRestoreButton, hiddenCount > 0)
+end
+
+function Shell:ToggleUtilitySettings()
+    local frame = self.frame
+    if not frame or not frame.utilitySettingsMenu then return false end
+    local wasShown = frame.utilitySettingsMenu:IsShown()
+    self:CloseSidebarMenus()
+    if not wasShown then
+        frame.utilitySettingsMenu:ClearAllPoints()
+        frame.utilitySettingsMenu:SetPoint("CENTER", frame, "CENTER", 0, 0)
+        frame.utilitySettingsMenu:Show()
+        frame.utilitySettingsMenu:Raise()
+        Widgets:SetButtonActive(frame.utilitySettingsButton, true)
+        self:RefreshUtilitySettings()
+    end
+    if Addon.Sound then Addon.Sound:Play(wasShown and "menuClose" or "menuOpen") end
+    return not wasShown
 end
 
 function Shell:CreateContent(frame)
@@ -1824,6 +2351,7 @@ function Shell:CreateWishlist(frame)
     end
     frame.wishlistPanel = Addon.WishlistUI:Create(frame.body, {
         close = function()
+            if Addon.Sound then Addon.Sound:Play("menuClose") end
             Shell:CloseWishlist(true)
         end,
         openSource = function(source, difficultyKey)
@@ -1844,6 +2372,7 @@ function Shell:CreateOptions(frame)
     end
     frame.optionsPanel = Addon.OptionsUI:Create(frame.body, {
         close = function()
+            if Addon.Sound then Addon.Sound:Play("menuClose") end
             Shell:CloseOptions(true)
         end,
         getSettings = function()
@@ -1893,6 +2422,24 @@ function Shell:CreateOptions(frame)
         end,
         setChatMessagesEnabled = function(enabled)
             return Addon:SetChatMessagesEnabled(enabled)
+        end,
+        areSoundsEnabled = function()
+            return not Addon.Sound or Addon.Sound:IsEnabled()
+        end,
+        setSoundsEnabled = function(enabled)
+            if not Addon.Sound then return false end
+            local wasEnabled = Addon.Sound:IsEnabled()
+            if wasEnabled and enabled ~= true then
+                Addon.Sound:Play("toggleOff")
+            end
+            local result = Addon.Sound:SetEnabled(enabled)
+            if not wasEnabled and result == true then
+                Addon.Sound:Play("toggleOn")
+            end
+            return result
+        end,
+        previewSound = function()
+            return Addon.Sound and Addon.Sound:Preview("tabSwitch") or false
         end,
         getDiscordURL = function()
             return Addon.Welcome and Addon.Welcome:GetDiscordURL() or ""
@@ -1945,6 +2492,7 @@ function Shell:CreateFeatures(frame)
     end
     frame.featuresPanel = Addon.FeaturesUI:Create(frame.body, {
         close = function()
+            if Addon.Sound then Addon.Sound:Play("menuClose") end
             Shell:CloseFeatures(true)
         end,
         isFeatureNew = function(featureID)
@@ -1958,6 +2506,44 @@ function Shell:CreateFeatures(frame)
     frame.featuresPanel:SetPoint("BOTTOMRIGHT", frame.body, "BOTTOMRIGHT", 0, 0)
     frame.featuresPanel:Hide()
     return frame.featuresPanel
+end
+
+function Shell:CreateCharacterOrderDialog(frame)
+    if frame.characterOrderDialog then return frame.characterOrderDialog end
+    frame.characterOrderDialog = Addon.CharacterOrderDialog:Create(frame, {
+        getCharacters = function()
+            return Addon.WarbandRoster:GetAll()
+        end,
+        getOrder = function()
+            return Addon.WarbandRoster:GetManualOrder()
+        end,
+        isHidden = function(characterKey)
+            return Addon.WarbandRoster:IsHidden(characterKey)
+        end,
+        save = function(order)
+            local saved = Addon.WarbandRoster:SetManualOrder(order)
+            if saved then
+                Shell:RefreshSidebar()
+                Shell:RefreshCharacterContext()
+                Shell:RefreshWarbandOverview()
+            end
+            return saved == true
+        end,
+    })
+    return frame.characterOrderDialog
+end
+
+function Shell:OpenCharacterOrderDialog()
+    if not self.frame then self:CreateFrame() end
+    if not self.frame or not Addon.CharacterOrderDialog then return false end
+    self:CloseSidebarMenus()
+    return self:CreateCharacterOrderDialog(self.frame):Open()
+end
+
+function Shell:CloseCharacterOrderDialog()
+    local dialog = self.frame and self.frame.characterOrderDialog
+    if not dialog or not dialog:IsShown() then return false end
+    return dialog:Cancel()
 end
 
 function Shell:CreateWarbandOverview(frame)
@@ -2063,8 +2649,10 @@ end
 
 function Shell:ToggleWarbandOverview()
     if self.warbandOverviewOpen then
+        if Addon.Sound then Addon.Sound:Play("menuClose") end
         return self:CloseWarbandOverview()
     end
+    if Addon.Sound then Addon.Sound:Play("menuOpen") end
     return self:OpenWarbandOverview()
 end
 
@@ -2143,7 +2731,11 @@ function Shell:CloseMythicPlusOverview()
 end
 
 function Shell:ToggleMythicPlusOverview()
-    if self.mythicPlusOverviewOpen then return self:CloseMythicPlusOverview() end
+    if self.mythicPlusOverviewOpen then
+        if Addon.Sound then Addon.Sound:Play("menuClose") end
+        return self:CloseMythicPlusOverview()
+    end
+    if Addon.Sound then Addon.Sound:Play("menuOpen") end
     return self:OpenMythicPlusOverview()
 end
 
@@ -2239,12 +2831,14 @@ function Shell:CreateFrame()
 
     local globalName = Addon.Identity.globalPrefix .. "MainFrame"
     local frame = CreateFrame("Frame", globalName, UIParent, BACKDROP_TEMPLATE)
+    registerEscapeCloseFrame(globalName)
     frame:SetSize(Dimensions.width, Dimensions.height)
     frame:SetFrameStrata("HIGH")
     frame:SetMovable(true)
     frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
     frame:SetClampedToScreen(false)
+    frame:SetDontSavePosition(true)
+    frame:SetUserPlaced(false)
     frame:SetBackdrop({
         bgFile = Assets.windowBackground,
         edgeFile = WOW_DIALOG_BORDER,
@@ -2255,20 +2849,22 @@ function Shell:CreateFrame()
     frame:SetBackdropColor(1, 1, 1, 1)
     frame:SetBackdropBorderColor(0.62, 0.48, 0.18, 0.94)
 
-    frame:SetScript("OnDragStart", function(selfFrame)
-        selfFrame:StartMoving()
-    end)
-    frame:SetScript("OnDragStop", function(selfFrame)
-        selfFrame:StopMovingOrSizing()
-        Shell:StoreWindowPosition()
-    end)
     frame:SetScript("OnShow", function()
+        if not frame.vaultloomSoundOpened then
+            frame.vaultloomSoundOpened = true
+            if Addon.Sound then Addon.Sound:Play("windowOpen") end
+        end
         if Addon.UtilityResources and type(Addon.UtilityResources.Open) == "function" then
             Addon.UtilityResources:Open()
         end
         Shell:Refresh()
     end)
     frame:SetScript("OnHide", function()
+        if frame.vaultloomSoundOpened then
+            frame.vaultloomSoundOpened = false
+            if Addon.Sound then Addon.Sound:Play("windowClose") end
+        end
+        Shell:CloseCharacterOrderDialog()
         Shell:RestoreBlizzardMenuLayers()
         if Shell.activeScreen and type(Shell.activeScreen.SetChromeVisible) == "function" then
             Shell.activeScreen:SetChromeVisible(false)
@@ -2329,7 +2925,7 @@ function Shell:CreateFrame()
         end
         Shell:RefreshWarbandOverview()
     end)
-    Addon.StateStore:Subscribe("mythicplus.season1", self, function()
+    Addon.StateStore:Subscribe(Addon.Data.MYTHIC_PLUS.stateID, self, function()
         Shell:RefreshMythicPlusOverview()
     end)
     Addon.StateStore:Subscribe("vault.progress", self, function()
@@ -2356,6 +2952,11 @@ function Shell:EnsureRosterButtons(count)
         end
         button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         button.label:Hide()
+
+        button.specializationBackground = button:CreateTexture(nil, "ARTWORK", nil, -8)
+        button.specializationBackground:SetPoint("TOPLEFT", 2, -2)
+        button.specializationBackground:SetPoint("BOTTOMRIGHT", -2, 2)
+        button.specializationBackground:Hide()
 
         button.iconBackplate = button:CreateTexture(nil, "ARTWORK")
         button.iconBackplate:SetSize(38, 38)
@@ -2464,6 +3065,7 @@ function Shell:RefreshWarbandSettings()
     for _, row in ipairs(self.frame.sidebarSortMenu.rows or {}) do
         row:SetShown(row.sortKey ~= "activityScore" or settings.fields.activityScore == true)
     end
+    self:RefreshNewInterfaceBadges()
 
     local realmLabel = L.SIDEBAR_REALM_ALL
     if settings.realmFilter == "current" then
@@ -2532,6 +3134,11 @@ function Shell:RefreshSidebar()
             true,
             buildSidebarMetaParts(currentCharacter, settings)
         )
+        applySidebarCharacterBackground(
+            self.frame.sidebarCurrent,
+            currentCharacter,
+            settings.fields.specializationArt == true
+        )
         refreshSidebarProfessions(self.frame.sidebarCurrent, currentCharacter, settings, true)
         if showVault then refreshVaultStrip(self.frame.sidebarCurrent.vaultStrip, currentCharacter.key) end
         Widgets:SetButtonActive(self.frame.sidebarCurrent, currentCharacter.key == selectedKey)
@@ -2554,7 +3161,7 @@ function Shell:RefreshSidebar()
     self.frame.sidebarVisibilityButton.label:SetText(hiddenCount > 0
         and string.format("%s (%d)", L.SIDEBAR_CHARACTERS_SHORT, hiddenCount) or L.SIDEBAR_CHARACTERS_SHORT)
     for _, row in ipairs(self.frame.sidebarSortMenu.rows) do
-        Widgets:SetButtonActive(row, (row.sortKey or nil) == ui.sidebarSortMode)
+        Widgets:SetButtonActive(row, row.sortKey == ui.sidebarSortMode)
     end
 
     for index, row in ipairs(self.visibilityRows) do
@@ -2588,6 +3195,8 @@ function Shell:RefreshSidebar()
             button.realm:SetText(string.format(L.SIDEBAR_REALM_VALUE, character.realm or L.UNKNOWN))
             button.money:SetText(formatCoinMoney(character.money))
             button.mainTag:SetShown(character.isMain)
+            button.mainTag:ClearAllPoints()
+            button.mainTag:SetPoint("TOPRIGHT", -10, -10)
             positionSidebarCardName(button, character.isMain)
             button.iconBackplate:SetColorTexture(classR, classG, classB, 1)
             setClassIcon(button.classIcon, character.classFile)
@@ -2597,6 +3206,11 @@ function Shell:RefreshSidebar()
                 settings,
                 false,
                 buildSidebarMetaParts(character, settings)
+            )
+            applySidebarCharacterBackground(
+                button,
+                character,
+                settings.fields.specializationArt == true
             )
             rosterContentHeight = rosterContentHeight + buttonHeight + 4
             refreshSidebarProfessions(
@@ -2637,35 +3251,91 @@ function Shell:RefreshUtility()
     if Addon.UtilityResources and type(Addon.UtilityResources.GetView) == "function" then
         view = Addon.UtilityResources:GetView(character)
     else
-        view = Addon.UtilityLogic:BuildView(nil, nil, {})
+        view = Addon.UtilityLogic:BuildView(nil, nil, {}, {})
     end
 
-    for index, button in ipairs(self.frame.utilityUpgradeButtons) do
-        local entry = view.upgrades[index]
-        local currencyID = entry and entry.currencyID or (Addon.Data.MID_UTILITY_UPGRADE_CRESTS or {})[index]
-        local color
-        if type(ITEM_QUALITY_COLORS) == "table" then
-            color = ITEM_QUALITY_COLORS[currencyID == 3383 and 3 or 4]
-        end
-        button.currencyID = currencyID
-        button.icon:SetTexture(entry and entry.icon or "Interface\\ICONS\\INV_Misc_QuestionMark")
-        button.count:SetText(entry and entry.quantity ~= nil and tostring(entry.quantity) or L.UTILITY_VALUE_UNKNOWN)
-        setDesaturated(button.icon, not (entry and entry.available))
-        button:SetAlpha(entry and entry.available and 1 or 0.44)
-        local edgeR = color and color.r or Theme.colors.goldDim[1]
-        local edgeG = color and color.g or Theme.colors.goldDim[2]
-        local edgeB = color and color.b or Theme.colors.goldDim[3]
-        local edgeA = entry and entry.available and 0.92 or 0.42
-        for _, edge in ipairs(button.iconInlay.edges or {}) do
-            edge:SetColorTexture(edgeR, edgeG, edgeB, edgeA)
-        end
+    local showUpgradeSection = view.showUpgradeSection == true
+    local showPvpSection = view.showPvpSection == true
+    local previousPanel
+    self.frame.utilityUpgradeHeader:SetShown(showUpgradeSection)
+    self.frame.utilityUpgradePanel:SetShown(showUpgradeSection)
+    if showUpgradeSection then
+        self.frame.utilityUpgradeHeader:ClearAllPoints()
+        self.frame.utilityUpgradeHeader:SetPoint("TOPLEFT", self.frame.utilityStandard, "TOPLEFT", 16, -19)
+        self.frame.utilityUpgradeHeader:SetPoint("TOPRIGHT", self.frame.utilityStandard, "TOPRIGHT", -48, -19)
+        self.frame.utilityUpgradePanel:ClearAllPoints()
+        self.frame.utilityUpgradePanel:SetPoint("TOPLEFT", self.frame.utilityUpgradeHeader, "BOTTOMLEFT", 0, -6)
+        self.frame.utilityUpgradePanel:SetPoint("TOPRIGHT", self.frame.utilityStandard, "TOPRIGHT", -16, -6)
+        previousPanel = self.frame.utilityUpgradePanel
     end
+
+    self.frame.utilityPvpHeader:SetShown(showPvpSection)
+    self.frame.utilityPvpPanel:SetShown(showPvpSection)
+    if showPvpSection then
+        self.frame.utilityPvpHeader:ClearAllPoints()
+        if previousPanel then
+            self.frame.utilityPvpHeader:SetPoint("TOPLEFT", previousPanel, "BOTTOMLEFT", 0, -12)
+            self.frame.utilityPvpHeader:SetPoint("TOPRIGHT", previousPanel, "BOTTOMRIGHT", 0, -12)
+        else
+            self.frame.utilityPvpHeader:SetPoint("TOPLEFT", self.frame.utilityStandard, "TOPLEFT", 16, -19)
+            self.frame.utilityPvpHeader:SetPoint("TOPRIGHT", self.frame.utilityStandard, "TOPRIGHT", -48, -19)
+        end
+        self.frame.utilityPvpPanel:ClearAllPoints()
+        self.frame.utilityPvpPanel:SetPoint("TOPLEFT", self.frame.utilityPvpHeader, "BOTTOMLEFT", 0, -6)
+        self.frame.utilityPvpPanel:SetPoint("TOPRIGHT", self.frame.utilityStandard, "TOPRIGHT", -16, -6)
+        previousPanel = self.frame.utilityPvpPanel
+    end
+
+    self.frame.utilityResourceHeader:ClearAllPoints()
+    if previousPanel then
+        self.frame.utilityResourceHeader:SetPoint("TOPLEFT", previousPanel, "BOTTOMLEFT", 0, -12)
+        self.frame.utilityResourceHeader:SetPoint("TOPRIGHT", previousPanel, "BOTTOMRIGHT", 0, -12)
+    else
+        self.frame.utilityResourceHeader:SetPoint("TOPLEFT", self.frame.utilityStandard, "TOPLEFT", 16, -19)
+        self.frame.utilityResourceHeader:SetPoint("TOPRIGHT", self.frame.utilityStandard, "TOPRIGHT", -48, -19)
+    end
+    self.frame.utilityResourcePanel:ClearAllPoints()
+    self.frame.utilityResourcePanel:SetPoint("TOPLEFT", self.frame.utilityResourceHeader, "BOTTOMLEFT", 0, -6)
+    self.frame.utilityResourcePanel:SetPoint("BOTTOMRIGHT", self.frame.utilityStandard, "BOTTOMRIGHT", -16, 16)
+
+    local function refreshCurrencyButtons(buttons, entries, upgradeStyle)
+        local visibleButtons = {}
+        for index, button in ipairs(buttons) do
+            local entry = entries[index]
+            if entry then
+                local currencyID = entry.currencyID
+                local color
+                if type(ITEM_QUALITY_COLORS) == "table" then
+                    color = upgradeStyle
+                        and ITEM_QUALITY_COLORS[currencyID == 3442 and 3 or 4]
+                        or ITEM_QUALITY_COLORS[tonumber(entry.quality)]
+                end
+                button.currencyID = currencyID
+                button.icon:SetTexture(entry.icon or "Interface\\ICONS\\INV_Misc_QuestionMark")
+                button.count:SetText(entry.quantity ~= nil and tostring(entry.quantity) or L.UTILITY_VALUE_UNKNOWN)
+                setDesaturated(button.icon, not entry.available)
+                button:SetAlpha(entry.available and 1 or 0.44)
+                local edgeR = color and color.r or Theme.colors.goldDim[1]
+                local edgeG = color and color.g or Theme.colors.goldDim[2]
+                local edgeB = color and color.b or Theme.colors.goldDim[3]
+                button.iconBorder:SetBackdropBorderColor(edgeR, edgeG, edgeB, entry.available and 0.92 or 0.42)
+                button:Show()
+                visibleButtons[#visibleButtons + 1] = button
+            else
+                button.currencyID = nil
+                button:Hide()
+            end
+        end
+        layoutUtilityCurrencyButtons(buttons[1] and buttons[1]:GetParent() or nil, visibleButtons)
+    end
+    refreshCurrencyButtons(self.frame.utilityUpgradeButtons, view.upgrades or {}, true)
+    refreshCurrencyButtons(self.frame.utilityPvpButtons, view.pvp or {}, false)
 
     local hiddenCount = math.max(0, tonumber(view.hiddenCount) or 0)
-    self.frame.utilityRestoreButton.hiddenCount = hiddenCount
-    self.frame.utilityRestoreButton.label:SetText(hiddenCount > 0
+    self.frame.utilitySettingsRestoreButton.hiddenCount = hiddenCount
+    self.frame.utilitySettingsRestoreButton.label:SetText(hiddenCount > 0
         and string.format(L.RESOURCE_SHOW_ALL_COUNT, hiddenCount) or L.RESOURCE_SHOW_ALL)
-    Widgets:SetButtonActive(self.frame.utilityRestoreButton, hiddenCount > 0)
+    Widgets:SetButtonActive(self.frame.utilitySettingsRestoreButton, hiddenCount > 0)
 
     self.frame:EnsureUtilityResourceRows(#view.resources)
     for index, row in ipairs(self.frame.utilityResourceRows) do
@@ -2677,6 +3347,13 @@ function Shell:RefreshUtility()
             row.name:SetText(entry.name or "...")
             row.value:SetText(entry.quantity ~= nil and tostring(entry.quantity) or L.UTILITY_VALUE_UNKNOWN)
             row.icon:SetTexture(entry.icon or "Interface\\ICONS\\INV_Misc_QuestionMark")
+            local qualityColor = type(ITEM_QUALITY_COLORS) == "table"
+                and ITEM_QUALITY_COLORS[tonumber(entry.quality)] or nil
+            local borderR = qualityColor and qualityColor.r or Theme.colors.goldDim[1]
+            local borderG = qualityColor and qualityColor.g or Theme.colors.goldDim[2]
+            local borderB = qualityColor and qualityColor.b or Theme.colors.goldDim[3]
+            local borderA = entry.available and 1 or 0.48
+            row.iconQualityBorder:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
             setDesaturated(row.icon, not entry.available)
             row.name:SetTextColor(entry.available and 0.88 or 0.60, entry.available and 0.88 or 0.62, entry.available and 0.84 or 0.68, 1)
             row.value:SetTextColor(entry.available and 0.94 or 0.60, entry.available and 0.92 or 0.62, entry.available and 0.82 or 0.68, 1)
@@ -2689,8 +3366,13 @@ function Shell:RefreshUtility()
             row:Hide()
         end
     end
-    self.frame.utilityResourceList:SetHeight(math.max(10, (#view.resources * 29) - 4))
+    self.frame.utilityResourceList:SetHeight(math.max(
+        10,
+        (#view.resources * UTILITY_RESOURCE_ROW_STRIDE)
+            - (UTILITY_RESOURCE_ROW_STRIDE - UTILITY_RESOURCE_ROW_HEIGHT)
+    ))
     ScrollFrames:Refresh(self.frame.utilityResourceScroll)
+    self:RefreshUtilitySettings()
 end
 
 function Shell:RefreshCharacterContext()
@@ -2838,8 +3520,10 @@ end
 
 function Shell:ToggleOptions()
     if self.optionsOpen then
+        if Addon.Sound then Addon.Sound:Play("menuClose") end
         return self:CloseOptions(true)
     end
+    if Addon.Sound then Addon.Sound:Play("menuOpen") end
     return self:OpenOptions()
 end
 
@@ -2889,8 +3573,10 @@ end
 
 function Shell:ToggleWishlist()
     if self.wishlistOpen then
+        if Addon.Sound then Addon.Sound:Play("menuClose") end
         return self:CloseWishlist(true)
     end
+    if Addon.Sound then Addon.Sound:Play("menuOpen") end
     return self:OpenWishlist()
 end
 
@@ -2947,8 +3633,10 @@ end
 
 function Shell:ToggleFeatures()
     if self.featuresOpen then
+        if Addon.Sound then Addon.Sound:Play("menuClose") end
         return self:CloseFeatures(true)
     end
+    if Addon.Sound then Addon.Sound:Play("menuOpen") end
     return self:OpenFeatures()
 end
 

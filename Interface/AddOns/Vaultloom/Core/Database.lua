@@ -1,11 +1,16 @@
 local _, Addon = ...
 
 local Database = {
-    currentSchemaVersion = 34,
+    currentSchemaVersion = 41,
     migrations = {},
 }
 
 Addon.Database = Database
+
+local DATABASE_IDENTITY = "vaultloom-1"
+local RECOVERY_VERSION = 1
+local MAX_PERSISTED_TABLE_DEPTH = 64
+local MAX_PERSISTED_TABLE_NODES = 100000
 
 local VALID_FRAME_POINTS = {
     TOPLEFT = true,
@@ -19,15 +24,79 @@ local VALID_FRAME_POINTS = {
     BOTTOMRIGHT = true,
 }
 
+local STAT_FOCUS_CONTENT_KEYS = { "solo", "delve", "raid", "mythicplus" }
+local STAT_FOCUS_CONTENT_KEY_SET = {
+    solo = true,
+    delve = true,
+    raid = true,
+    mythicplus = true,
+}
+
+local function copyStatFocusOrder(order)
+    local result = {}
+    for index, stat in ipairs(type(order) == "table" and order or {}) do
+        result[index] = stat
+    end
+    return #result > 0 and result or nil
+end
+
+local function normalizeStatFocusProfileRecord(profile, fallbackMode, fallbackOrder, fallbackBuildKey)
+    profile = type(profile) == "table" and profile or {}
+    local mode = profile.mode
+    if mode ~= "custom" and mode ~= "preset" then
+        mode = fallbackMode == "custom" and "custom" or "preset"
+    end
+    profile.mode = mode
+    profile.order = type(profile.order) == "table" and profile.order
+        or (mode == "custom" and copyStatFocusOrder(fallbackOrder) or nil)
+    if mode ~= "custom" then
+        profile.order = nil
+    end
+    profile.buildKey = type(profile.buildKey) == "string" and profile.buildKey ~= ""
+        and profile.buildKey
+        or (type(fallbackBuildKey) == "string" and fallbackBuildKey ~= "" and fallbackBuildKey)
+        or "standard"
+    return profile
+end
+
+local function normalizeStatFocusSpecRecord(record)
+    if type(record) ~= "table" then
+        return nil
+    end
+    local legacy = record.version ~= 2
+    local legacyMode = record.mode == "custom" and "custom" or "preset"
+    local legacyOrder = type(record.order) == "table" and record.order or nil
+    local legacyBuildKey = type(record.buildKey) == "string" and record.buildKey ~= ""
+        and record.buildKey or "standard"
+    record.version = 2
+    record.contentKey = STAT_FOCUS_CONTENT_KEY_SET[record.contentKey] and record.contentKey or "solo"
+    record.profiles = type(record.profiles) == "table" and record.profiles or {}
+    for _, contentKey in ipairs(STAT_FOCUS_CONTENT_KEYS) do
+        record.profiles[contentKey] = normalizeStatFocusProfileRecord(
+            record.profiles[contentKey],
+            legacy and legacyMode or "preset",
+            legacy and legacyOrder or nil,
+            legacyBuildKey
+        )
+    end
+    record.mode = nil
+    record.order = nil
+    record.buildKey = nil
+    return record
+end
+
 local DEFAULTS = {
-    databaseIdentity = "vaultloom-1",
-    schemaVersion = 34,
+    databaseIdentity = DATABASE_IDENTITY,
+    schemaVersion = 41,
     performanceDiagnostics = {
         armOnReload = false,
     },
     ui = {
         language = "auto",
         chatMessagesEnabled = true,
+        sounds = {
+            enabled = true,
+        },
         welcomeSeenRelease = "",
         selectedScreen = "vault",
         selectedCharacterKey = nil,
@@ -35,6 +104,9 @@ local DEFAULTS = {
             selectedCategory = "all",
             activeOnly = false,
             seenNewFeatureReleases = {},
+        },
+        newIndicators = {
+            seenReleases = {},
         },
         options = {
             selectedPage = "general",
@@ -52,10 +124,15 @@ local DEFAULTS = {
             systems = "professions",
             raids = "midnight",
             dungeons = "midnight",
-            mythicplus = "season1",
+            mythicplus = "season2",
             housing = "endeavors",
             focus = "questboard",
         },
+        housing = {
+            switchMode = "ask",
+            ignoredSwitches = {},
+        },
+        vault = {},
         raidJournal = {
             selectedRaidKey = "",
             selectedBossKey = "",
@@ -95,6 +172,11 @@ local DEFAULTS = {
             source = "all",
         },
         hiddenUtilityResources = {},
+        utility = {
+            showUpgradeSection = true,
+            showPvpSection = true,
+            fixedSectionVisibilityVersion = 0,
+        },
         warband = {
             cardStyle = "expanded",
             realmFilter = "all",
@@ -106,6 +188,7 @@ local DEFAULTS = {
                 realm = true,
                 professions = false,
                 vault = true,
+                specializationArt = true,
             },
         },
         warbandOverview = {
@@ -255,6 +338,18 @@ local DEFAULTS = {
             updatedAt = 0,
         },
     },
+    mailbox = {
+        version = 2,
+        snapshots = {},
+        recentRecipients = {},
+        send = {
+            favorites = {},
+            rules = {},
+            templates = {},
+            nextRuleID = 1,
+            nextTemplateID = 1,
+        },
+    },
     hiddenCharacters = {},
     mainCharacterKey = nil,
     raidLootTracker = {},
@@ -312,9 +407,102 @@ local function applyDefaults(target, defaults)
     end
 end
 
+local function normalizeShortText(value, maximumLength)
+    value = type(value) == "string" and value or ""
+    value = value:gsub("[%c]", " "):gsub("%s+", " ")
+    value = value:gsub("^%s+", ""):gsub("%s+$", "")
+    return value:sub(1, math.max(1, tonumber(maximumLength) or 96))
+end
+
+local function compactUniqueStrings(values, maximumEntries)
+    local result, seen = {}, {}
+    for _, value in ipairs(type(values) == "table" and values or {}) do
+        value = normalizeShortText(value, 96)
+        local key = string.lower(value)
+        if value ~= "" and not seen[key] and #result < maximumEntries then
+            seen[key] = true
+            result[#result + 1] = value
+        end
+    end
+    return result
+end
+
 local function clamp(value, minimum, maximum, fallback)
     value = tonumber(value) or fallback
     return math.max(minimum, math.min(maximum, value))
+end
+
+local function captureTime()
+    return type(time) == "function" and math.max(0, tonumber(time()) or 0) or 0
+end
+
+local function isStorageKey(value)
+    return type(value) == "string" and value ~= "" and #value <= 128
+end
+
+local function validatePersistedValue(value, active, state, depth)
+    local valueType = type(value)
+    if valueType == "nil" or valueType == "boolean" or valueType == "string" then
+        return true
+    end
+    if valueType == "number" then
+        return value == value and value ~= math.huge and value ~= -math.huge, "non-finite-number"
+    end
+    if valueType ~= "table" then
+        return false, "unsupported-" .. valueType
+    end
+    if depth > MAX_PERSISTED_TABLE_DEPTH then
+        return false, "maximum-depth"
+    end
+    if active[value] then
+        return false, "table-cycle"
+    end
+
+    active[value] = true
+    for key, entry in pairs(value) do
+        state.nodes = state.nodes + 1
+        if state.nodes > MAX_PERSISTED_TABLE_NODES then
+            active[value] = nil
+            return false, "maximum-size"
+        end
+        local keyType = type(key)
+        if keyType ~= "string" and keyType ~= "number" then
+            active[value] = nil
+            return false, "unsupported-key-" .. keyType
+        end
+        local keyValid, keyReason = validatePersistedValue(key, active, state, depth + 1)
+        if not keyValid then
+            active[value] = nil
+            return false, keyReason
+        end
+        local entryValid, entryReason = validatePersistedValue(entry, active, state, depth + 1)
+        if not entryValid then
+            active[value] = nil
+            return false, entryReason
+        end
+    end
+    active[value] = nil
+    return true
+end
+
+local function ensureRecoveryRoot(db)
+    db.recovery = type(db.recovery) == "table" and db.recovery or {}
+    db.recovery.version = RECOVERY_VERSION
+    return db.recovery
+end
+
+local function backupSnapshot(db, scope, ownerKey, snapshotKey, snapshot, reason)
+    local recovery = ensureRecoveryRoot(db)
+    recovery.snapshots = type(recovery.snapshots) == "table" and recovery.snapshots or {}
+    recovery.snapshots[scope] = type(recovery.snapshots[scope]) == "table"
+        and recovery.snapshots[scope] or {}
+    local owners = recovery.snapshots[scope]
+    owners[ownerKey] = type(owners[ownerKey]) == "table" and owners[ownerKey] or {}
+    owners[ownerKey][snapshotKey] = {
+        capturedAt = captureTime(),
+        reason = normalizeShortText(reason or "replace", 64),
+        snapshot = deepCopy(snapshot),
+    }
 end
 
 Database.migrations[1] = function(db)
@@ -613,6 +801,111 @@ Database.migrations[34] = function(db)
     end
 end
 
+Database.migrations[35] = function(db)
+    db.mailbox = type(db.mailbox) == "table" and db.mailbox or {}
+    db.mailbox.snapshots = type(db.mailbox.snapshots) == "table"
+        and db.mailbox.snapshots or {}
+    db.mailbox.recentRecipients = type(db.mailbox.recentRecipients) == "table"
+        and db.mailbox.recentRecipients or {}
+
+    db.features = type(db.features) == "table" and db.features or {}
+    db.features.states = type(db.features.states) == "table" and db.features.states or {}
+    local state = db.features.states.mailbox
+    if type(state) ~= "table" then
+        state = {
+            enabled = true,
+            settings = {},
+        }
+        db.features.states.mailbox = state
+    elseif state.enabled == nil then
+        state.enabled = true
+    end
+    state.settings = type(state.settings) == "table" and state.settings or {}
+end
+
+Database.migrations[36] = function(db)
+    local features = type(db.features) == "table" and db.features or nil
+    local states = features and type(features.states) == "table" and features.states or nil
+    local state = states and type(states.mailbox) == "table" and states.mailbox or nil
+    if state then
+        state.enabled = false
+        state.settings = type(state.settings) == "table" and state.settings or {}
+        state.settings.show_panel = nil
+    end
+end
+
+Database.migrations[37] = function(db)
+    db.mailbox = type(db.mailbox) == "table" and db.mailbox or {}
+    db.mailbox.recentRecipients = type(db.mailbox.recentRecipients) == "table"
+        and db.mailbox.recentRecipients or {}
+    db.mailbox.send = type(db.mailbox.send) == "table" and db.mailbox.send or {}
+    local send = db.mailbox.send
+    send.favorites = type(send.favorites) == "table" and send.favorites or {}
+    send.rules = type(send.rules) == "table" and send.rules or {}
+    send.templates = type(send.templates) == "table" and send.templates or {}
+    send.nextRuleID = math.max(1, math.floor(tonumber(send.nextRuleID) or 1))
+    send.nextTemplateID = math.max(1, math.floor(tonumber(send.nextTemplateID) or 1))
+end
+
+Database.migrations[38] = function(db)
+    db.characters = type(db.characters) == "table" and db.characters or {}
+    for _, record in pairs(db.characters) do
+        if type(record) == "table" then
+            record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
+            local snapshots = record.snapshots
+            snapshots.mythicPlusSeasons = type(snapshots.mythicPlusSeasons) == "table"
+                and snapshots.mythicPlusSeasons or {}
+            local legacy = snapshots.mythicPlus
+            if type(legacy) == "table" then
+                local seasonKey = type(legacy.seasonKey) == "string" and legacy.seasonKey or "season1"
+                snapshots.mythicPlusSeasons[seasonKey] = snapshots.mythicPlusSeasons[seasonKey] or legacy
+            end
+        end
+    end
+end
+
+Database.migrations[39] = function(db)
+    local features = type(db.features) == "table" and db.features or nil
+    local states = features and type(features.states) == "table" and features.states or nil
+    local state = states and type(states.quiet_loot) == "table" and states.quiet_loot or nil
+    local settings = state and type(state.settings) == "table" and state.settings or nil
+    local style = settings and settings.visual_style or nil
+    if style == nil then return end
+
+    if style == "clean" then
+        settings.visual_style = "clean"
+    elseif style == "round" or style == "rounded" then
+        settings.visual_style = "round"
+    else
+        settings.visual_style = "standard"
+    end
+end
+
+Database.migrations[40] = function(db)
+    local features = type(db.features) == "table" and db.features or nil
+    local statFocus = features and type(features.statFocus) == "table" and features.statFocus or nil
+    local characters = statFocus and type(statFocus.characters) == "table" and statFocus.characters or nil
+    for _, specifications in pairs(characters or {}) do
+        if type(specifications) == "table" then
+            for _, record in pairs(specifications) do
+                normalizeStatFocusSpecRecord(record)
+            end
+        end
+    end
+end
+
+Database.migrations[41] = function(db)
+    local features = type(db.features) == "table" and db.features or nil
+    local states = features and type(features.states) == "table" and features.states or nil
+    local state = states and type(states.stat_focus) == "table" and states.stat_focus or nil
+    local settings = state and type(state.settings) == "table" and state.settings or nil
+    if not settings then
+        return
+    end
+    settings.tooltip_text_style = settings.tooltip_text_style == "clean" and "clean" or "full"
+    settings.tooltip_text = nil
+end
+
 function Database:RunMigrations(db)
     local savedVersion = math.max(0, math.floor(tonumber(db.schemaVersion) or 0))
     if savedVersion > self.currentSchemaVersion then
@@ -623,7 +916,7 @@ function Database:RunMigrations(db)
             savedVersion,
             self.currentSchemaVersion
         )
-        return
+        return false, "newer-schema"
     end
 
     for version = savedVersion + 1, self.currentSchemaVersion do
@@ -636,11 +929,12 @@ function Database:RunMigrations(db)
         end
         db.schemaVersion = version
     end
+    return true
 end
 
 function Database:Normalize(db)
     applyDefaults(db, DEFAULTS)
-    db.databaseIdentity = "vaultloom-1"
+    db.databaseIdentity = DATABASE_IDENTITY
     db.ui.scale = clamp(db.ui.scale, 0.70, 1.25, 1)
     db.ui.opacity = clamp(db.ui.opacity, 0.65, 1, 1)
     db.ui.chatMessagesEnabled = db.ui.chatMessagesEnabled ~= false
@@ -700,6 +994,14 @@ function Database:Normalize(db)
     for featureID, version in pairs(db.ui.features.seenNewFeatureReleases) do
         if type(featureID) ~= "string" or featureID == "" or type(version) ~= "string" then
             db.ui.features.seenNewFeatureReleases[featureID] = nil
+        end
+    end
+    db.ui.newIndicators = type(db.ui.newIndicators) == "table" and db.ui.newIndicators or {}
+    db.ui.newIndicators.seenReleases = type(db.ui.newIndicators.seenReleases) == "table"
+        and db.ui.newIndicators.seenReleases or {}
+    for indicatorID, version in pairs(db.ui.newIndicators.seenReleases) do
+        if type(indicatorID) ~= "string" or indicatorID == "" or type(version) ~= "string" then
+            db.ui.newIndicators.seenReleases[indicatorID] = nil
         end
     end
     db.features = type(db.features) == "table" and db.features or {}
@@ -901,8 +1203,7 @@ function Database:Normalize(db)
                 if type(specKey) ~= "string" or specKey == "" or type(record) ~= "table" then
                     specifications[specKey] = nil
                 else
-                    record.mode = record.mode == "custom" and "custom" or "preset"
-                    record.order = type(record.order) == "table" and record.order or nil
+                    normalizeStatFocusSpecRecord(record)
                 end
             end
         end
@@ -993,6 +1294,8 @@ function Database:Normalize(db)
             db.ui.warband.fields[fieldKey] = defaultValue
         end
     end
+    db.ui.vault = type(db.ui.vault) == "table" and db.ui.vault or {}
+    db.ui.vault.viewMode = nil
     local vaultSubTab = db.ui.selectedSubTabs.vault
     if vaultSubTab ~= "raids" and vaultSubTab ~= "dungeons" and vaultSubTab ~= "world" then
         db.ui.selectedSubTabs.vault = "raids"
@@ -1002,12 +1305,14 @@ function Database:Normalize(db)
         bags = true,
         bank = true,
         warband = true,
+        mail = true,
     }
     if not arsenalSubTabs[db.ui.selectedSubTabs.arsenal] then
         db.ui.selectedSubTabs.arsenal = "equipment"
     end
     local pveSubTabs = {
         weekly = true,
+        coiled_isle = true,
         void_invasion = true,
         daily = true,
         events = true,
@@ -1025,11 +1330,21 @@ function Database:Normalize(db)
     if db.ui.selectedSubTabs.raids ~= "midnight" then
         db.ui.selectedSubTabs.raids = "midnight"
     end
-    if db.ui.selectedSubTabs.dungeons ~= "midnight" and db.ui.selectedSubTabs.dungeons ~= "season1" then
+    local seasons = Addon.Data and Addon.Data.SEASONS or nil
+    local activeDungeonSeasonKey = seasons and seasons:GetActiveKey("dungeons") or "season1"
+    local activeMythicSeasonKey = seasons and seasons:GetActiveKey("mythicPlus") or "season1"
+    if db.ui.selectedSubTabs.dungeons ~= "midnight"
+        and db.ui.selectedSubTabs.dungeons ~= activeDungeonSeasonKey
+    then
         db.ui.selectedSubTabs.dungeons = "midnight"
     end
-    db.ui.selectedSubTabs.mythicplus = "season1"
-    db.ui.selectedSubTabs.housing = "endeavors"
+    db.ui.mythicPlus = type(db.ui.mythicPlus) == "table" and db.ui.mythicPlus or {}
+    db.ui.selectedSubTabs.mythicplus = activeMythicSeasonKey
+    db.ui.mythicPlus.activeSeasonKey = activeMythicSeasonKey
+    local housingTabs = { endeavors = true, activity = true }
+    if not housingTabs[db.ui.selectedSubTabs.housing] then
+        db.ui.selectedSubTabs.housing = "endeavors"
+    end
     db.ui.selectedSubTabs.focus = "questboard"
     db.ui.raidJournal = type(db.ui.raidJournal) == "table" and db.ui.raidJournal or {}
     db.ui.raidJournal.selectedRaidKey = type(db.ui.raidJournal.selectedRaidKey) == "string" and db.ui.raidJournal.selectedRaidKey or ""
@@ -1043,7 +1358,6 @@ function Database:Normalize(db)
     local dungeonDifficulties = { normal = true, heroic = true, mythic = true }
     if not dungeonDifficulties[db.ui.dungeonJournal.difficultyKey] then db.ui.dungeonJournal.difficultyKey = "normal" end
     db.ui.dungeonJournal.classFilterKey = db.ui.dungeonJournal.classFilterKey == "all" and "all" or "player"
-    db.ui.mythicPlus = type(db.ui.mythicPlus) == "table" and db.ui.mythicPlus or {}
     db.ui.mythicPlus.centerMode = nil
     db.ui.compendium = type(db.ui.compendium) == "table" and db.ui.compendium or {}
     local compendiumCategories = {
@@ -1075,12 +1389,106 @@ function Database:Normalize(db)
     if not wishlistSources[db.ui.wishlist.source] then db.ui.wishlist.source = "all" end
     db.ui.hiddenUtilityResources = type(db.ui.hiddenUtilityResources) == "table"
         and db.ui.hiddenUtilityResources or {}
+    db.ui.utility = type(db.ui.utility) == "table" and db.ui.utility or {}
+    db.ui.utility.showUpgradeSection = db.ui.utility.showUpgradeSection ~= false
+    db.ui.utility.showPvpSection = db.ui.utility.showPvpSection ~= false
+    db.ui.utility.fixedSectionVisibilityVersion = math.max(
+        0,
+        math.floor(tonumber(db.ui.utility.fixedSectionVisibilityVersion) or 0)
+    )
     db.arsenal = type(db.arsenal) == "table" and db.arsenal or {}
     db.arsenal.version = 1
     db.arsenal.warband = type(db.arsenal.warband) == "table" and db.arsenal.warband or {}
     db.arsenal.warband.containers = type(db.arsenal.warband.containers) == "table"
         and db.arsenal.warband.containers or {}
     db.arsenal.warband.updatedAt = math.max(0, tonumber(db.arsenal.warband.updatedAt) or 0)
+    db.mailbox = type(db.mailbox) == "table" and db.mailbox or {}
+    db.mailbox.version = 2
+    db.mailbox.snapshots = type(db.mailbox.snapshots) == "table"
+        and db.mailbox.snapshots or {}
+    db.mailbox.recentRecipients = type(db.mailbox.recentRecipients) == "table"
+        and db.mailbox.recentRecipients or {}
+    db.mailbox.send = type(db.mailbox.send) == "table" and db.mailbox.send or {}
+    local mailboxSend = db.mailbox.send
+    mailboxSend.favorites = type(mailboxSend.favorites) == "table"
+        and mailboxSend.favorites or {}
+    mailboxSend.rules = type(mailboxSend.rules) == "table" and mailboxSend.rules or {}
+    mailboxSend.templates = type(mailboxSend.templates) == "table"
+        and mailboxSend.templates or {}
+    mailboxSend.nextRuleID = math.max(1, math.floor(tonumber(mailboxSend.nextRuleID) or 1))
+    mailboxSend.nextTemplateID = math.max(
+        1,
+        math.floor(tonumber(mailboxSend.nextTemplateID) or 1)
+    )
+    db.mailbox.recentRecipients = compactUniqueStrings(db.mailbox.recentRecipients, 20)
+    mailboxSend.favorites = compactUniqueStrings(mailboxSend.favorites, 30)
+    local normalizedRules, usedRuleIDs, highestRuleID = {}, {}, 0
+    for _, rule in ipairs(mailboxSend.rules) do
+        if type(rule) == "table" and #normalizedRules < 50 then
+            local matchType = rule.matchType
+            local recipient = normalizeShortText(rule.recipient, 96)
+            local itemID = math.floor(tonumber(rule.itemID) or 0)
+            local classID = tonumber(rule.classID)
+            local subClassID = tonumber(rule.subClassID)
+            local validMatch = matchType == "item" and itemID > 0
+                or matchType == "class" and classID ~= nil
+                or matchType == "subclass" and classID ~= nil and subClassID ~= nil
+            if recipient ~= "" and validMatch then
+                local ruleID = math.max(1, math.floor(tonumber(rule.id) or 0))
+                while usedRuleIDs[ruleID] do ruleID = ruleID + 1 end
+                usedRuleIDs[ruleID] = true
+                highestRuleID = math.max(highestRuleID, ruleID)
+                normalizedRules[#normalizedRules + 1] = {
+                    id = ruleID,
+                    enabled = rule.enabled ~= false,
+                    name = normalizeShortText(rule.name, 96),
+                    recipient = recipient,
+                    matchType = matchType,
+                    itemID = itemID > 0 and itemID or nil,
+                    classID = classID and math.floor(classID) or nil,
+                    subClassID = subClassID and math.floor(subClassID) or nil,
+                    keepCount = math.max(0, math.floor(tonumber(rule.keepCount) or 0)),
+                    subject = normalizeShortText(rule.subject, 128),
+                    body = type(rule.body) == "string" and rule.body:sub(1, 4000) or "",
+                }
+            end
+        end
+    end
+    mailboxSend.rules = normalizedRules
+    mailboxSend.nextRuleID = math.max(mailboxSend.nextRuleID, highestRuleID + 1)
+    local normalizedTemplates, usedTemplateIDs, highestTemplateID = {}, {}, 0
+    for _, template in ipairs(mailboxSend.templates) do
+        if type(template) == "table" and #normalizedTemplates < 20 then
+            local recipients = compactUniqueStrings(template.recipients, 100)
+            if #recipients > 0 then
+                local templateID = math.max(1, math.floor(tonumber(template.id) or 0))
+                while usedTemplateIDs[templateID] do templateID = templateID + 1 end
+                usedTemplateIDs[templateID] = true
+                highestTemplateID = math.max(highestTemplateID, templateID)
+                normalizedTemplates[#normalizedTemplates + 1] = {
+                    id = templateID,
+                    name = normalizeShortText(template.name, 64),
+                    recipients = recipients,
+                    subject = normalizeShortText(template.subject, 128),
+                    body = type(template.body) == "string" and template.body:sub(1, 4000) or "",
+                }
+            end
+        end
+    end
+    mailboxSend.templates = normalizedTemplates
+    mailboxSend.nextTemplateID = math.max(mailboxSend.nextTemplateID, highestTemplateID + 1)
+    for characterKey, snapshot in pairs(db.mailbox.snapshots) do
+        if type(characterKey) ~= "string" or characterKey == "" or type(snapshot) ~= "table" then
+            db.mailbox.snapshots[characterKey] = nil
+        else
+            snapshot.version = 1
+            snapshot.characterKey = characterKey
+            snapshot.updatedAt = math.max(0, tonumber(snapshot.updatedAt) or 0)
+            snapshot.totalMessages = math.max(0, math.floor(tonumber(snapshot.totalMessages) or 0))
+            snapshot.messages = type(snapshot.messages) == "table" and snapshot.messages or {}
+            snapshot.summary = type(snapshot.summary) == "table" and snapshot.summary or {}
+        end
+    end
     for entryKey, hidden in pairs(db.ui.hiddenUtilityResources) do
         if type(entryKey) ~= "string" or hidden ~= true then
             db.ui.hiddenUtilityResources[entryKey] = nil
@@ -1090,26 +1498,179 @@ function Database:Normalize(db)
     db.journalLootCatalog = type(db.journalLootCatalog) == "table" and db.journalLootCatalog or {}
     db.pveWeekly = type(db.pveWeekly) == "table" and db.pveWeekly or {}
     db.pveWeekly.omniumFolioComplete = db.pveWeekly.omniumFolioComplete == true
-    local rareZones = { eversong = true, zulaman = true, harandar = true, voidstorm = true }
+    for _, record in pairs(db.characters) do
+        if type(record) == "table" then
+            record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
+            local snapshots = record.snapshots
+            snapshots.mythicPlusSeasons = type(snapshots.mythicPlusSeasons) == "table"
+                and snapshots.mythicPlusSeasons or {}
+            local legacy = snapshots.mythicPlus
+            local legacySeasonKey = type(legacy) == "table" and legacy.seasonKey or nil
+            if type(legacySeasonKey) == "string" and snapshots.mythicPlusSeasons[legacySeasonKey] == nil then
+                snapshots.mythicPlusSeasons[legacySeasonKey] = legacy
+            end
+        end
+    end
+    local rareZones = {
+        eversong = true,
+        zulaman = true,
+        harandar = true,
+        voidstorm = true,
+        coiled_isle = true,
+    }
     if not rareZones[db.ui.selectedRareZoneKey] then
         db.ui.selectedRareZoneKey = "eversong"
     end
     db.debug.enabled = db.debug.enabled == true
 end
 
-function Database:Ensure()
-    local globalName = Addon.Identity.savedVariables
-    local db = _G[globalName]
-    if type(db) == "table" and db.databaseIdentity ~= "vaultloom-1" and next(db) ~= nil then
-        db = {}
-        _G[globalName] = db
-    elseif type(db) ~= "table" then
-        db = {}
-        _G[globalName] = db
+function Database:Validate(db)
+    if type(db) ~= "table" then return false, "database-not-table" end
+    if db.databaseIdentity ~= DATABASE_IDENTITY then return false, "database-identity" end
+    if math.floor(tonumber(db.schemaVersion) or -1) ~= self.currentSchemaVersion then
+        return false, "schema-version"
+    end
+    for _, key in ipairs({ "ui", "modules", "characters", "mailbox", "arsenal", "debug" }) do
+        if type(db[key]) ~= "table" then return false, "missing-" .. key end
+    end
+    return true
+end
+
+function Database:Prepare(source)
+    local candidate
+    local quarantineReason
+    if type(source) == "table" then
+        local hasData = next(source) ~= nil
+        local savedVersion = math.max(0, math.floor(tonumber(source.schemaVersion) or 0))
+        if hasData and source.databaseIdentity ~= DATABASE_IDENTITY then
+            quarantineReason = "incompatible-identity"
+        elseif hasData and savedVersion > self.currentSchemaVersion then
+            quarantineReason = "newer-schema"
+        end
+
+        if quarantineReason then
+            candidate = {}
+            local recovery = ensureRecoveryRoot(candidate)
+            recovery.quarantinedDatabase = {
+                capturedAt = captureTime(),
+                reason = quarantineReason,
+                sourceIdentity = type(source.databaseIdentity) == "string" and source.databaseIdentity or "",
+                sourceSchemaVersion = savedVersion,
+                database = deepCopy(source),
+            }
+        else
+            candidate = deepCopy(source)
+        end
+    else
+        candidate = {}
     end
 
-    self:RunMigrations(db)
-    self:Normalize(db)
+    local migrated, migrationReason = self:RunMigrations(candidate)
+    if migrated == false then
+        error("Vaultloom database preparation failed: " .. tostring(migrationReason or "migration"))
+    end
+    self:Normalize(candidate)
+    local valid, validationReason = self:Validate(candidate)
+    if not valid then
+        error("Vaultloom database validation failed: " .. tostring(validationReason or "unknown"))
+    end
+    return candidate
+end
+
+function Database:ValidateSnapshot(snapshot)
+    if type(snapshot) ~= "table" then return false, "snapshot-not-table" end
+    return validatePersistedValue(snapshot, {}, { nodes = 0 }, 1)
+end
+
+function Database:CommitCharacterSnapshot(characterKey, snapshotKey, snapshot, reason)
+    if not isStorageKey(characterKey) or not isStorageKey(snapshotKey) then
+        return false, "invalid-key"
+    end
+    local valid, validationReason = self:ValidateSnapshot(snapshot)
+    if not valid then
+        Addon.Logger:Write(
+            "WARN",
+            "database.snapshot",
+            "Rejected snapshot %s/%s: %s.",
+            characterKey,
+            snapshotKey,
+            tostring(validationReason or "invalid")
+        )
+        return false, validationReason
+    end
+
+    local db = self:Get()
+    local record = type(db.characters) == "table" and db.characters[characterKey] or nil
+    if type(record) ~= "table" then return false, "missing-character" end
+    record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
+    local previous = record.snapshots[snapshotKey]
+    if previous ~= nil and previous ~= snapshot then
+        backupSnapshot(db, "characters", characterKey, snapshotKey, previous, reason or "replace")
+    end
+    record.snapshots[snapshotKey] = snapshot
+    return true
+end
+
+function Database:ClearCharacterSnapshot(characterKey, snapshotKey, reason)
+    if not isStorageKey(characterKey) or not isStorageKey(snapshotKey) then
+        return false, "invalid-key"
+    end
+    local db = self:Get()
+    local record = type(db.characters) == "table" and db.characters[characterKey] or nil
+    local snapshots = type(record) == "table" and type(record.snapshots) == "table"
+        and record.snapshots or nil
+    local previous = snapshots and snapshots[snapshotKey] or nil
+    if previous == nil then return false, "missing-snapshot" end
+    backupSnapshot(db, "characters", characterKey, snapshotKey, previous, reason or "clear")
+    snapshots[snapshotKey] = nil
+    return true
+end
+
+function Database:CommitMailboxSnapshot(characterKey, snapshot, reason)
+    if not isStorageKey(characterKey) then return false, "invalid-key" end
+    local valid, validationReason = self:ValidateSnapshot(snapshot)
+    if not valid then return false, validationReason end
+    local db = self:Get()
+    db.mailbox = type(db.mailbox) == "table" and db.mailbox or {}
+    db.mailbox.snapshots = type(db.mailbox.snapshots) == "table" and db.mailbox.snapshots or {}
+    local previous = db.mailbox.snapshots[characterKey]
+    if previous ~= nil and previous ~= snapshot then
+        backupSnapshot(db, "mailbox", characterKey, "inbox", previous, reason or "replace")
+    end
+    db.mailbox.snapshots[characterKey] = snapshot
+    return true
+end
+
+function Database:GetRecoverySnapshot(scope, ownerKey, snapshotKey)
+    if not isStorageKey(scope) or not isStorageKey(ownerKey) or not isStorageKey(snapshotKey) then
+        return nil
+    end
+    local db = self:Get()
+    local recovery = type(db.recovery) == "table" and db.recovery or nil
+    local snapshots = recovery and type(recovery.snapshots) == "table" and recovery.snapshots or nil
+    local owners = snapshots and type(snapshots[scope]) == "table" and snapshots[scope] or nil
+    local owner = owners and type(owners[ownerKey]) == "table" and owners[ownerKey] or nil
+    local entry = owner and type(owner[snapshotKey]) == "table" and owner[snapshotKey] or nil
+    return entry and type(entry.snapshot) == "table" and entry.snapshot or nil, entry
+end
+
+function Database:RestoreCharacterSnapshot(characterKey, snapshotKey)
+    local snapshot = self:GetRecoverySnapshot("characters", characterKey, snapshotKey)
+    if type(snapshot) ~= "table" then return false, "missing-recovery" end
+    return self:CommitCharacterSnapshot(characterKey, snapshotKey, deepCopy(snapshot), "restore")
+end
+
+function Database:RestoreMailboxSnapshot(characterKey)
+    local snapshot = self:GetRecoverySnapshot("mailbox", characterKey, "inbox")
+    if type(snapshot) ~= "table" then return false, "missing-recovery" end
+    return self:CommitMailboxSnapshot(characterKey, deepCopy(snapshot), "restore")
+end
+
+function Database:Ensure()
+    local globalName = Addon.Identity.savedVariables
+    local source = _G[globalName]
+    local db = self:Prepare(source)
+    _G[globalName] = db
     Addon.db = db
     Addon.Logger:SetDebugEnabled(db.debug.enabled)
     return db

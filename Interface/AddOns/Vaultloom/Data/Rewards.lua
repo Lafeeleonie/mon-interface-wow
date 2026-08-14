@@ -7,11 +7,21 @@ Addon.Data.DELVES_GREAT_VAULT_ITEM_LEVEL = {
     233, 237, 240, 243, 246, 253, 256, 259, 259, 259, 259,
 }
 
--- Midnight utility currencies shown in the right resources column.
+-- Midnight Season 2 utility currencies shown in the right resources column.
 -- Keep this order stable: it is part of the visible UI contract and of the
 -- character snapshot format.
 Addon.Data.MID_UTILITY_UPGRADE_CRESTS = {
+    3446, 3445, 3444, 3443, 3442,
+}
+
+-- Season 1 Dawncrests are retired. Keep their IDs reserved so Blizzard's
+-- currency list cannot re-add them to the generic resources section.
+Addon.Data.MID_UTILITY_RETIRED_UPGRADE_CRESTS = {
     3347, 3345, 3343, 3341, 3383,
+}
+
+Addon.Data.MID_UTILITY_PVP_CURRENCIES = {
+    1792, 1602, 2123, 2797,
 }
 
 Addon.Data.MID_UTILITY_RESOURCE_ENTRIES = {

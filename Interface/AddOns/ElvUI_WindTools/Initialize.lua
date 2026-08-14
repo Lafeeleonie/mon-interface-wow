@@ -126,9 +126,16 @@ function W:Initialize()
 
 	-- Fix the bug that locale files loaded after option table is created
 	local pluginTitle = L["Plugins"]
-	W:SecureHook(EP, "GetPluginOptions", function()
+	-- ElvUI 15.20 removed LibElvUIPlugin:GetPluginOptions.  Keep the
+	-- localization hook for older ElvUI versions without failing to load the
+	-- whole plugin on current versions.
+	if type(EP.GetPluginOptions) == "function" then
+		W:SecureHook(EP, "GetPluginOptions", function()
+			E.Options.args.plugins.name = pluginTitle
+		end)
+	elseif E.Options and E.Options.args and E.Options.args.plugins then
 		E.Options.args.plugins.name = pluginTitle
-	end)
+	end
 
 	self:SecureHook(E, "UpdateAll", "UpdateModules")
 	self:RegisterEvent("PLAYER_ENTERING_WORLD")

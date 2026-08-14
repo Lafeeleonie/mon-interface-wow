@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch] $AddonsOnly
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -18,7 +20,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $wowRoot "Wow.exe"))) {
     throw "Installation WoW Retail introuvable. Placez le dépôt à côté de _retail_."
 }
 
-if (Get-Process -Name "Wow", "WowClassic" -ErrorAction SilentlyContinue) {
+if (-not $AddonsOnly -and (Get-Process -Name "Wow", "WowClassic" -ErrorAction SilentlyContinue)) {
     throw "World of Warcraft est ouvert. Fermez le jeu avant de construire la version publique."
 }
 
@@ -45,7 +47,10 @@ function Copy-PublicAddons {
         (Join-Path $sourceInterface "AddOns\RaiderIO\db"),
         (Join-Path $sourceInterface "AddOns\ArchonTooltip\DB"),
         (Join-Path $sourceInterface "AddOns\Lafee_music_player"),
-        (Join-Path $sourceInterface "AddOns\CustomLust")
+        (Join-Path $sourceInterface "AddOns\CustomLust"),
+        (Join-Path $sourceInterface "AddOns\BetterCooldownManager.dev"),
+        (Join-Path $sourceInterface "AddOns\BetterCooldownManager.old"),
+        (Join-Path $sourceInterface "AddOns\nouvel_addon_zip_auto")
     )
 
     $roboArgs = @(
@@ -98,7 +103,7 @@ function Get-PublicSavedVariableNames {
         "OmniCC.lua",
         "OmniCD.lua",
         "Pawn.lua",
-        "Plater.lua",
+        "Platynator.lua",
         "PremadeGroupsFilter.lua",
         "RareScanner.lua",
         "TalentLoadoutManager.lua",
@@ -212,8 +217,14 @@ Copiez les fichiers voulus dans `WTF/Account/<votre-compte>/SavedVariables` avec
 }
 
 Copy-PublicAddons
-Copy-SanitizedSettings
-Remove-TreeIfPresent -Path (Join-Path $repoRoot "Fonts")
+if (-not $AddonsOnly) {
+    Copy-SanitizedSettings
+    Remove-TreeIfPresent -Path (Join-Path $repoRoot "Fonts")
+}
 & (Join-Path $repoRoot "Update-Addon-Catalog.ps1")
 
-Write-Host "Version publique reconstruite et assainie. Vérifiez les changements avec : git status"
+if ($AddonsOnly) {
+    Write-Host "Addons publics reconstruits. Les réglages WTF existants n'ont pas été modifiés. Vérifiez les changements avec : git status"
+} else {
+    Write-Host "Version publique reconstruite et assainie. Vérifiez les changements avec : git status"
+}

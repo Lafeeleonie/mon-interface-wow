@@ -586,3 +586,117 @@ function M:UpgradeToVersion63(vars)
 	vars.Version = 63
 	return true
 end
+
+function M:UpgradeToVersion64(vars)
+	if vars.Version ~= 63 then return false end
+
+	-- The pandemic reveal's default tint went from amber to red, and a bar group's fill from the
+	-- plain Blizzard bar to the raid one. Only groups still carrying the exact old defaults follow:
+	-- anyone who picked those on purpose keeps them.
+	local function Recolour(modules)
+		local groups = modules and modules.CustomAurasModule and modules.CustomAurasModule.Groups
+
+		for _, group in ipairs(groups or {}) do
+			local icons = group.Icons
+			local color = icons and icons.PandemicColor
+
+			if color and color.R == 1 and color.G == 0.6 and color.B == 0.1 then
+				color.G, color.B = 0.1, 0.1
+			end
+
+			if icons and icons.BarTexture == "Blizzard" then
+				icons.BarTexture = "Blizzard Raid Bar"
+			end
+		end
+	end
+
+	Recolour(vars.Modules)
+
+	if vars.Profiles then
+		for _, profile in pairs(vars.Profiles) do
+			Recolour(profile.Modules)
+		end
+	end
+
+	vars.Version = 64
+	return true
+end
+
+function M:UpgradeToVersion65(vars)
+	if vars.Version ~= 64 then return false end
+
+	-- Enemy cooldowns that land on your own side got their own announcement toggle. Anyone
+	-- already having important spells read out wanted to be told what just landed, so they get
+	-- the new half of that switched on rather than having to find it.
+	local function Enable(modules)
+		local tts = modules and modules.AlertsModule and modules.AlertsModule.TTS
+
+		if not tts or not (tts.Important and tts.Important.Enabled) then
+			return
+		end
+
+		tts.EnemyDebuff = tts.EnemyDebuff or {}
+		tts.EnemyDebuff.Enabled = true
+	end
+
+	Enable(vars.Modules)
+
+	if vars.Profiles then
+		for _, profile in pairs(vars.Profiles) do
+			Enable(profile.Modules)
+		end
+	end
+
+	vars.Version = 65
+	return true
+end
+
+function M:UpgradeToVersion66(vars)
+	if vars.Version ~= 65 then return false end
+
+	-- Colouring the countdown by time is off out of the box now, and turned off for everyone
+	-- already running: the complaints were from people who had never asked for it. Anyone who
+	-- wants it back has a switch on the miscellaneous page. Profiles carry their own copy of
+	-- this key (ProfileManager PayloadKeys), so each one is cleared too.
+	vars.ColorCountdownByTime = false
+
+	if vars.Profiles then
+		for _, profile in pairs(vars.Profiles) do
+			profile.ColorCountdownByTime = false
+		end
+	end
+
+	vars.Version = 66
+	return true
+end
+
+function M:UpgradeToVersion67(vars)
+	if vars.Version ~= 66 then return false end
+
+	-- The starter group ships as "Precog" now, short enough to read under the icon. Only a group
+	-- still carrying the old default name is touched, so a name someone typed themselves stays.
+	local function Rename(modules)
+		local groups = modules and modules.CustomAurasModule and modules.CustomAurasModule.Groups
+
+		if not groups then
+			return
+		end
+
+		for _, group in pairs(groups) do
+			if group.Name == "Precognition" then
+				group.Name = "Precog"
+			end
+		end
+	end
+
+	Rename(vars.Modules)
+
+	if vars.Profiles then
+		for _, profile in pairs(vars.Profiles) do
+			Rename(profile.Modules)
+		end
+	end
+
+	vars.Version = 67
+	return true
+end

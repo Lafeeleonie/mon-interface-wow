@@ -1127,6 +1127,26 @@ function Runtime:RefreshStoredPositions(group)
     end
 end
 
+function Runtime:RefreshPanelPositionsNow(frame)
+    if not self.enabled or Addon.WoWApi:IsInCombatLockdown() or self.compatBlocked then
+        return false
+    end
+
+    local frameName = safeCall(frame, "GetName")
+    local isKnownPanel = type(frameName) == "string"
+        and frameName ~= ""
+        and (
+            self.records[frameName] ~= nil
+            or (type(UIPanelWindows) == "table" and UIPanelWindows[frameName] ~= nil)
+        )
+    if isKnownPanel then
+        self:RegisterWindow({ key = frameName, frameRef = frame })
+    end
+
+    self:RefreshStoredPositions("panels")
+    return true
+end
+
 function Runtime:ScheduleStoredPositionRefresh(group, delay)
     if not self.enabled then return end
     self.layoutRefreshPending = self.layoutRefreshPending or {}
@@ -1326,13 +1346,16 @@ function Runtime:EnsurePermanentHooks()
         self.containerHooked = ok == true
     end
 
-    self:InstallGlobalHook("ShowUIPanel", function()
+    self:InstallGlobalHook("ShowUIPanel", function(frame)
+        Runtime:RefreshPanelPositionsNow(frame)
         Runtime:SchedulePanelRegistration()
     end)
-    self:InstallGlobalHook("ToggleFrame", function()
+    self:InstallGlobalHook("ToggleFrame", function(frame)
+        Runtime:RefreshPanelPositionsNow(frame)
         Runtime:SchedulePanelRegistration()
     end)
     self:InstallGlobalHook("UpdateUIPanelPositions", function()
+        Runtime:RefreshPanelPositionsNow()
         Runtime:ScheduleStoredPositionRefresh("panels", 0)
     end)
     self:InstallGlobalHook("UpdateContainerFrameAnchors", function()

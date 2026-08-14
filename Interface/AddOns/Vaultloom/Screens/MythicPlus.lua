@@ -124,8 +124,9 @@ local function createDungeonRow(parent, previous)
     row:SetHeight(76)
     row:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Addon.Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     row:SetBackdropColor(0.025, 0.022, 0.020, 0.86)
     row:SetBackdropBorderColor(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.58)
@@ -137,9 +138,10 @@ local function createDungeonRow(parent, previous)
         row:SetPoint("TOPRIGHT", 0, 0)
     end
     row.statusLine = row:CreateTexture(nil, "ARTWORK")
-    row.statusLine:SetPoint("TOPLEFT", 4, -5)
-    row.statusLine:SetPoint("BOTTOMLEFT", 4, 5)
+    row.statusLine:SetPoint("TOPLEFT", 4, -7)
+    row.statusLine:SetPoint("BOTTOMLEFT", 4, 7)
     row.statusLine:SetWidth(3)
+    row.statusLineMask = Widgets:AddRoundedStatusLineMask(row, row.statusLine)
     row.iconBackplate = row:CreateTexture(nil, "ARTWORK")
     row.iconBackplate:SetPoint("LEFT", 13, 0)
     row.iconBackplate:SetSize(50, 50)
@@ -209,12 +211,26 @@ local function createScreen(_, host)
     local frame = CreateFrame("Frame", nil, host)
     frame:SetAllPoints(host)
     frame:Hide()
-    frame.layoutVersion = "mythicplus-season1-2"
+    frame.layoutVersion = "mythicplus-active-season-3"
 
-    frame.navigation = Widgets:CreateButton(frame, L.MYTHIC_PLUS_TAB_SEASON1, 188, 24, "tab")
-    frame.navigation:SetPoint("TOPLEFT", 0, 0)
-    Widgets:SetButtonActive(frame.navigation, true)
-    frame.subTabButtons = { season1 = frame.navigation }
+    frame.subTabButtons = {}
+    local previousSubTab
+    for index, definition in ipairs(Data.subTabs) do
+        local button = Widgets:CreateButton(frame, L[definition.labelKey], 188, 24, "tab")
+        if previousSubTab then
+            button:SetPoint("LEFT", previousSubTab, "RIGHT", 8, 0)
+        else
+            button:SetPoint("TOPLEFT", 0, 0)
+            frame.navigation = button
+        end
+        button.seasonKey = definition.key
+        button:SetScript("OnClick", function(selfButton)
+            Addon.Database:GetUI().selectedSubTabs.mythicplus = selfButton.seasonKey
+            frame:Refresh()
+        end)
+        frame.subTabButtons[definition.key] = button
+        previousSubTab = button
+    end
 
     frame.contentHost = CreateFrame("Frame", nil, frame)
     frame.contentHost:SetPoint("TOPLEFT", frame.navigation, "BOTTOMLEFT", 0, -10)
@@ -349,8 +365,17 @@ local function createScreen(_, host)
         syncScrollWidth(self.listScroll, self.listScrollChild)
         syncScrollWidth(self.recentScroll, self.recentScrollChild)
         syncScrollWidth(self.goalsScroll, self.goalsScrollChild)
+        local selectedSeasonKey = Addon.Database:GetUI().selectedSubTabs.mythicplus
+        if not Data.seasonKeys[selectedSeasonKey] then
+            selectedSeasonKey = Data.seasonKey
+            Addon.Database:GetUI().selectedSubTabs.mythicplus = selectedSeasonKey
+        end
+        for seasonKey, button in pairs(self.subTabButtons) do
+            Widgets:SetButtonActive(button, seasonKey == selectedSeasonKey)
+        end
         local character = Addon.WarbandRoster:GetSelected()
-        local view = character and service:GetView(character.key) or Addon.MythicPlusLogic:BuildView(nil)
+        local view = character and service:GetView(character.key, selectedSeasonKey)
+            or Addon.MythicPlusLogic:BuildView(nil, selectedSeasonKey)
         local available = view.available == true
         local key = available and view.currentKey or {}
         self.keyPanel.icon:SetTexture(key.texture or Data.fallbackIcon)
@@ -395,9 +420,6 @@ local function createScreen(_, host)
         self.goalsScrollChild:SetHeight(math.max(10, (#rewards * 49) - 7))
     end
 
-    frame.navigation:SetScript("OnClick", function()
-        Addon.Database:GetUI().selectedSubTabs.mythicplus = "season1"
-    end)
     frame:SetScript("OnHide", function() frame:SetChromeVisible(false) end)
     frame:SetScript("OnShow", function()
         if not frame.chromeVisible then frame:SetChromeVisible(true) end
@@ -412,7 +434,7 @@ local function createScreen(_, host)
             end)
         end
     end)
-    Addon.StateStore:Subscribe("mythicplus.season1", frame, function()
+    Addon.StateStore:Subscribe(Data.stateID, frame, function()
         if frame:IsShown() then frame:Refresh() end
     end)
     Addon.StateStore:Subscribe("warband.selection", frame, function()

@@ -28,6 +28,12 @@ function Service:GetSettings()
     ui.raidJournal = type(ui.raidJournal) == "table" and ui.raidJournal or {}
     ui.raidJournal.selectedRaidKey = type(ui.raidJournal.selectedRaidKey) == "string" and ui.raidJournal.selectedRaidKey or ""
     ui.raidJournal.selectedBossKey = type(ui.raidJournal.selectedBossKey) == "string" and ui.raidJournal.selectedBossKey or ""
+    -- Patch 12.1 reports Nymrissa's World tier as primary Raid Finder (17).
+    -- Migrate the short-lived separate World selection instead of dropping
+    -- users back to Normal.
+    if ui.raidJournal.difficultyKey == "world" then
+        ui.raidJournal.difficultyKey = "lfr"
+    end
     ui.raidJournal.difficultyKey = Addon.RaidJournalLogic:IsDifficultyKey(ui.raidJournal.difficultyKey)
         and ui.raidJournal.difficultyKey or "normal"
     ui.raidJournal.classFilterKey = ui.raidJournal.classFilterKey == "all" and "all" or "player"
@@ -39,7 +45,7 @@ function Service:GetSnapshot(characterKey)
     local snapshot = record and type(record.snapshots) == "table" and record.snapshots.raidJournal or nil
     if type(snapshot) ~= "table" then return nil end
     if not Addon.RaidJournalLogic:IsSnapshotValid(snapshot) then
-        record.snapshots.raidJournal = nil
+        Addon.Database:ClearCharacterSnapshot(characterKey, "raidJournal", "invalid")
         return nil
     end
     return snapshot
@@ -130,8 +136,14 @@ local function collectJournal()
             identity, existing, settings.difficultyKey, Addon.WarbandRoster:IsCurrent(identity.key), now()
         )
         if scanned and Addon.WarbandRoster:IsCurrent(identity.key) and record then
-            record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-            record.snapshots.raidJournal = snapshot
+            if not Addon.Database:CommitCharacterSnapshot(
+                identity.key,
+                "raidJournal",
+                snapshot,
+                "refresh"
+            ) then
+                snapshot = existing
+            end
         end
         scanRequested = false
     end
@@ -181,6 +193,7 @@ function Service:Open()
         opened = true
         registerLiveEvents()
         loadEncounterJournal()
+        if type(RequestRaidInfo) == "function" then pcall(RequestRaidInfo) end
         self:Refresh(true, 0)
     end
 end

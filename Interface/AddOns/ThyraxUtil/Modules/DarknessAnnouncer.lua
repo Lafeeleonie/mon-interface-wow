@@ -49,12 +49,19 @@ local function ResolveChannel(requested)
     if c == "INSTANCE_CHAT" then
         return IsInGroup(LE_PARTY_CATEGORY_INSTANCE) and "INSTANCE_CHAT" or nil, "not_in_instance_group"
     end
+    if c == "RAID" then
+        return IsInRaid() and "RAID" or nil, "not_in_raid"
+    end
     if c == "PARTY" then
         return IsInGroup() and "PARTY" or nil, "not_in_party"
     end
 
-    -- AUTO logic
+    -- AUTO logic. Raid must be checked before the generic IsInGroup(): in an
+    -- organized raid IsInGroup() is also true, and "PARTY" there only reaches
+    -- the player's own subgroup -- Darkness is a raid cooldown, so the whole
+    -- raid needs to see the announcement.
     if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+    if IsInRaid() then return "RAID" end
     if IsInGroup() then return "PARTY" end
     return nil, "no_group_channel"
 end
@@ -192,7 +199,11 @@ function module:OnEvent(event, ...)
         -- Outside the Darkness cast window the aura check result is never used,
         -- so skip the C_UnitAuras lookup to avoid work on every HoT/DoT tick.
         if not self.castActive then return end
-        local active = ns.Compat.FindPlayerAuraBySpellID(self.CONSTANTS.DARKNESS_SPELL_ID) ~= nil
+        -- WoW 12.1: AuraData structs are always fully secret while auras are
+        -- secret, so the old `FindPlayerAuraBySpellID(...) ~= nil` compared a
+        -- potentially secret string against nil. HasPlayerAura never reads a
+        -- field, so it stays legal in every context.
+        local active = ns.Compat.HasPlayerAura(self.CONSTANTS.DARKNESS_SPELL_ID)
         if active ~= self.darknessAuraPresent then
             self.darknessAuraPresent = active
             if not active and not self.endMessageSent then
@@ -209,7 +220,7 @@ end
 function module:OnEnable(settings)
     self:ApplySettings(settings)
     self:ResetState()
-    self.darknessAuraPresent = ns.Compat.FindPlayerAuraBySpellID(self.CONSTANTS.DARKNESS_SPELL_ID) ~= nil
+    self.darknessAuraPresent = ns.Compat.HasPlayerAura(self.CONSTANTS.DARKNESS_SPELL_ID)
 end
 
 function module:OnDisable()

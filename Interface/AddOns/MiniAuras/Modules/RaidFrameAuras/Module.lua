@@ -3,7 +3,6 @@ local _, addon = ...
 local frames = addon.Core.Frames
 local moduleUtil = addon.Utils.ModuleUtil
 local moduleName = addon.Utils.ModuleName
-local wowEx = addon.Utils.WoWEx
 local eventGate = addon.Core.EventGate
 local duelPoller = addon.Core.DuelPoller
 
@@ -15,24 +14,48 @@ local M = {}
 addon.Modules.RaidFrameAuras.Module = M
 addon.Modules.RaidFrameAurasModule = M
 
--- TEMPORARY dual path: remove the watcher branch once 12.1 is live everywhere.
-local USE_AURA_CONTAINERS = wowEx:UseAuraContainers()
-
 ---@type EventGate?
 local rosterGate
 ---@type table?
 local eventsFrame
 local testModeActive = false
+---@type DuelPollerSubscriber?
+local duelSub
+-- Scratch for the watched units handed to the duel poller each refresh.
+local duelUnitsScratch = {}
+local QueueRefresh = moduleUtil:Coalesced(function()
+	M:Refresh()
+end)
+
+---Hands the poller the units on screen right now. Re-seeded per refresh rather than tracked
+---per frame: the frames retarget constantly (sorting, roster changes), and a baseline for a unit
+---nobody is watching would fire a refresh for nothing.
+local function SeedDuelBaselines()
+	if not duelSub then
+		return
+	end
+
+	duelSub:ClearAll()
+
+	for _, unit in ipairs(display:CollectWatchedUnits(duelUnitsScratch)) do
+		duelSub:Seed(unit)
+	end
+end
 
 local function OnFrameSortSorted()
 	M:Refresh()
 end
 
-local function OnEvent(_, event)
+local function OnEvent(_, event, unit)
 	if event == "GROUP_ROSTER_UPDATE" then
-		C_Timer.After(0, function()
+		QueueRefresh()
+	elseif event == "UNIT_FACTION" then
+		-- Mind control hands a friendly frame an enemy unit, which decides whether the engine
+		-- honours the spell-id filter at all. Filtered hard: this also fires on every PvP flag
+		-- change in the open world, and the answer has usually not moved.
+		if unit and display:OnUnitFactionChanged(unit) then
 			M:Refresh()
-		end)
+		end
 	end
 end
 
@@ -48,7 +71,7 @@ local function SetEventsActive(active)
 	rosterGate:SetActive(active)
 end
 
--- Live auras are pushed in by the watchers/containers, so only the fake ones rebuild here.
+-- Live auras are pushed in by the aura containers, so only the fake ones rebuild here.
 local function UpdateContent()
 	if testModeActive then
 		display:RefreshTestIcons()
@@ -69,8 +92,8 @@ local function SetTestMode(active)
 
 	M:Refresh()
 
-	-- 12.1: repopulate the kick icons the test-mode reset wiped.
-	if not active and USE_AURA_CONTAINERS then
+	-- Repopulate the kick icons the test-mode reset wiped.
+	if not active then
 		display:RefreshKickIcons()
 	end
 end
@@ -79,15 +102,17 @@ local function CreateEvents()
 	eventsFrame = CreateFrame("Frame")
 	eventsFrame:SetScript("OnEvent", OnEvent)
 	-- Registered by the Refresh gate while the module is enabled.
-	rosterGate = eventGate:New(eventsFrame, { "GROUP_ROSTER_UPDATE" })
+	rosterGate = eventGate:New(eventsFrame, { "GROUP_ROSTER_UPDATE", "UNIT_FACTION" })
 
 	-- A duel flips a party member to hostile with no event of its own, and that decides whether
 	-- the spell-id filter applies at all, so the budgets have to be recomputed when it happens.
 	-- Registered for the module's lifetime; the predicate below gates it.
-	duelPoller:Register(function()
+	-- Coalesced: the poller fires once per flipped token, and a raid riding out of range flips
+	-- many in one tick - each would otherwise pay a full refresh.
+	duelSub = duelPoller:Register(function()
 		return moduleUtil:IsModuleEnabled(moduleName.RaidFrameAuras)
 	end, function()
-		M:Refresh()
+		QueueRefresh()
 	end)
 end
 
@@ -95,6 +120,9 @@ local function InstallHooks()
 	frames:InstallUnitFrameHooks(eventsFrame, {
 		OnSetUnit = function(frame, unit)
 			display:OnCufSetUnit(frame, unit)
+			-- A watcher born or re-pointed here is unknown to the duel poller until a refresh
+			-- reseeds the baselines; without one, a later visible-world flip goes unnoticed.
+			QueueRefresh()
 		end,
 		OnUpdateVisible = function(frame)
 			display:OnCufUpdateVisible(frame)
@@ -103,6 +131,8 @@ local function InstallHooks()
 		OnVisibilityChanged = function()
 			if IsEnabled() then
 				display:EnsureWatchers()
+				-- Same as OnSetUnit: the watchers just ensured need their baselines seeded.
+				QueueRefresh()
 			end
 		end,
 	})
@@ -141,6 +171,7 @@ function M:Refresh()
 	display:EnsureFrames()
 	display:ApplyOptions(options)
 	UpdateContent()
+	SeedDuelBaselines()
 end
 
 function M:Init()

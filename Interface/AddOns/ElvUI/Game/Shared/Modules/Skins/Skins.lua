@@ -3,9 +3,9 @@ local S = E:GetModule('Skins')
 local LibStub = _G.LibStub
 
 local _G = _G
-local unpack, type, gsub, rad, strfind = unpack, type, gsub, rad, strfind
-local tinsert, next, ipairs, pairs = tinsert, next, ipairs, pairs
 local hooksecurefunc = hooksecurefunc
+local tinsert, next, strfind = tinsert, next, strfind
+local unpack, type, gsub, rad = unpack, type, gsub, rad
 
 local CreateFrame = CreateFrame
 local IsAddOnLoaded = C_AddOns.IsAddOnLoaded
@@ -236,9 +236,11 @@ function S:HandleFrame(frame, setBackdrop, template, x1, y1, x2, y2)
 	local portraitFrameOverlay = name and _G[name..'PortraitOverlay'] or frame.PortraitOverlay
 	local artFrameOverlay = name and _G[name..'ArtOverlayFrame'] or frame.ArtOverlayFrame
 	local closeButton = frame.CloseButton or name and _G[name..'CloseButton']
+	local borderTexture = frame.BorderTexture -- titan has a border here
 
 	frame:StripTextures()
 
+	if borderTexture then borderTexture:SetAlpha(0) end
 	if portraitFrame then portraitFrame:SetAlpha(0) end
 	if portraitFrameOverlay then portraitFrameOverlay:SetAlpha(0) end
 	if artFrameOverlay then artFrameOverlay:SetAlpha(0) end
@@ -287,10 +289,12 @@ function S:HandlePortraitFrame(frame, createBackdrop, noStrip)
 	local portraitFrameOverlay = name and _G[name..'PortraitOverlay'] or frame.PortraitOverlay
 	local artFrameOverlay = name and _G[name..'ArtOverlayFrame'] or frame.ArtOverlayFrame
 	local portraitFrameAlt = frame.portrait -- blizzard uses the same global name on two frames
+	local borderTexture = frame.BorderTexture -- titan has a border here
 
 	if not noStrip then
 		frame:StripTextures()
 
+		if borderTexture then borderTexture:SetAlpha(0) end
 		if portraitFrame then portraitFrame:SetAlpha(0) end
 		if portraitFrameOverlay then portraitFrameOverlay:SetAlpha(0) end
 		if portraitFrameAlt then portraitFrameAlt:SetAlpha(0) end
@@ -1058,7 +1062,7 @@ do
 	end
 
 	local function GetButton(frame, buttons)
-		for _, data in ipairs(buttons) do
+		for _, data in next, buttons do
 			if type(data) == 'string' then
 				local found = GetElement(frame, data)
 				if found then return found end
@@ -1256,11 +1260,20 @@ do --Tab Regions
 		'Right'
 	}
 
+	local hooked = {}
+	function S:HandleTabText(_, _, _, _, _, forced)
+		if forced then return end
+
+		self:ClearAllPoints()
+		self:SetPoint('CENTER', hooked[self], nil, nil, nil, true)
+	end
+
 	function S:HandleTab(tab, noBackdrop, template)
 		if not tab or (tab.backdrop and not noBackdrop) then return end
 
-		for _, object in pairs(tabs) do
-			local textureName = tab:GetName() and _G[tab:GetName()..object]
+		local tabName = tab:GetName()
+		for _, object in next, tabs do
+			local textureName = tabName and _G[tabName..object]
 			if textureName then
 				textureName:SetTexture()
 			elseif tab[object] then
@@ -1273,6 +1286,17 @@ do --Tab Regions
 			highlightTex:SetTexture()
 		else
 			tab:StripTextures()
+		end
+
+		local text = tab.Text or (tabName and _G[tabName..'Text']) or (tab.GetFontString and tab:GetFontString())
+		if text then
+			text:ClearAllPoints()
+			text:Point('CENTER', tab)
+
+			if not hooked[text] then
+				hooksecurefunc(text, 'SetPoint', S.HandleTabText)
+				hooked[text] = tab
+			end
 		end
 
 		if not noBackdrop then
@@ -1340,7 +1364,7 @@ do
 
 		frame:StripTextures(true)
 
-		for name, direction in pairs(btns) do
+		for name, direction in next, btns do
 			local button = frame[name]
 			if button then
 				button:SetHitRectInsets(1, 1, 1, 1)
@@ -1388,7 +1412,7 @@ function S:HandleBlizzardRegions(frame, name, kill, zero)
 		name = frame.GetName and frame:GetName()
 	end
 
-	for _, area in pairs(S.Blizzard.Regions) do
+	for _, area in next, S.Blizzard.Regions do
 		local object = (name and _G[name..area]) or frame[area]
 		if object then
 			if kill then
@@ -2335,11 +2359,7 @@ end
 function S:SkinIconTextAndCurrenciesWidget()
 end
 
-function S:SkinTextWithStateWidget(widgetFrame)
-	local text = widgetFrame.Text
-	if not text then return end
-
-	text:SetTextColor(1, 1, 1)
+function S:SkinTextWithStateWidget()
 end
 
 function S:SkinHorizontalCurrenciesWidget()
@@ -2418,7 +2438,7 @@ function S:SkinWidgetContainer(widget)
 end
 
 function S:ADDON_LOADED(_, addonName)
-	if not S.allowBypass[addonName] and not E.initialized then
+	if not S.allowBypass[addonName] and not E.Initialized then
 		return
 	end
 
@@ -2478,6 +2498,12 @@ function S:RegisterSkin(addonName, func, forceLoad, bypass, position)
 	end
 end
 
+function S:CallLoadedNonAddon(index, func)
+	E:CallLoadFunc(func)
+
+	S.nonAddonsToLoad[index] = nil
+end
+
 function S:CallLoadedAddon(addonName, object)
 	for _, func in next, object do
 		E:CallLoadFunc(func)
@@ -2487,7 +2513,7 @@ function S:CallLoadedAddon(addonName, object)
 end
 
 function S:UpdateAllWidgets()
-	for _, widget in pairs(_G.UIWidgetTopCenterContainerFrame.widgetFrames) do
+	for _, widget in next, _G.UIWidgetTopCenterContainerFrame.widgetFrames do
 		S:SkinWidgetContainer(widget)
 	end
 end
@@ -2496,12 +2522,10 @@ function S:Initialize()
 	S.Initialized = true
 
 	for index, func in next, S.nonAddonsToLoad do
-		E:CallLoadFunc(func)
-
-		S.nonAddonsToLoad[index] = nil
+		S:CallLoadedNonAddon(index, func)
 	end
 
-	for addonName, object in pairs(S.addonsToLoad) do
+	for addonName, object in next, S.addonsToLoad do
 		local isLoaded, isFinished = IsAddOnLoaded(addonName)
 		if isLoaded and isFinished then
 			S:CallLoadedAddon(addonName, object)

@@ -62,7 +62,9 @@ function Logic:GetSnapshotFreshness(snapshot, currentTime, nextResetAt)
     currentTime = tonumber(currentTime) or (type(time) == "function" and time() or 0)
     local updatedAt = numeric(snapshot.updatedAt)
     local resetAt = numeric(snapshot.resetAt)
-    if resetAt > 0 and currentTime >= resetAt then return "stale" end
+    if Addon.WoWApi:GetResetState(resetAt, currentTime) == Addon.WoWApi.RESET_EXPIRED then
+        return "stale"
+    end
 
     if resetAt <= 0 and updatedAt > 0 and Addon.WoWApi
         and type(Addon.WoWApi.GetWeeklyResetInfo) == "function"
@@ -263,12 +265,20 @@ local function collectRecentRuns()
     return entries
 end
 
-function Logic:Scan()
+function Logic:Scan(existingSnapshot)
     if type(C_ChallengeMode) ~= "table" or type(C_MythicPlus) ~= "table"
         or type(C_ChallengeMode.GetMapTable) ~= "function"
         or type(C_ChallengeMode.GetMapUIInfo) ~= "function"
     then
         return nil
+    end
+
+    -- Patch 12.1 exposes the Season 2 dungeon pool before Mythic+ itself
+    -- opens. Do not archive the outgoing season's score and affixes under the
+    -- new season key during that pre-season week.
+    if type(C_MythicPlus.IsMythicPlusActive) == "function" then
+        local okActive, active = safeCall(C_MythicPlus, "IsMythicPlusActive")
+        if okActive and active == false then return existingSnapshot end
     end
 
     safeCall(C_MythicPlus, "RequestMapInfo")
@@ -333,7 +343,9 @@ function Logic:Scan()
     end
 
     local key = self:GetCurrentKey()
-    local _, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local _, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
     score = math.floor(score + 0.5)
     local snapshot = {
         available = true,
@@ -378,8 +390,9 @@ function Logic:Scan()
     return snapshot
 end
 
-function Logic:BuildView(snapshot)
-    if type(snapshot) ~= "table" or snapshot.seasonKey ~= Data.seasonKey then
+function Logic:BuildView(snapshot, seasonKey)
+    seasonKey = Data.seasonKeys[seasonKey] and seasonKey or Data.seasonKey
+    if type(snapshot) ~= "table" or snapshot.seasonKey ~= seasonKey then
         return {
             available = false,
             message = L.MYTHIC_PLUS_NO_SNAPSHOT,

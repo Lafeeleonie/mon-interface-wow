@@ -3,13 +3,10 @@
 -- Resolves friendly unit spec IDs via NotifyInspect / INSPECT_READY, with
 -- a GUID-keyed in-memory cache and a simple run loop.
 --
--- 12.1 caveat: Init is only ever called by the friendly cooldown tracker, and that module is
--- disabled on 12.1 - so on a 12.1 client this inspector is never initialised. GetUnitSpecId still
--- works, but only through its synchronous paths (player spec, tooltip scan); the async inspect
--- queue never drains and the saved GUID->spec cache is never even loaded. That matters because
--- KickTracker uses it (via InspectorFacade) to guess which ally interrupted, so on 12.1 that
--- guess falls back to FrameSort, the arena API, the tooltip, or the unit's class default.
--- If a 12.1-supported module ever needs reliable spec data, it must call Init itself.
+-- Init runs once from MiniAuras.lua. Without it GetUnitSpecId still answers, but only from its
+-- synchronous paths (player spec, tooltip scan): the async inspect queue never drains and the
+-- saved GUID->spec cache is never loaded. KickTracker leans on it through InspectorFacade to
+-- guess which ally interrupted, which is the guess that gets worse when it is not running.
 ---@type string, Addon
 local _, addon = ...
 
@@ -146,7 +143,10 @@ end
 
 local function Inspect(unit)
 	local specId = GetInspectSpecialization and GetInspectSpecialization(unit)
-	if specId and specId > 0 then
+	-- A unit the client will not let an addon identify answers with a secret spec, and a
+	-- mouseover of a stranger is the everyday way to get one. Nothing here can use it: comparing
+	-- it errors, and caching it only moves that error to whoever reads the cache.
+	if specId and not issecretvalue(specId) and specId > 0 then
 		local cacheEntry = EnsureCacheEntry(unit)
 		if cacheEntry then
 			local before = cacheEntry.SpecId
@@ -331,9 +331,8 @@ function M:GetUnitSpecId(unit)
 		return specId
 	end
 
-	-- Queue for async inspection on the next run loop tick. Only when Init has started the
-	-- run loop - otherwise nothing ever drains the stack (FrameSort provides inspection, or
-	-- the owning module skipped Init on 12.1) and it would grow for the whole session.
+	-- Queue for async inspection on the next run loop tick, but only once Init has started the
+	-- run loop: nothing drains the stack before then, so it would grow for the whole session.
 	if not cacheEntry and initialised then
 		priorityStack[#priorityStack + 1] = unit
 		needUpdate = true

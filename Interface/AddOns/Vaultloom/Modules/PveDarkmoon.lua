@@ -16,19 +16,13 @@ local ACTIVE_REFRESH_EVENTS = {
     "BAG_UPDATE_DELAYED",
 }
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
 end
 
-local function clearSnapshot(record)
-    if type(record) == "table" and type(record.snapshots) == "table" then
-        record.snapshots.pveDarkmoon = nil
-    end
+local function clearSnapshot(characterKey)
+    Addon.Database:ClearCharacterSnapshot(characterKey, "pveDarkmoon", "expired")
 end
 
 function Service:GetSnapshot(characterKey)
@@ -41,11 +35,11 @@ function Service:GetSnapshot(characterKey)
     if type(snapshot) ~= "table" then
         return nil
     end
-    if (tonumber(snapshot.dailyResetAt) or 0) <= now()
-        or (snapshot.faireEndAt and (tonumber(snapshot.faireEndAt) or 0) <= now())
+    if Addon.WoWApi:IsResetExpired(snapshot.dailyResetAt)
+        or Addon.WoWApi:IsResetExpired(snapshot.faireEndAt)
         or (snapshot.faireResetKey and detectorState.resetKey and snapshot.faireResetKey ~= detectorState.resetKey)
     then
-        clearSnapshot(record)
+        clearSnapshot(characterKey)
         return nil
     end
     return snapshot
@@ -73,8 +67,8 @@ local function collectDarkmoon()
     local existing = Service:GetSnapshot(identity.key)
     local snapshot = Addon.PveDarkmoonLogic:BuildSnapshot(detectorState, existing)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pveDarkmoon = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(identity.key, "pveDarkmoon", snapshot, "refresh")
+        if not stored then snapshot = existing end
     end
     return {
         active = true,

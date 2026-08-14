@@ -1479,6 +1479,9 @@ function Runtime:OnEnable()
     Addon.StateStore:Subscribe("warband.roster", self, function()
         if Runtime.window and Runtime.window:IsShown() then Runtime:Refresh() end
     end)
+    Addon.StateStore:Subscribe("mailbox.snapshots", self, function()
+        if Runtime.window and Runtime.window:IsShown() then Runtime:Refresh() end
+    end)
     for _, eventName in ipairs({
         "TRADE_SKILL_SHOW",
         "TRADE_SKILL_CLOSE",

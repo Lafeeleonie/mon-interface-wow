@@ -80,7 +80,9 @@ function Logic:BuildSnapshot(existingSnapshot)
     end
 
     local existingRares, existingMounts = buildExistingLookups(existingSnapshot)
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetDailyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetDailyResetInfo(
+        type(existingSnapshot) == "table" and existingSnapshot.resetAt or nil
+    )
     local snapshot = {
         generatedAt = type(time) == "function" and time() or 0,
         resetAt = resetAt,

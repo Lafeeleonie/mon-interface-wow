@@ -1,10 +1,39 @@
 local _, BCDM = ...
 
+local function DefaultFont()
+    local media = type(LibStub) == "table" and type(LibStub.GetLibrary) == "function"
+        and LibStub:GetLibrary("LibSharedMedia-3.0", true)
+    if media and type(media.IsValid) == "function" and media:IsValid("font", "Expressway") then
+        return "Expressway"
+    end
+    return "Friz Quadrata TT"
+end
+
+local function VisibilityDefaults()
+    return {
+        Mode = "ALWAYS",
+        Instances = { OpenWorld = true, Dungeon = true, Raid = true, Arena = true, Battleground = true },
+        HideMounted = false,
+        HideDead = false,
+        HideVehicle = false,
+        HideResting = false,
+    }
+end
+
 local Defaults = {
     global = {
         UseGlobalProfile = false,
-        GlobalProfileName = "Default",
+        GlobalProfile = "Default",
         DisplayLoginMessage = true,
+        SettingsWindow = {
+            Point = "CENTER",
+            RelativePoint = "CENTER",
+            X = 0,
+            Y = 0,
+            Width = 1180,
+            Height = 760,
+            ShowSelectedElementHighlight = true,
+        },
         EditModeManager = {
             SwapOnInstanceDifficulty = false,
             RaidLayouts = {
@@ -16,9 +45,10 @@ local Defaults = {
         },
     },
     profile = {
+        Visibility = VisibilityDefaults(),
         General = {
             Fonts = {
-                Font = "Friz Quadrata TT",
+                Font = DefaultFont(),
                 FontFlag = "OUTLINE",
                 Shadow = {
                     Enabled = false,
@@ -28,11 +58,8 @@ local Defaults = {
                 }
             },
             Textures = {
-                Foreground = "Better Blizzard",
-                Background = "Better Blizzard",
-            },
-            Animation = {
-                SmoothBars = false,
+                Foreground = "Solid",
+                Background = "Solid",
             },
             Colours = {
                 PrimaryPower = {
@@ -80,7 +107,6 @@ local Defaults = {
             General = {
                 IconZoom = 0.1,
                 BorderSize = 1,
-                DisableAuraOverlay = false,
                 Glow = {
                     Enabled = true,
                     Type = "Pixel",
@@ -127,11 +153,11 @@ local Defaults = {
                 IconHeight = 42,
                 KeepAspectRatio = true,
                 CenterHorizontally = false,
-                Layout = {"CENTER", "CENTER", 0, -275.1},
+                Layout = {"CENTER", "NONE", "CENTER", 0, -275.1},
                 Text = {
                     FontSize = 15,
                     Colour = {1, 1, 1},
-                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 3}
+                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}
                 },
             },
             Utility = {
@@ -144,7 +170,7 @@ local Defaults = {
                 Text = {
                     FontSize = 15,
                     Colour = {1, 1, 1},
-                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 3}
+                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}
                 },
             },
             Buffs = {
@@ -152,328 +178,99 @@ local Defaults = {
                 IconWidth = 32,
                 IconHeight = 32,
                 KeepAspectRatio = true,
-                CenterBuffs = false,
-                Layout = {"BOTTOM", "BCDM_SecondaryPowerBar", "TOP", 0, 1.1},
+                CenterBuffs = true,
+                Layout = {"BOTTOM", "BCDM_PowerBar", "TOP", 0, 1.1},
                 Text = {
                     FontSize = 15,
                     Colour = {1, 1, 1},
-                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 3}
+                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0}
                 },
-            },
-            BuffBar = {
-                Width = 300,
-                Height = 24,
-                Spacing = 1,
-                GrowthDirection = "UP",
-                MatchWidthOfAnchor = true,
-                ColourByClass = true,
-                BackgroundColour = {34/255, 34/255, 34/255, 1},
-                ForegroundColour = {34/255, 34/255, 34/255, 1},
-                Layout = {"BOTTOM", "NONE", "TOP", 0, 1.1},
-                Icon = {
-                    Enabled = true,
-                    Layout = "LEFT",
-                },
-                Text = {
-                    SpellName = {
-                        Enabled = true,
-                        FontSize = 12,
-                        Colour = {1, 1, 1},
-                        Layout = {"LEFT", "LEFT", 3, 0}
-                    },
-                    Duration = {
-                        Enabled = true,
-                        FontSize = 12,
-                        Colour = {1, 1, 1},
-                        Layout = {"RIGHT", "RIGHT", -3, 0}
-                    },
-                }
-            },
-            Custom = {
-                IconSize = 38,
-                IconWidth = 38,
-                IconHeight = 38,
-                KeepAspectRatio = true,
-                FrameStrata = "LOW",
-                Layout = {"CENTER", "NONE", "CENTER", 0, 0},
-                Spacing = 1,
-                GrowthDirection = "RIGHT",
-                Columns = 0,
-                Text = {
-                    FontSize = 12,
-                    Colour = {1, 1, 1},
-                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 2}
-                },
-                Spells = {
-                    -- Monk
-                    ["MONK"] = {
-                        ["BREWMASTER"] = {},
-                        ["WINDWALKER"] = {},
-                        ["MISTWEAVER"] = {},
-                    },
-                    -- Demon Hunter
-                    ["DEMONHUNTER"] = {
-                        ["HAVOC"] = {},
-                        ["VENGEANCE"] = {},
-                        ["DEVOURER"] = {},
-                    },
-                    -- Death Knight
-                    ["DEATHKNIGHT"] = {
-                        ["BLOOD"] = {},
-                        ["UNHOLY"] = {},
-                        ["FROST"] = {}
-                    },
-                    -- Mage
-                    ["MAGE"] = {
-                        ["FROST"] = {},
-                        ["FIRE"] = {},
-                        ["ARCANE"] = {},
-                    },
-                    -- Paladin
-                    ["PALADIN"] = {
-                        ["RETRIBUTION"] = {},
-                        ["HOLY"] = {},
-                        ["PROTECTION"] = {}
-                    },
-                    -- Shaman
-                    ["SHAMAN"] = {
-                        ["ELEMENTAL"] = {},
-                        ["ENHANCEMENT"] = {},
-                        ["RESTORATION"] = {}
-                    },
-                    -- Druid
-                    ["DRUID"] = {
-                        ["GUARDIAN"] = {},
-                        ["FERAL"] = {},
-                        ["RESTORATION"] = {},
-                        ["BALANCE"] = {},
-                    },
-                    -- Evoker
-                    ["EVOKER"] = {
-                        ["DEVASTATION"] = {},
-                        ["AUGMENTATION"] = {},
-                        ["PRESERVATION"] = {}
-                    },
-                    -- Warrior
-                    ["WARRIOR"] = {
-                        ["ARMS"] = {},
-                        ["FURY"] = {},
-                        ["PROTECTION"] = {},
-                    },
-                    -- Priest
-                    ["PRIEST"] = {
-                        ["SHADOW"] = {},
-                        ["DISCIPLINE"] = {},
-                        ["HOLY"] = {},
-                    },
-                    -- Warlock
-                    ["WARLOCK"] = {
-                        ["DESTRUCTION"] = {},
-                        ["AFFLICTION"] = {},
-                        ["DEMONOLOGY"] = {},
-                    },
-                    -- Hunter
-                    ["HUNTER"] = {
-                        ["SURVIVAL"] = {},
-                        ["MARKSMANSHIP"] = {},
-                        ["BEASTMASTERY"] = {},
-                    },
-                    -- Rogue
-                    ["ROGUE"] = {
-                        ["OUTLAW"] = {},
-                        ["ASSASSINATION"] = {},
-                        ["SUBTLETY"] = {},
-                    }
-                },
-            },
-            AdditionalCustom = {
-                IconSize = 38,
-                IconWidth = 38,
-                IconHeight = 38,
-                KeepAspectRatio = true,
-                FrameStrata = "LOW",
-                Layout = {"CENTER", "NONE", "CENTER", 0, 0},
-                Spacing = 1,
-                GrowthDirection = "RIGHT",
-                Columns = 0,
-                Text = {
-                    FontSize = 12,
-                    Colour = {1, 1, 1},
-                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 2}
-                },
-                Spells = {
-                    -- Monk
-                    ["MONK"] = {
-                        ["BREWMASTER"] = {},
-                        ["WINDWALKER"] = {},
-                        ["MISTWEAVER"] = {},
-                    },
-                    -- Demon Hunter
-                    ["DEMONHUNTER"] = {
-                        ["HAVOC"] = {},
-                        ["VENGEANCE"] = {},
-                        ["DEVOURER"] = {},
-                    },
-                    -- Death Knight
-                    ["DEATHKNIGHT"] = {
-                        ["BLOOD"] = {},
-                        ["UNHOLY"] = {},
-                        ["FROST"] = {}
-                    },
-                    -- Mage
-                    ["MAGE"] = {
-                        ["FROST"] = {},
-                        ["FIRE"] = {},
-                        ["ARCANE"] = {},
-                    },
-                    -- Paladin
-                    ["PALADIN"] = {
-                        ["RETRIBUTION"] = {},
-                        ["HOLY"] = {},
-                        ["PROTECTION"] = {}
-                    },
-                    -- Shaman
-                    ["SHAMAN"] = {
-                        ["ELEMENTAL"] = {},
-                        ["ENHANCEMENT"] = {},
-                        ["RESTORATION"] = {}
-                    },
-                    -- Druid
-                    ["DRUID"] = {
-                        ["GUARDIAN"] = {},
-                        ["FERAL"] = {},
-                        ["RESTORATION"] = {},
-                        ["BALANCE"] = {},
-                    },
-                    -- Evoker
-                    ["EVOKER"] = {
-                        ["DEVASTATION"] = {},
-                        ["AUGMENTATION"] = {},
-                        ["PRESERVATION"] = {}
-                    },
-                    -- Warrior
-                    ["WARRIOR"] = {
-                        ["ARMS"] = {},
-                        ["FURY"] = {},
-                        ["PROTECTION"] = {},
-                    },
-                    -- Priest
-                    ["PRIEST"] = {
-                        ["SHADOW"] = {},
-                        ["DISCIPLINE"] = {},
-                        ["HOLY"] = {},
-                    },
-                    -- Warlock
-                    ["WARLOCK"] = {
-                        ["DESTRUCTION"] = {},
-                        ["AFFLICTION"] = {},
-                        ["DEMONOLOGY"] = {},
-                    },
-                    -- Hunter
-                    ["HUNTER"] = {
-                        ["SURVIVAL"] = {},
-                        ["MARKSMANSHIP"] = {},
-                        ["BEASTMASTERY"] = {},
-                    },
-                    -- Rogue
-                    ["ROGUE"] = {
-                        ["OUTLAW"] = {},
-                        ["ASSASSINATION"] = {},
-                        ["SUBTLETY"] = {},
-                    }
-                },
-            },
-            Item = {
-                IconSize = 38,
-                IconWidth = 38,
-                IconHeight = 38,
-                KeepAspectRatio = true,
-                FrameStrata = "LOW",
-                Layout = {"CENTER", "NONE", "CENTER", 0, 0},
-                Spacing = 1,
-                GrowthDirection = "LEFT",
-                Columns = 0,
-                OffsetByParentHeight = true,
-                HideZeroCharges = false,
-                ShowItemQualityBorder = true,
-                Text = {
-                    FontSize = 12,
-                    Colour = {1, 1, 1},
-                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 2}
-                },
-                Items = {},
             },
             Trinket = {
                 Enabled = true,
-                IconSize = 38,
-                IconWidth = 38,
-                IconHeight = 38,
+                DisplayOnUseOnly = true,
+                UseSharedVisibility = true,
+                Visibility = VisibilityDefaults(),
+                IconSize = 32,
+                IconWidth = 32,
+                IconHeight = 32,
                 KeepAspectRatio = true,
                 FrameStrata = "LOW",
-                Layout = {"CENTER", "NONE", "CENTER", 0, 0},
+                Layout = {"TOPRIGHT", "ElvUF_Player", "BOTTOMRIGHT", 0, 0},
                 Spacing = 1,
                 GrowthDirection = "LEFT",
                 OffsetByParentHeight = true,
-            },
-            ItemSpell = {
-                IconSize = 38,
-                IconWidth = 38,
-                IconHeight = 38,
-                KeepAspectRatio = true,
-                FrameStrata = "LOW",
-                Layout = {"CENTER", "NONE", "CENTER", 0, 0},
-                Spacing = 1,
-                GrowthDirection = "LEFT",
-                Columns = 0,
-                OffsetByParentHeight = true,
-                HideZeroCharges = false,
-                ShowItemQualityBorder = true,
-                Text = {
-                    FontSize = 12,
-                    Colour = {1, 1, 1},
-                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 2}
+                EntrySettings = {
+                    DisplayMode = "ALWAYS",
+                    VisualMode = "FULL",
+                    Alpha = 0.45,
+                    Glow = "NONE",
+                    TextEnabled = true,
+                    Tooltip = true,
                 },
-                ItemsSpells = {},
+                Slots = {
+                    [13] = { Enabled = true, OverrideBarSettings = false },
+                    [14] = { Enabled = true, OverrideBarSettings = false },
+                },
+                SlotOrder = { 13, 14 },
+                Text = {
+                    FontSize = 15,
+                    Colour = {1, 1, 1},
+                    Layout = {"BOTTOMRIGHT", "BOTTOMRIGHT", 0, 0},
+                },
+            },
+            CustomTrackers = {
+                SchemaVersion = 3,
+                NextBarID = 1,
+                NextEntryID = 1,
+                BarOrder = {},
+                Bars = {},
             },
         },
         PowerBar = {
             Enabled = true,
+            UseSharedVisibility = true,
+            Visibility = VisibilityDefaults(),
             Width = 200,
             Height = 13,
             HeightWithoutSecondary = 20,
             MatchWidthOfAnchor = true,
-            ColourByType = true,
-            ColourByClass = false,
-            FrequentUpdates = true,
+            ColourMode = "POWER_TYPE",
+            ShowSpark = false,
+            FillDirection = "RIGHT",
             FrameStrata = "LOW",
-            BackgroundColour = {34/255, 34/255, 34/255, 1},
+            BackgroundColour = {62/255, 62/255, 62/255, 1},
             ForegroundColour = {34/255, 34/255, 34/255, 1},
             Layout = {"BOTTOM", "EssentialCooldownViewer", "TOP", 0, 1},
             Text = {
                 Enabled = true,
+                Mode = "AUTO",
                 FontSize = 18,
                 Colour = {1, 1, 1},
-                Layout = {"BOTTOM", "BOTTOM", 0, 1}
+                Layout = {"BOTTOM", "BOTTOM", 0, 0}
             },
         },
         SecondaryPowerBar = {
             Enabled = true,
+            UseSharedVisibility = true,
+            Visibility = VisibilityDefaults(),
             Width = 200,
             Height = 13,
             HeightWithoutPrimary = 13,
             MatchWidthOfAnchor = true,
-            ColourByType = true,
-            ColourByClass = false,
-            ColourBySpec = false,
+            ColourMode = "POWER_TYPE",
             ColourByState = true,
             FrameStrata = "LOW",
             HideTicks = false,
+            ShowSpark = false,
+            FillDirection = "RIGHT",
             SwapToPowerBarPosition = false,
-            BackgroundColour = {34/255, 34/255, 34/255, 1},
+            BackgroundColour = {62/255, 62/255, 62/255, 1},
             ForegroundColour = {34/255, 34/255, 34/255, 1},
             Layout = {"BOTTOM", "BCDM_PowerBar", "TOP", 0, 1},
             Text = {
                 Enabled = false,
+                Mode = "AUTO",
                 FontSize = 12,
                 Colour = {1, 1, 1},
                 Layout = {"CENTER", "CENTER", 0, 0},
@@ -482,14 +279,20 @@ local Defaults = {
         },
         CastBar = {
             Enabled = true,
+            UseSharedVisibility = true,
+            Visibility = VisibilityDefaults(),
             Width = 200,
             Height = 24,
             MatchWidthOfAnchor = true,
-            ColourByClass = true,
+            ColourMode = "CLASS",
+            InterruptibleColour = {0.2, 0.8, 0.2, 1},
+            NonInterruptibleColour = {0.8, 0.2, 0.2, 1},
+            FillDirection = "RIGHT",
+            EmpowerPips = { Colour = {1, 1, 1, 1}, Width = 1 },
             FrameStrata = "LOW",
-            BackgroundColour = {34/255, 34/255, 34/255, 1},
+            BackgroundColour = {62/255, 62/255, 62/255, 1},
             ForegroundColour = {34/255, 34/255, 34/255, 1},
-            Layout = {"TOP", "UtilityCooldownViewer", "BOTTOM", 0, -1},
+            Layout = {"TOP", "BCDM_PowerBar", "BOTTOM", 0, -1},
             Text = {
                 SpellName = {
                     FontSize = 12,
@@ -510,6 +313,18 @@ local Defaults = {
         },
     },
 }
+
+function BCDM:CopyTable(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local copy = {}
+    seen[value] = copy
+    for key, child in pairs(value) do
+        copy[self:CopyTable(key, seen)] = self:CopyTable(child, seen)
+    end
+    return copy
+end
 
 function BCDM:GetDefaultDB()
     return Defaults

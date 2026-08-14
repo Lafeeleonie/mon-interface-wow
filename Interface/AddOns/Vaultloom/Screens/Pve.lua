@@ -7,6 +7,8 @@ local Widgets = Addon.Widgets
 local VerticalNavigation = Addon.VerticalNavigation
 local ScrollFrames = Addon.ScrollFrames
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
+local CoiledIsleData = Addon.Data.PVE_COILED_ISLE
+local STATUS_BADGE_SIZE = 22
 
 local function isDarkmoonActive()
     local state = Addon.StateStore:Get("pve.darkmoon")
@@ -17,15 +19,31 @@ local function isDarkmoonActive()
         or (type(state.snapshot) == "table" and state.snapshot.active == true))
 end
 
+local function isCoiledIsleEnabled()
+    return type(CoiledIsleData) == "table" and CoiledIsleData.enabled == true
+end
+
 local SUB_TABS = {
+    { key = "reset-heading", heading = true, label = function() return L.PVE_NAV_HEADING_RESET end },
     { key = "weekly", label = function() return L.PVE_TAB_WEEKLY end },
-    { key = "void_invasion", label = function() return L.PVE_TAB_VOID_INVASION end },
     { key = "daily", label = function() return L.PVE_TAB_DAILY end },
-    { key = "events", label = function() return L.PVE_TAB_EVENTS end },
+    { key = "activities-heading", heading = true, label = function() return L.PVE_NAV_HEADING_ACTIVITIES end },
+    {
+        key = "coiled_isle",
+        label = function() return L.PVE_TAB_COILED_ISLE end,
+        visible = isCoiledIsleEnabled,
+    },
+    { key = "void_invasion", label = function() return L.PVE_TAB_VOID_INVASION end },
     { key = "delves", label = function() return L.PVE_TAB_DELVES end },
     { key = "prey", label = function() return L.PVE_TAB_PREY end },
-    { key = "rares", label = function() return L.PVE_TAB_RARES end },
+    { key = "world-heading", heading = true, label = function() return L.PVE_NAV_HEADING_WORLD end },
     { key = "world", label = function() return L.PVE_TAB_WORLD end },
+    {
+        key = "rares",
+        label = function() return L.PVE_TAB_RARES end,
+        newIndicatorID = "pve_rares_tab",
+    },
+    { key = "events", label = function() return L.PVE_TAB_EVENTS end },
     {
         key = "special-heading",
         heading = true,
@@ -47,6 +65,10 @@ local STATUS = {
     missing = { color = { 0.62, 0.59, 0.54, 1 }, texture = function() return Assets.statusBadgeMissing end },
     locked = { color = { 0.42, 0.40, 0.38, 1 }, texture = function() return Assets.statusBadgeLocked end },
     failed = { color = { 0.92, 0.30, 0.24, 1 }, texture = function() return Assets.statusBadgeFailed end },
+    repeatable = { color = Theme.colors.cyan, texture = function() return Assets.statusBadgeRepeatable end },
+    warning = { color = { 0.92, 0.56, 0.16, 1 }, texture = function() return Assets.statusBadgeWarning end },
+    unknown = { color = { 0.62, 0.59, 0.54, 1 }, texture = function() return Assets.statusBadgeOpen end },
+    pending = { color = { 0.76, 0.62, 0.34, 1 }, texture = function() return Assets.statusBadgePending end },
 }
 
 local function createStatusRow(parent, index, previous)
@@ -54,8 +76,9 @@ local function createStatusRow(parent, index, previous)
     row:SetHeight(42)
     row:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     row:SetBackdropColor(0.025, 0.022, 0.020, 0.88)
     row:SetBackdropBorderColor(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.55)
@@ -67,26 +90,31 @@ local function createStatusRow(parent, index, previous)
         row:SetPoint("TOPRIGHT", -16, 0)
     end
 
+    -- Match the Compendium layering so the plate cannot cover the rounded
+    -- border's side and corner pixels.
     row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints(row)
+    row.background:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+    row.background:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
     row.background:SetTexture(Assets.row)
 
     row.statusLine = row:CreateTexture(nil, "ARTWORK")
-    row.statusLine:SetPoint("TOPLEFT", 4, -4)
-    row.statusLine:SetPoint("BOTTOMLEFT", 4, 4)
+    row.statusLine:SetPoint("TOPLEFT", 4, -6)
+    row.statusLine:SetPoint("BOTTOMLEFT", 4, 6)
     row.statusLine:SetWidth(3)
+    row.statusLineMask = Widgets:AddRoundedStatusLineMask(row, row.statusLine)
 
     row.label = Widgets:CreateLabel(row, "GameFontHighlightSmall", "LEFT")
     row.label:SetPoint("LEFT", 16, 0)
     row.label:SetPoint("RIGHT", -132, 0)
 
     row.badgeFrame = row:CreateTexture(nil, "ARTWORK")
-    row.badgeFrame:SetSize(26, 26)
+    row.badgeFrame:SetSize(STATUS_BADGE_SIZE, STATUS_BADGE_SIZE)
     row.badgeFrame:SetPoint("RIGHT", -10, 0)
     row.badgeFrame:SetTexture(Assets.statusBadgeFrame)
+    row.badgeFrame:Hide()
 
     row.badge = row:CreateTexture(nil, "OVERLAY")
-    row.badge:SetSize(24, 24)
+    row.badge:SetSize(STATUS_BADGE_SIZE, STATUS_BADGE_SIZE)
     row.badge:SetPoint("CENTER", row.badgeFrame, "CENTER", 0, 0)
 
     row.value = Widgets:CreateLabel(row, "GameFontNormalSmall", "RIGHT")
@@ -133,7 +161,7 @@ local function setStatusRow(row, entry, dailyOpen)
         row:Hide()
         return
     end
-    local visualKey = entry.status == "open" and (dailyOpen == true or entry.resetType == "daily")
+    local visualKey = entry.status == "open" and dailyOpen == true
         and "daily" or entry.status
     local visual = STATUS[visualKey] or STATUS.missing
     row.label:SetText(entry.label or "")
@@ -144,11 +172,11 @@ local function setStatusRow(row, entry, dailyOpen)
     row.badge:SetPoint("CENTER", row.badgeFrame, "CENTER", 0, 0)
     if entry.key == "saltherils_favor" then
         row.badgeFrame:Hide()
-        row.badge:SetSize(26, 26)
+        row.badge:SetSize(STATUS_BADGE_SIZE, STATUS_BADGE_SIZE)
         row.badge:SetTexture(Assets.statusBadgeSaltherilFavor)
     else
-        row.badgeFrame:Show()
-        row.badge:SetSize(24, 24)
+        row.badgeFrame:Hide()
+        row.badge:SetSize(STATUS_BADGE_SIZE, STATUS_BADGE_SIZE)
         row.badge:SetTexture(visual.texture())
     end
     row.tooltipTitle = entry.tooltipTitle or entry.label
@@ -163,20 +191,23 @@ local function createRareRow(parent)
     row:RegisterForClicks("LeftButtonUp")
     row:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     row:SetBackdropColor(0.025, 0.022, 0.020, 0.88)
     row:SetBackdropBorderColor(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.55)
 
-    row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints(row)
+    row.background = row:CreateTexture(nil, "ARTWORK", nil, -8)
+    row.background:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+    row.background:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
     row.background:SetTexture(Assets.row)
 
     row.statusLine = row:CreateTexture(nil, "ARTWORK")
-    row.statusLine:SetPoint("TOPLEFT", 4, -4)
-    row.statusLine:SetPoint("BOTTOMLEFT", 4, 4)
+    row.statusLine:SetPoint("TOPLEFT", 4, -6)
+    row.statusLine:SetPoint("BOTTOMLEFT", 4, 6)
     row.statusLine:SetWidth(2)
+    row.statusLineMask = Widgets:AddRoundedStatusLineMask(row, row.statusLine)
 
     row.badge = row:CreateTexture(nil, "ARTWORK")
     row.badge:SetSize(22, 22)
@@ -236,8 +267,9 @@ local function createMountSlot(parent)
     slot:SetHeight(46)
     slot:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     slot:SetBackdropColor(0.025, 0.022, 0.020, 0.82)
     slot:SetBackdropBorderColor(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.45)
@@ -302,11 +334,13 @@ local function createPveScreen(_, host)
     frame.preyRows = {}
     frame.rareRows = {}
     frame.worldRows = {}
+    frame.coiledIsleRows = {}
     frame.darkmoonRows = {}
-    frame.layoutVersion = "vertical-pve-1"
+    frame.layoutVersion = "vertical-pve-groups-1"
 
     local domainIDs = {
         "pve.weekly",
+        "pve.coiled_isle",
         "pve.void_invasion",
         "pve.daily",
         "pve.events",
@@ -317,17 +351,69 @@ local function createPveScreen(_, host)
         "pve.darkmoon",
     }
 
+    frame.refreshPending = false
+    frame.refreshGeneration = 0
+    frame.refreshBatchDepth = 0
+
+    local function cancelRequestedRefresh()
+        frame.refreshPending = false
+        frame.refreshGeneration = frame.refreshGeneration + 1
+    end
+
+    local function requestRefresh()
+        if not Addon:IsScreenActive("pve") then
+            return
+        end
+        if frame.refreshBatchDepth > 0 then
+            frame.refreshPending = true
+            return
+        end
+        if frame.refreshPending then
+            return
+        end
+
+        frame.refreshPending = true
+        frame.refreshGeneration = frame.refreshGeneration + 1
+        local generation = frame.refreshGeneration
+        local function run()
+            if frame.refreshPending ~= true or frame.refreshGeneration ~= generation then
+                return
+            end
+            frame.refreshPending = false
+            if Addon:IsScreenActive("pve") then
+                frame:Refresh()
+            end
+        end
+        if C_Timer and type(C_Timer.After) == "function" then
+            C_Timer.After(0, run)
+        else
+            run()
+        end
+    end
+
     function frame:SetChromeVisible(visible)
         visible = visible == true
         if self.domainVisible == visible then
             return
         end
         self.domainVisible = visible
+        if visible then
+            self.refreshBatchDepth = self.refreshBatchDepth + 1
+        else
+            cancelRequestedRefresh()
+        end
         for _, domainID in ipairs(domainIDs) do
             if visible then
                 Addon.RefreshScheduler:Invalidate(domainID, 0)
             else
                 Addon.RefreshScheduler:Cancel(domainID)
+            end
+        end
+        if visible then
+            self.refreshBatchDepth = math.max(0, self.refreshBatchDepth - 1)
+            if self.refreshPending then
+                self.refreshPending = false
+                requestRefresh()
             end
         end
     end
@@ -356,9 +442,22 @@ local function createPveScreen(_, host)
     frame.weeklyCard.reset:SetPoint("LEFT", frame.weeklyCard.summary, "RIGHT", 28, 0)
 
     local previous
-    for index = 1, 5 do
+    for index = 1, 6 do
         local row = createStatusRow(frame.weeklyCard, index, previous)
         frame.weeklyRows[index] = row
+        previous = row
+    end
+
+    frame.coiledIsleCard = Widgets:CreatePanel(frame.contentHost, "card")
+    frame.coiledIsleCard:SetAllPoints(frame.contentHost)
+    frame.coiledIsleCard.summary = Widgets:CreateLabel(frame.coiledIsleCard, "GameFontHighlightSmall", "LEFT")
+    frame.coiledIsleCard.summary:SetPoint("TOPLEFT", 16, -18)
+    frame.coiledIsleCard.summary:SetPoint("TOPRIGHT", -16, -18)
+    frame.coiledIsleCard.summary:SetText("")
+    previous = nil
+    for index = 1, math.max(3, #(CoiledIsleData.activities or {})) do
+        local row = createStatusRow(frame.coiledIsleCard, index, previous)
+        frame.coiledIsleRows[index] = row
         previous = row
     end
 
@@ -537,7 +636,7 @@ local function createPveScreen(_, host)
     frame.raresCard.zoneTitle:SetText(L.PVE_RARES_ZONES)
     frame.raresCard.zoneButtons = {}
     previous = nil
-    for index = 1, 4 do
+    for index = 1, math.max(1, #(Addon.Data.PVE_RARES.zones or {})) do
         local button = Widgets:CreateButton(frame.raresCard.zonePanel, "", 156, 30, "tab")
         if previous then
             button:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -6)
@@ -645,6 +744,7 @@ local function createPveScreen(_, host)
     frame.pendingText:SetText(L.PVE_PENDING_TEXT)
 
     function frame:Refresh()
+        cancelRequestedRefresh()
         local selectedSubTab = Addon.Database:GetUI().selectedSubTabs.pve or "weekly"
         self.navigation:Refresh()
         if not self.navigation:IsVisible(selectedSubTab) then
@@ -653,6 +753,7 @@ local function createPveScreen(_, host)
         end
         self.navigation:SetSelected(selectedSubTab)
         self.weeklyCard:Hide()
+        self.coiledIsleCard:Hide()
         self.voidInvasionCard:Hide()
         self.dailyCard:Hide()
         self.eventsCard:Hide()
@@ -662,13 +763,32 @@ local function createPveScreen(_, host)
         self.worldCard:Hide()
         self.darkmoonCard:Hide()
         self.pendingCard:Hide()
-        if selectedSubTab ~= "weekly" and selectedSubTab ~= "void_invasion" and selectedSubTab ~= "daily" and selectedSubTab ~= "events" and selectedSubTab ~= "delves" and selectedSubTab ~= "prey" and selectedSubTab ~= "rares" and selectedSubTab ~= "world" and selectedSubTab ~= "darkmoon" then
+        if selectedSubTab ~= "weekly" and selectedSubTab ~= "coiled_isle" and selectedSubTab ~= "void_invasion" and selectedSubTab ~= "daily" and selectedSubTab ~= "events" and selectedSubTab ~= "delves" and selectedSubTab ~= "prey" and selectedSubTab ~= "rares" and selectedSubTab ~= "world" and selectedSubTab ~= "darkmoon" then
             self.pendingTitle:SetText(self.navigation:GetLabel(selectedSubTab) or L.PVE_TITLE)
             self.pendingCard:Show()
             return
         end
 
         local character = Addon.WarbandRoster:GetSelected()
+        if selectedSubTab == "coiled_isle" then
+            self.coiledIsleCard:Show()
+            local snapshot = character and Addon.PveCoiledIsle:GetSnapshot(character.key) or nil
+            if not snapshot then
+                self.coiledIsleCard.summary:SetText(L.PVE_WEEKLY_NO_SNAPSHOT)
+                for _, row in ipairs(self.coiledIsleRows) do row:Hide() end
+                return
+            end
+            self.coiledIsleCard.summary:SetText(string.format(
+                "%s   %s",
+                string.format(L.PVE_WEEKLY_PROGRESS, snapshot.summary.completed, snapshot.summary.total),
+                string.format(L.PVE_DAILY_RESET, snapshot.summary.dailyResetText)
+            ))
+            for index, row in ipairs(self.coiledIsleRows) do
+                setStatusRow(row, snapshot.rows[index])
+            end
+            return
+        end
+
         if selectedSubTab == "void_invasion" then
             self.voidInvasionCard:Show()
             local snapshot = character and Addon.PveVoidInvasion:GetSnapshot(character.key) or nil
@@ -968,53 +1088,38 @@ local function createPveScreen(_, host)
     end
 
     Addon.StateStore:Subscribe("pve.weekly", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
+    end)
+    Addon.StateStore:Subscribe("pve.coiled_isle", frame, function()
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.void_invasion", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.daily", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.events", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.delves", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.prey", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.rares", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.world", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("warband.selection", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
-        end
+        requestRefresh()
     end)
     Addon.StateStore:Subscribe("pve.darkmoon", frame, function()
-        if frame:IsShown() then
-            frame:Refresh()
+        if Addon:IsScreenActive("pve") then
+            requestRefresh()
         else
             frame.navigation:Refresh()
         end

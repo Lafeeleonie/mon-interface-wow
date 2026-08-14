@@ -19,6 +19,7 @@ local toggles = {
 	communities = L["COMMUNITIES"],
 	debug = L["Debug Tools"],
 	dressingroom = L["DRESSUP_FRAME"],
+	editor = L["Editor Manager"],
 	eventLog = L["Event Log"],
 	friends = format(E.Retail and '%s' or '%s & %s', L["Friends"], L["Guild"]),
 	gossip = L["Gossip Frame"],
@@ -52,7 +53,7 @@ local toggles = {
 	worldmap = L["WORLD_MAP"]
 }
 
-if E.Mists or E.Retail then
+if E.Retail or E.Mists then
 	toggles.alertframes = L["Alert Frames"]
 	toggles.archaeology = L["Archaeology Frame"]
 	toggles.barber = L["BARBERSHOP"]
@@ -64,12 +65,7 @@ if E.Mists or E.Retail then
 	toggles.itemUpgrade = L["Item Upgrade"]
 	toggles.pvp = L["PvP Frames"]
 	toggles.petbattleui = L["Pet Battle"]
-	toggles.transmogrify = L["TRANSMOGRIFY"]
 	toggles.guild = L["Guild"]
-end
-
-if E.hasEditMode then
-	toggles.editor = L["Editor Manager"]
 end
 
 if E.Retail or E.Mists or E.TBC then
@@ -78,6 +74,7 @@ end
 
 if E.Retail or E.Mists or E.Wrath then
 	toggles.achievement = L["ACHIEVEMENTS"]
+	toggles.transmogrify = L["TRANSMOGRIFY"]
 end
 
 if E.Wrath or E.TBC then

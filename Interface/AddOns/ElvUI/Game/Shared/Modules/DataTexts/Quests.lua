@@ -1,12 +1,11 @@
 local E, L, V, P, G = unpack(ElvUI)
 local DT = E:GetModule('DataTexts')
 
-local strjoin = strjoin
-local format = format
-
 local _G = _G
+local format = format
+local strjoin = strjoin
+
 local UnitXPMax = UnitXPMax
-local MouseIsOver = MouseIsOver
 local IsShiftKeyDown = IsShiftKeyDown
 local GetQuestLogTitle = GetQuestLogTitle
 local GetQuestLogRewardXP = GetQuestLogRewardXP
@@ -89,7 +88,7 @@ local function OnEvent(panel)
 
 	panel.text:SetFormattedText(displayString, L["Quests:"], numQuests, MAX_QUESTLOG_QUESTS)
 
-	if MouseIsOver(panel) then
+	if panel:IsMouseOver() then
 		OnEnter(panel)
 	end
 end

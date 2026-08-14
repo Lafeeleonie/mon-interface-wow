@@ -50,7 +50,12 @@ local function createHorizontalNavigation(parent)
             button.definition = definition
             button.subTabKey = definition.key
             button:SetScript("OnClick", function(selfButton)
-                if self.onSelect then self.onSelect(selfButton.subTabKey) end
+                if self.onSelect then
+                    if self.selectedKey ~= selfButton.subTabKey and Addon.Sound then
+                        Addon.Sound:Play("tabSwitch")
+                    end
+                    self.onSelect(selfButton.subTabKey)
+                end
             end)
             self.entries[#self.entries + 1] = button
             self.buttonsByKey[definition.key] = button
@@ -125,7 +130,15 @@ end
 
 local function difficultyLabel(data, key)
     for _, definition in ipairs(data.difficultyOptions) do
-        if definition.key == key then return L[definition.labelKey] end
+        if definition.key == key then
+            local localized = definition.labelKey and L[definition.labelKey] or nil
+            local difficultyID = data.difficultyIDs and data.difficultyIDs[key]
+            if type(GetDifficultyInfo) == "function" and difficultyID then
+                local ok, name = pcall(GetDifficultyInfo, difficultyID)
+                if ok and type(name) == "string" and name ~= "" then return name end
+            end
+            return localized or definition.label or tostring(key or L.UNKNOWN)
+        end
     end
     return L.UNKNOWN
 end
@@ -204,12 +217,12 @@ local function createJournalScreen(config, host)
     frame.lootPanel.difficultyMenu = Widgets:CreatePanel(frame.lootPanel, "cardInset")
     frame.lootPanel.difficultyMenu:SetPoint("TOPLEFT", frame.lootPanel.difficultyButton, "BOTTOMLEFT", 0, -3)
     frame.lootPanel.difficultyMenu:SetPoint("TOPRIGHT", frame.lootPanel.difficultyButton, "BOTTOMRIGHT", 0, -3)
-    frame.lootPanel.difficultyMenu:SetHeight(112)
+    frame.lootPanel.difficultyMenu:SetHeight(12 + (#data.difficultyOptions * 25))
     frame.lootPanel.difficultyMenu:SetFrameLevel(frame.lootPanel:GetFrameLevel() + 20)
     frame.lootPanel.difficultyMenu:Hide()
     frame.lootPanel.difficultyRows = {}
     for index, definition in ipairs(data.difficultyOptions) do
-        local button = Widgets:CreateButton(frame.lootPanel.difficultyMenu, L[definition.labelKey], 224, 23)
+        local button = Widgets:CreateButton(frame.lootPanel.difficultyMenu, difficultyLabel(data, definition.key), 224, 23)
         button:SetPoint("TOPLEFT", 6, -6 - ((index - 1) * 25))
         button:SetPoint("TOPRIGHT", -6, -6 - ((index - 1) * 25))
         button.difficultyKey = definition.key
@@ -404,14 +417,18 @@ local function createJournalScreen(config, host)
                 local status = repeatable and "repeatable"
                     or raid.totalCount > 0 and raid.killedCount >= raid.totalCount and "complete"
                     or raid.killedCount > 0 and "partial" or "open"
+                local typeLabel = not config.isDungeon and raid.contentType == "lair"
+                    and L.RAID_JOURNAL_TYPE_LAIR or nil
                 RaidRows:SetSelectionRow(row, {
                     title = raid.name,
-                    meta = raid.totalCount == 0 and L.RAID_JOURNAL_SOURCE_EJ or "",
+                    meta = typeLabel or (raid.totalCount == 0 and L.RAID_JOURNAL_SOURCE_EJ or ""),
                     value = repeatable and L.DUNGEON_JOURNAL_REPEATABLE or raid.progressText,
                     valuePlacement = "stacked",
                     status = status,
                     colorKey = config.isDungeon and not repeatable and status == "open" and "dailyOpen" or status,
                     icon = raid.icon,
+                    iconTexCoord = (view.subTabKey or config.defaultSubTab) == "midnight"
+                        and data.midnightIconTexCoord or nil,
                     selected = raid.key == view.selectedRaidKey,
                 })
             else

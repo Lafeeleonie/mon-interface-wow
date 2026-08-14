@@ -107,5 +107,28 @@ Addon.Data.PVE_RARES = {
                 { key = "tremora", name = "Tremora", npcID = 241443, questID = 91048, x = 35.6, y = 81.1 },
             },
         },
+        {
+            key = "coiled_isle",
+            label = "Coiled Isle",
+            mapID = 2512,
+            mounts = {
+                { itemID = 276803, name = "Ruby Writhe" },
+                { itemID = 276549, name = "Topaz Skyfang" },
+            },
+            rares = {
+                { key = "farthik_the_plunderer", name = "Farthik the Plunderer", npcID = 264854, questID = 96491, x = 53.77, y = 72.04 },
+                { key = "siltmouth", name = "Siltmouth", npcID = 268049, questID = 97112, x = 50.00, y = 69.07 },
+                { key = "karizah_the_forgotten", name = "Kari'zah the Forgotten", npcID = 268090, questID = 97122, x = 24.89, y = 73.54 },
+                { key = "lockjaw", name = "Lockjaw", npcID = 265237, questID = 96456, x = 31.66, y = 56.72 },
+                { key = "hisstara", name = "Hisstara", npcID = 265262, questID = 96464, x = 43.85, y = 50.86 },
+                { key = "szarith_the_fanged", name = "Szarith the Fanged", npcID = 263456, questID = 96030, x = 38.40, y = 17.69, mapID = 2613 },
+                { key = "garsecg", name = "Garsecg", npcID = 258916, questID = 94856, x = 70.17, y = 45.29 },
+                { key = "narzira", name = "Nar'zira", npcID = 258920, questID = 94860, x = 52.06, y = 44.79 },
+                { key = "coin_eye_skully", name = "Coin-Eye Skully", npcID = 257906, questID = 94619, x = 57.21, y = 64.17 },
+                { key = "big_mon", name = "Big Mon", npcID = 256631, questID = 93829, x = 70.03, y = 63.44 },
+                { key = "sssalik", name = "Sss'alik", npcID = 261109, questID = 95447, x = 58.53, y = 40.06 },
+                { key = "destra", name = "Destra", npcID = 261142, questID = 95452, x = 52.05, y = 32.29 },
+            },
+        },
     },
 }

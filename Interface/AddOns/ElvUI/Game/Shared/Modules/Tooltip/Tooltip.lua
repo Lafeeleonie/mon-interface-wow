@@ -3,7 +3,7 @@ local TT = E:GetModule('Tooltip')
 local AB = E:GetModule('ActionBars')
 local S = E:GetModule('Skins')
 local B = E:GetModule('Bags')
-local LSM = E.Libs.LSM
+
 local ElvUF = E.oUF
 local AuraInfo = ElvUF.AuraInfo
 local AuraFiltered = ElvUF.AuraFiltered
@@ -112,6 +112,13 @@ local englishRaces = {
 function TT:IsModKeyDown(db)
 	local k = db or TT.db.modifierID -- defaulted to 'HIDE' unless otherwise specified
 	return k == 'SHOW' or ((k == 'SHIFT' and IsShiftKeyDown()) or (k == 'CTRL' and IsControlKeyDown()) or (k == 'ALT' and IsAltKeyDown()))
+end
+
+function TT:UpdateAuraSpellIDCVar()
+	if not E.Retail then return end
+
+	-- Blizzard resets tooltipShowAuraSpellIDs to 0 between sessions
+	E:SetCVar('tooltipShowAuraSpellIDs', TT:IsModKeyDown())
 end
 
 function TT:SetCompareItems(tt, value)
@@ -234,8 +241,12 @@ function TT:SetUnitText(tt, unit, isPlayerUnit)
 		local localeClass, className = UnitClass(unit)
 		if not localeClass or not className then return end
 
-		local nameRealm = (realm and realm ~= '' and format('%s-%s', name, realm)) or name
 		local guildName, guildRankName, _, guildRealm = GetGuildInfo(unit)
+		if E:IsSecretValue(guildName) then
+			guildName, guildRankName, guildRealm = nil, nil, nil
+		end
+
+		local nameRealm = (realm and realm ~= '' and format('%s-%s', name, realm)) or name
 		local pvpName, gender = UnitPVPName(unit), UnitSex(unit)
 		local level, realLevel = E:UnitEffectiveLevel(unit), UnitLevel(unit)
 		local relationship = UnitRealmRelationship(unit)
@@ -276,6 +287,10 @@ function TT:SetUnitText(tt, unit, isPlayerUnit)
 
 		if levelLine then
 			local race, englishRace = UnitRace(unit)
+			if E:IsSecretValue(race) or E:IsSecretValue(englishRace) then
+				race, englishRace = nil, nil
+			end
+
 			local _, localizedFaction = E:GetUnitBattlefieldFaction(unit)
 			if localizedFaction and englishRaces[englishRace] then
 				race = localizedFaction..' '..race
@@ -283,7 +298,7 @@ function TT:SetUnitText(tt, unit, isPlayerUnit)
 
 			local levelText
 			local diffColor = GetCreatureDifficultyColor(level)
-			local unitGender = TT.db.gender and genderTable[gender]
+			local unitGender = TT.db.gender and E:NotSecretValue(gender) and genderTable[gender]
 			local hexColor = E:RGBToHex(diffColor.r, diffColor.g, diffColor.b)
 			if level < realLevel then
 				levelText = format('%s%s|r |cffFFFFFF(%s)|r %s%s', hexColor, level > 0 and level or '??', realLevel, unitGender or '', race or '')
@@ -293,7 +308,7 @@ function TT:SetUnitText(tt, unit, isPlayerUnit)
 
 			if E.Retail then
 				local specText = specLine and specLine:GetText()
-				if specText then
+				if specText then -- this might explode because of guildName
 					specLine:SetText(nameColor:WrapTextInColorCode(specText))
 				end
 			else -- put the class in classic
@@ -342,7 +357,8 @@ function TT:SetUnitText(tt, unit, isPlayerUnit)
 				diffColor = GetCreatureDifficultyColor(level)
 			end
 
-			if UnitIsPVP(unit) then
+			local unitPVP = UnitIsPVP(unit)
+			if E:NotSecretValue(unitPVP) and unitPVP then
 				pvpFlag = format(' (%s)', _G.PVP)
 			end
 
@@ -545,10 +561,14 @@ function TT:AddTargetInfo(tt, unit)
 end
 
 function TT:AddRoleInfo(tt, unit)
-	if not IsInGroup() or not (UnitInParty(unit) or UnitInRaid(unit)) then return end
+	if not IsInGroup() then return end
+
+	local unitRaid, unitParty = UnitInRaid(unit), UnitInParty(unit)
+	local unitSecret = E:IsSecretValue(unitRaid) or E:IsSecretValue(unitParty)
+	if unitSecret or not (unitRaid or unitParty) then return end
 
 	local role = UnitGroupRolesAssigned(unit)
-	if not role or role == 'NONE' then return end
+	if E:IsSecretValue(role) or (not role or role == 'NONE') then return end
 
 	local r, g, b
 	if role == 'HEALER' then
@@ -605,7 +625,7 @@ function TT:SetUnitInfo(tt, unit, data)
 		TT:AddRoleInfo(tt, unit)
 	end
 
-	if (E.Retail or E.Mists) and not isInCombat then
+	if E.Mists and not isInCombat then
 		if not isShiftKeyDown and (isPlayerUnit and unit ~= 'player') and TT.db.showMount then
 			TT:AddMountInfo(tt, unit)
 		end
@@ -912,7 +932,38 @@ function TT:SetStyle(tt, _, isEmbedded)
 	end
 end
 
+function TT:PLAYER_ENTERING_WORLD(_, initLogin, isReload)
+	if initLogin or isReload then
+		TT:UpdateAuraSpellIDCVar()
+	end
+end
+
+do
+	local info = {}
+	local backdrop = { backdropInfo = info }
+	function TT:SetAuraButtonTooltipStyle()
+		if not (E.private.skins.blizzard.enable and E.private.skins.blizzard.tooltip) then return end
+
+		local inbound = _G.AuraContainerInbound
+		if not inbound or not inbound.SetTooltipBackdrop then return end
+
+		info.bgFile = E.media.blankTex
+		info.edgeFile = E.media.blankTex
+		info.edgeSize = E:Scale(E.twoPixelsPlease and 2 or 1) -- match SetTemplate edgeSize
+		info.borderColor = E:SetColorTable(info.borderColor, E.media.bordercolor)
+		info.centerColor = E:SetColorTable(info.centerColor, E.media.backdropfadecolor)
+		info.centerColor.a = TT.db.colorAlpha -- override the alpha channel
+
+		backdrop.borderColor = info.borderColor
+		backdrop.centerColor = info.centerColor
+
+		inbound.SetTooltipBackdrop(backdrop)
+	end
+end
+
 function TT:MODIFIER_STATE_CHANGED()
+	TT:UpdateAuraSpellIDCVar()
+
 	if not GameTooltip:IsForbidden() and GameTooltip:IsShown() then
 		local owner = GameTooltip:GetOwner()
 		if owner == UIParent then
@@ -1090,11 +1141,11 @@ function TT:SetStatusBarFont()
 	local statusText = GameTooltipStatusBar.Text
 	if not statusText then return end
 
-	statusText:FontTemplate(LSM:Fetch('font', TT.db.healthBar.font), TT.db.healthBar.fontSize, TT.db.healthBar.fontOutline)
+	statusText:FontTemplate(TT.db.healthBar.font, TT.db.healthBar.fontSize, TT.db.healthBar.fontOutline)
 end
 
 function TT:SetTooltipFonts()
-	local font, fontSize, fontOutline = LSM:Fetch('font', TT.db.font), TT.db.textFontSize, TT.db.fontOutline
+	local font, fontSize, fontOutline = TT.db.font, TT.db.textFontSize, TT.db.fontOutline
 	_G.GameTooltipText:FontTemplate(font, fontSize, fontOutline)
 
 	if GameTooltip.hasMoney then
@@ -1108,7 +1159,7 @@ function TT:SetTooltipFonts()
 	end
 
 	-- Header has its own font settings
-	_G.GameTooltipHeaderText:FontTemplate(LSM:Fetch('font', TT.db.headerFont), TT.db.headerFontSize, TT.db.headerFontOutline)
+	_G.GameTooltipHeaderText:FontTemplate(TT.db.headerFont, TT.db.headerFontSize, TT.db.headerFontOutline)
 
 	-- Ignore header font size on DatatextTooltip
 	if _G.DatatextTooltip then
@@ -1195,22 +1246,16 @@ function TT:Initialize()
 		E:CreateMover(TooltipAnchor, 'TooltipMover', L["Tooltip"], nil, nil, nil, nil, nil, 'tooltip')
 	end
 
+	TT:UpdateAuraSpellIDCVar()
 	TT:RegisterEvent('MODIFIER_STATE_CHANGED')
+	TT:RegisterEvent('PLAYER_ENTERING_WORLD')
 
 	TT:SecureHook('SetItemRef')
 	TT:SecureHook('GameTooltip_SetDefaultAnchor')
 	TT:SecureHook('EmbeddedItemTooltip_SetItemByID', 'EmbeddedItemTooltip_ID')
 	TT:SecureHook('EmbeddedItemTooltip_SetCurrencyByID', 'EmbeddedItemTooltip_ID')
 	TT:SecureHook('EmbeddedItemTooltip_SetItemByQuestReward', 'EmbeddedItemTooltip_QuestReward')
-	TT:SecureHook(GameTooltip, 'SetUnitAura')
-	TT:SecureHook(GameTooltip, 'SetUnitBuff', 'SetUnitAura')
-	TT:SecureHook(GameTooltip, 'SetUnitDebuff', 'SetUnitAura')
 	TT:SecureHookScript(GameTooltip, 'OnTooltipCleared', 'GameTooltip_OnTooltipCleared')
-
-	if GameTooltip.SetUnitBuffByAuraInstanceID then -- not yet on Era or Mists
-		TT:SecureHook(GameTooltip, 'SetUnitBuffByAuraInstanceID', 'SetUnitAuraByAuraInstanceID')
-		TT:SecureHook(GameTooltip, 'SetUnitDebuffByAuraInstanceID', 'SetUnitAuraByAuraInstanceID')
-	end
 
 	if AddTooltipPostCall and not (E.TBC or E.Wrath or E.Mists) then -- exists but doesnt work atm on Cata
 		AddTooltipPostCall(TooltipDataType.Spell, TT.GameTooltip_OnTooltipSetSpell)
@@ -1248,6 +1293,15 @@ function TT:Initialize()
 		TT:SecureHook('QuestMapLogTitleButton_OnEnter', 'AddQuestID')
 		TT:SecureHook('TaskPOI_OnEnter', 'AddQuestID')
 	else
+		TT:SecureHook(GameTooltip, 'SetUnitAura')
+		TT:SecureHook(GameTooltip, 'SetUnitBuff', 'SetUnitAura')
+		TT:SecureHook(GameTooltip, 'SetUnitDebuff', 'SetUnitAura')
+
+		if GameTooltip.SetUnitBuffByAuraInstanceID then -- not yet on Era or Mists
+			TT:SecureHook(GameTooltip, 'SetUnitBuffByAuraInstanceID', 'SetUnitAuraByAuraInstanceID')
+			TT:SecureHook(GameTooltip, 'SetUnitDebuffByAuraInstanceID', 'SetUnitAuraByAuraInstanceID')
+		end
+
 		TT:SecureHookScript(GameTooltipStatusBar, 'OnValueChanged', 'GameTooltipStatusBar_OnValueChanged')
 	end
 end

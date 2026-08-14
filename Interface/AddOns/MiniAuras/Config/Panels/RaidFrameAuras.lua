@@ -2,6 +2,7 @@
 local _, addon = ...
 local mini = addon.Framework
 local L = addon.L
+local dbDefaults = addon.Config.Defaults
 local DROPDOWN_WIDTH = 200
 local GROW_OPTIONS = {
 	"LEFT",
@@ -17,8 +18,8 @@ local columnWidth
 local enabledColumnWidth
 local config = addon.Config
 local helpers = addon.Config.PanelHelpers
-local wowEx = addon.Utils.WoWEx
 local auraCategoryIds = addon.Core.AuraCategoryIds
+local moduleName = addon.Utils.ModuleName
 -- Sidebar sections. Derived from AuraCategoryIds and the user's own additions and nothing else,
 -- so this list stands on its own rather than leaning on another module's data for its structure.
 local CLASS_ORDER = {
@@ -39,7 +40,9 @@ config.RaidFrameAuras = M
 
 ---@param panel table
 ---@param options RaidFrameAurasInstanceOptions
-local function BuildInstance(panel, options)
+---@param defaults table The shipped values for this group, which the sliders clamp back to
+---when the typed input is not a number.
+local function BuildInstance(panel, options, defaults)
 	local parent = CreateFrame("Frame", nil, panel)
 	local sliderWidth = columnWidth * 2 - horizontalSpacing
 
@@ -52,7 +55,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.ExcludePlayer = value
-			addon:Refresh()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
@@ -67,7 +70,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.Glow = value
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
@@ -77,13 +80,13 @@ local function BuildInstance(panel, options)
 	local dispelColoursChk = mini:Checkbox({
 		Parent = parent,
 		LabelText = L["Dispel colours"],
-		Tooltip = L["Change the colour of the glow/border based on dispel type (e.g., blue for magic, red for physical)."],
+		Tooltip = L["Change the colour of the glow/border. CC spells use dispel type colours (e.g., blue for magic), defensive and important spells use the category colours."],
 		GetValue = function()
 			return options.Icons.ColorByDispelType
 		end,
 		SetValue = function(value)
 			options.Icons.ColorByDispelType = value
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
@@ -99,34 +102,30 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ReverseCooldown = value
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
 	reverseChk:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * 3, 0)
 	reverseChk:SetPoint("TOP", excludePlayerChk, "TOP", 0, 0)
 
-	-- The important-buff category only exists on the 12.1 aura container path; when present it
-	-- leads the second row and shifts the other category toggles right one column.
-	local catOffset = 0
-	local showImportantChk
-	if wowEx:UseAuraContainers() then
-		catOffset = 1
-		showImportantChk = mini:Checkbox({
-			Parent = parent,
-			LabelText = L["Show important"],
-			Tooltip = L["Show the buffs Blizzard flags as important (e.g. offensive cooldowns)."],
-			GetValue = function()
-				return options.ShowImportant
-			end,
-			SetValue = function(value)
-				options.ShowImportant = value
-				config:Apply()
-			end,
-		})
+	-- The important-buff toggle leads the second row, shifting the other category toggles right
+	-- one column.
+	local catOffset = 1
+	local showImportantChk = mini:Checkbox({
+		Parent = parent,
+		LabelText = L["Show important"],
+		Tooltip = L["Show important buff icons (e.g. offensive cooldowns)."],
+		GetValue = function()
+			return options.ShowImportant
+		end,
+		SetValue = function(value)
+			options.ShowImportant = value
+			config:Apply(moduleName.RaidFrameAuras)
+		end,
+	})
 
-		showImportantChk:SetPoint("TOPLEFT", excludePlayerChk, "BOTTOMLEFT", 0, -verticalSpacing)
-	end
+	showImportantChk:SetPoint("TOPLEFT", excludePlayerChk, "BOTTOMLEFT", 0, -verticalSpacing)
 
 	local showDefensivesChk = mini:Checkbox({
 		Parent = parent,
@@ -137,7 +136,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.ShowDefensives = value
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
@@ -153,7 +152,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.ShowCC = value
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
@@ -165,11 +164,11 @@ local function BuildInstance(panel, options)
 		LabelText = L["Show interrupts"],
 		Tooltip = L["Show an icon when a friendly unit gets interrupted."],
 		GetValue = function()
-			return options.ShowKicks ~= false
+			return options.ShowKicks
 		end,
 		SetValue = function(value)
 			options.ShowKicks = value
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
@@ -185,7 +184,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.ShowTooltips = value
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 		end,
 	})
 
@@ -195,9 +194,10 @@ local function BuildInstance(panel, options)
 	local size = helpers:BuildSizeControls({
 		Parent = parent,
 		Icons = options.Icons,
-		PixelDefault = 32,
-		PercentDefault = 75,
+		PixelDefault = defaults.Icons.Size,
+		PercentDefault = defaults.Icons.SizePercent,
 		Width = sliderWidth,
+		SettingsKey = moduleName.RaidFrameAuras,
 	})
 
 	size.Checkbox:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth * (3 + catOffset), 0)
@@ -209,9 +209,10 @@ local function BuildInstance(panel, options)
 		Target = options,
 		Key = "Grow",
 		Width = DROPDOWN_WIDTH,
+		SettingsKey = moduleName.RaidFrameAuras,
 	})
 
-	growDdl.Label:SetPoint("TOPLEFT", showImportantChk or showDefensivesChk, "BOTTOMLEFT", 4, -verticalSpacing * 2)
+	growDdl.Label:SetPoint("TOPLEFT", showImportantChk, "BOTTOMLEFT", 4, -verticalSpacing * 2)
 
 	size.Pixel.Slider:SetPoint("TOPLEFT", growDdl, "BOTTOMLEFT", 0, -verticalSpacing * 3)
 
@@ -220,10 +221,11 @@ local function BuildInstance(panel, options)
 		LabelText = L["Max Icons"],
 		Min = 1,
 		Max = 5,
-		Default = 3,
+		Default = defaults.Icons.MaxIcons,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "MaxIcons",
+		SettingsKey = moduleName.RaidFrameAuras,
 	})
 
 	maxIcons.Slider:SetPoint("LEFT", size.Pixel.Slider, "RIGHT", horizontalSpacing, 0)
@@ -233,11 +235,12 @@ local function BuildInstance(panel, options)
 		LabelText = L["Icon Padding"],
 		Min = 0,
 		Max = 20,
-		Default = 2,
-		Fallback = 2,
+		Default = defaults.IconSpacing,
+		Fallback = defaults.IconSpacing,
 		Width = sliderWidth,
 		Target = options,
 		Key = "IconSpacing",
+		SettingsKey = moduleName.RaidFrameAuras,
 	})
 
 	iconSpacing.Slider:SetPoint("TOPLEFT", size.Pixel.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 2)
@@ -246,11 +249,56 @@ local function BuildInstance(panel, options)
 		Parent = parent,
 		Offset = options.Offset,
 		Width = sliderWidth,
+		SettingsKey = moduleName.RaidFrameAuras,
 	})
 
 	offsetX.Slider:SetPoint("TOPLEFT", iconSpacing.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 2)
 
 	return parent
+end
+
+---The category tints, on their own tab because they are module wide: a defensive should read the
+---same colour on a party frame as it does on a raid frame, so they belong to neither instance tab.
+---@param parent table Tab content frame
+---@param options RaidFrameAurasModuleOptions
+local function BuildColours(parent, options)
+	local importantSwatch = mini:ColorSwatch({
+		Parent = parent,
+		LabelText = L["Important"],
+		Tooltip = L["Change the colour of the glow on important spells."],
+		HasOpacity = false,
+		GetValue = function()
+			local color = options.ImportantColor
+			return color.R, color.G, color.B, color.A
+		end,
+		SetValue = function(r, g, b, a)
+			local color = options.ImportantColor
+			color.R, color.G, color.B, color.A = r, g, b, a
+			config:Apply(moduleName.RaidFrameAuras)
+		end,
+	})
+
+	importantSwatch:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+
+	local defensiveSwatch = mini:ColorSwatch({
+		Parent = parent,
+		LabelText = L["Defensive"],
+		Tooltip = L["Change the colour of the glow on defensive spells."],
+		HasOpacity = false,
+		GetValue = function()
+			local color = options.DefensiveColor
+			return color.R, color.G, color.B, color.A
+		end,
+		SetValue = function(r, g, b, a)
+			local color = options.DefensiveColor
+			color.R, color.G, color.B, color.A = r, g, b, a
+			config:Apply(moduleName.RaidFrameAuras)
+		end,
+	})
+
+	-- One column apart: both labels are a single short word in every locale.
+	defensiveSwatch:SetPoint("TOP", importantSwatch, "TOP", 0, 0)
+	defensiveSwatch:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth, 0)
 end
 
 ---Trims a spell name that would run past its column. The budget is what fits beside the id and
@@ -259,25 +307,7 @@ end
 ---@param spellId number
 ---@return string
 local function SpellLabel(spellId)
-	local name = C_Spell.GetSpellName(spellId) or "?"
-	local length = strlenutf8 and strlenutf8(name) or #name
-
-	if length > MAX_SPELL_NAME_LENGTH then
-		local cut = MAX_SPELL_NAME_LENGTH - 3
-
-		if strlenutf8 and strlenutf8(name) ~= #name then
-			-- Multi-byte locale: step back off any continuation byte so the cut never lands
-			-- mid-character and leaves a broken glyph.
-			local bytes = cut
-			while bytes > 1 and name:byte(bytes + 1) and name:byte(bytes + 1) >= 128
-				and name:byte(bytes + 1) < 192 do
-				bytes = bytes - 1
-			end
-			cut = bytes
-		end
-
-		name = name:sub(1, cut) .. "..."
-	end
+	local name = helpers:TrimName(C_Spell.GetSpellName(spellId) or "?", MAX_SPELL_NAME_LENGTH)
 
 	return ("%s |cff888888(%d)|r"):format(name, spellId)
 end
@@ -382,7 +412,7 @@ local function BuildSpells(parent)
 				overrides.Custom[spellId] = true
 			end
 
-			config:Apply()
+			config:Apply(moduleName.RaidFrameAuras)
 			-- The sections are built from the spell lists, so a new id only appears once they
 			-- are rebuilt; MiniRefresh alone just re-reads the existing controls.
 			Populate()
@@ -496,7 +526,7 @@ local function BuildSpells(parent)
 
 						overrides.Disabled[spellId] = (not value) or nil
 
-						config:Apply()
+						config:Apply(moduleName.RaidFrameAuras)
 					end,
 				})
 
@@ -517,7 +547,7 @@ local function BuildSpells(parent)
 					local remove = helpers:CreateRemoveButton(panel, function()
 						overrides.Custom[spellId] = nil
 						overrides.Disabled[spellId] = nil
-						config:Apply()
+						config:Apply(moduleName.RaidFrameAuras)
 						Populate()
 					end)
 					remove:SetPoint("TOPLEFT", panel, "TOPLEFT", columnX + 250, rowY - 4)
@@ -613,7 +643,7 @@ function M:Build(panel, default, raid)
 	enabledDivider:SetPoint("TOP", lines, "BOTTOM", 0, -verticalSpacing)
 
 	local enabledEverywhere = helpers:BuildEnableRow(panel, enabledDivider,
-		db.Modules.RaidFrameAurasModule.Enabled)
+		db.Modules.RaidFrameAurasModule.Enabled, nil, moduleName.RaidFrameAuras)
 
 	-- Sized so the whole page sits inside the window's scroll viewport: the instance panels'
 	-- controls end well above this, and anything taller leaves a scrollbar into blank space.
@@ -625,19 +655,16 @@ function M:Build(panel, default, raid)
 
 	local tabIsRaid = { default = false, raid = true }
 
-	-- 12.1 only, and not just because the option is unwired on 12.0: filtering by spell id is
-	-- impossible there. The legacy watcher reads auras through the unit APIs, where the spell id
-	-- comes back as a secret value - it cannot be compared or used as a table key, so a tracked
-	-- id can never be matched against it. Only the AuraContainer's includeSpellIDs filter can do
-	-- this, because the engine does the matching itself and never hands us the id.
+	-- Only the AuraContainer's includeSpellIDs filter can select by spell id, because the engine
+	-- does the matching itself. An id read from an aura is a secret value: it cannot be compared
+	-- or used as a table key, so a tracked id could never be matched against it here.
 	local spellTabs = {
 		{ Key = "default", Title = L["World/Arena/Dungeons"] },
 		{ Key = "raid",    Title = L["Raids/Battlegrounds"] },
 	}
 
-	if wowEx:UseAuraContainers() then
-		spellTabs[#spellTabs + 1] = { Key = "spells", Title = L["Spells"] }
-	end
+	spellTabs[#spellTabs + 1] = { Key = "spells", Title = L["Spells"] }
+	spellTabs[#spellTabs + 1] = { Key = "colours", Title = L["Colours"] }
 
 	local tabCtrl = mini:CreateTabs({
 		Parent = tabContainer,
@@ -658,13 +685,13 @@ function M:Build(panel, default, raid)
 	})
 
 	local defaultContent = tabCtrl:GetContent("default")
-	local defaultPanel = BuildInstance(defaultContent, default)
+	local defaultPanel = BuildInstance(defaultContent, default, dbDefaults.Modules.RaidFrameAurasModule.Default)
 	defaultPanel:SetPoint("TOPLEFT",  defaultContent, "TOPLEFT",  0, 0)
 	defaultPanel:SetPoint("TOPRIGHT", defaultContent, "TOPRIGHT", 0, 0)
 	defaultPanel:SetHeight(subPanelHeight)
 
 	local raidContent = tabCtrl:GetContent("raid")
-	local raidPanel = BuildInstance(raidContent, raid)
+	local raidPanel = BuildInstance(raidContent, raid, dbDefaults.Modules.RaidFrameAurasModule.Raid)
 	raidPanel:SetPoint("TOPLEFT",  raidContent, "TOPLEFT",  0, 0)
 	raidPanel:SetPoint("TOPRIGHT", raidContent, "TOPRIGHT", 0, 0)
 	raidPanel:SetHeight(subPanelHeight)
@@ -672,6 +699,11 @@ function M:Build(panel, default, raid)
 	local spellsContent = tabCtrl:GetContent("spells")
 	if spellsContent then
 		BuildSpells(spellsContent)
+	end
+
+	local coloursContent = tabCtrl:GetContent("colours")
+	if coloursContent then
+		BuildColours(coloursContent, db.Modules.RaidFrameAurasModule)
 	end
 
 	panel.OnMiniRefresh = function()

@@ -1,6 +1,5 @@
 ---@type string, Addon
 local _, addon = ...
-local wowEx = addon.Utils.WoWEx
 local trinketsTracker = addon.Core.TrinketsTracker
 local moduleUtil = addon.Utils.ModuleUtil
 local moduleName = addon.Utils.ModuleName
@@ -13,14 +12,12 @@ local M = {}
 addon.Modules.Trinkets.Module = M
 addon.Modules.TrinketsModule = M
 
--- 12.1 only: on older clients the friendly cooldown tracker renders the trinket slot
--- itself; this standalone module replaces that surviving slice on 12.1 (trinket data is
--- C_PvP-based, not aura-based, so it survives the aura lockdown).
-local USE_AURA_CONTAINERS = wowEx:UseAuraContainers()
-
 local eventFrame
 local enabled = false
 local paused = false
+local QueueRefresh = moduleUtil:Coalesced(function()
+	M:Refresh()
+end)
 
 local function OnEvent(_, event)
 	if paused then
@@ -33,9 +30,7 @@ local function OnEvent(_, event)
 		M:Refresh()
 	elseif event == "GROUP_ROSTER_UPDATE" then
 		-- for some reason it doesn't work right away
-		C_Timer.After(0, function()
-			M:Refresh()
-		end)
+		QueueRefresh()
 	end
 end
 
@@ -49,18 +44,8 @@ local function OnTrinketDataChanged(unit)
 	display:Render(unit)
 end
 
----Trinket tracking reads the 12.1 trinket API and has no legacy equivalent.
----@return boolean
-local function IsSupported()
-	return USE_AURA_CONTAINERS
-end
-
 ---@return TrinketsModuleOptions?
 local function GetOptions()
-	if not IsSupported() then
-		return nil
-	end
-
 	return display:GetOptions()
 end
 
@@ -94,10 +79,6 @@ end
 
 ---@param active boolean
 local function SetTestMode(active)
-	if not IsSupported() then
-		return
-	end
-
 	display:SetTestMode(active)
 
 	if active then
@@ -148,10 +129,6 @@ function M:Refresh()
 end
 
 function M:Init()
-	if not IsSupported() then
-		return
-	end
-
 	display:Init()
 	InstallHooks()
 	ApplyInitialState()

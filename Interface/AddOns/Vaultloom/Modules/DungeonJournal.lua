@@ -42,6 +42,25 @@ function Service:GetSettings()
     }
 end
 
+local function storeJournalSnapshot(characterKey, subTabKey, snapshot, reason)
+    local record = getRecord(characterKey)
+    local existing = record and type(record.snapshots) == "table" and record.snapshots.dungeonJournal or nil
+    local journal = {}
+    for key, entry in pairs(type(existing) == "table" and existing or {}) do
+        if key ~= subTabKey then journal[key] = entry end
+    end
+    if type(snapshot) == "table" then journal[subTabKey] = snapshot end
+    if next(journal) == nil then
+        return Addon.Database:ClearCharacterSnapshot(characterKey, "dungeonJournal", reason or "clear")
+    end
+    return Addon.Database:CommitCharacterSnapshot(
+        characterKey,
+        "dungeonJournal",
+        journal,
+        reason or "refresh"
+    )
+end
+
 function Service:GetSnapshot(characterKey, subTabKey)
     subTabKey = Addon.DungeonJournalLogic:IsSubTabKey(subTabKey) and subTabKey or self:GetSettings().subTabKey
     local record = getRecord(characterKey)
@@ -49,7 +68,7 @@ function Service:GetSnapshot(characterKey, subTabKey)
     local snapshot = type(journal) == "table" and journal[subTabKey] or nil
     if type(snapshot) ~= "table" then return nil end
     if not Addon.DungeonJournalLogic:IsSnapshotValid(snapshot) then
-        journal[subTabKey] = nil
+        storeJournalSnapshot(characterKey, subTabKey, nil, "invalid")
         return nil
     end
     return snapshot
@@ -145,9 +164,9 @@ local function collectJournal()
             Addon.WarbandRoster:IsCurrent(identity.key), now()
         )
         if scanned and Addon.WarbandRoster:IsCurrent(identity.key) and record then
-            record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-            record.snapshots.dungeonJournal = type(record.snapshots.dungeonJournal) == "table" and record.snapshots.dungeonJournal or {}
-            record.snapshots.dungeonJournal[settings.subTabKey] = snapshot
+            if not storeJournalSnapshot(identity.key, settings.subTabKey, snapshot, "refresh") then
+                snapshot = existing
+            end
         end
         scanRequested = false
     end

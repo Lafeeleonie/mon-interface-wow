@@ -33,7 +33,7 @@ end
 
 function BL:ObjectiveTracker_Setup()
 	local holder = CreateFrame('Frame', 'ObjectiveFrameHolder', E.UIParent)
-	holder:Point('TOPRIGHT', E.UIParent, -135, -300)
+	holder:Point('TOPRIGHT', -135, -300)
 	holder:Size(130, 22)
 
 	E:CreateMover(holder, 'ObjectiveFrameMover', L["Objective Frame"], nil, nil, nil, nil, nil, 'general,blizzardImprovements')

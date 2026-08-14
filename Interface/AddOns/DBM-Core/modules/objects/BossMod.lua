@@ -50,6 +50,8 @@ local mt = {__index = bossModPrototype}
 ---@field soloChallenge boolean?
 ---@field disableHealthCombat boolean?
 ---@field isCustomMod boolean?
+---@field lastKillTime number? Timestamp of the most recent completed combat.
+---@field lastWipeTime number? Timestamp of the most recent wiped combat.
 ---@field sendMainBossGUID boolean? Used to force enable nameplate timers for main boss
 ---@field paSounds table<number, number[]>?
 ---@field pendingPASoundsByZone table<number, table<integer, table>>?
@@ -1427,7 +1429,7 @@ do
 		end
 	end
 
-	---Called by DBM-Core's SecondaryLoadCheck when entering a zone.
+	---Called by Loading's SecondaryLoadCheck when entering a zone.
 	---Registers only the pending aura sounds stored for the current zone.
 	---@param mapID number
 	function bossModPrototype:RegisterZoneAuraSounds(mapID)

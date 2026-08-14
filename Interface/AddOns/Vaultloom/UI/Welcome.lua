@@ -22,8 +22,9 @@ end
 local function styleEditBox(editBox)
     editBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Addon.Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     editBox:SetBackdropColor(0.025, 0.022, 0.020, 0.98)
     editBox:SetBackdropBorderColor(unpackColor(Theme.colors.goldDim))

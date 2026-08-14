@@ -52,8 +52,50 @@ function Service:GetView(character)
     return Addon.UtilityLogic:BuildView(
         snapshot,
         self:GetCurrentSnapshot(),
-        Addon.Database:GetUI().hiddenUtilityResources
+        Addon.Database:GetUI().hiddenUtilityResources,
+        self:GetSettings()
     )
+end
+
+function Service:GetSettings()
+    local ui = Addon.Database:GetUI()
+    ui.utility = type(ui.utility) == "table" and ui.utility or {}
+    if ui.utility.showUpgradeSection == nil then ui.utility.showUpgradeSection = true end
+    if ui.utility.showPvpSection == nil then ui.utility.showPvpSection = true end
+    if (tonumber(ui.utility.fixedSectionVisibilityVersion) or 0) < 2 then
+        local hidden = type(ui.hiddenUtilityResources) == "table" and ui.hiddenUtilityResources or {}
+        for _, currencyID in ipairs(Addon.Data.MID_UTILITY_UPGRADE_CRESTS or {}) do
+            hidden["currency:" .. tostring(currencyID)] = nil
+        end
+        for _, currencyID in ipairs(Addon.Data.MID_UTILITY_PVP_CURRENCIES or {}) do
+            hidden["currency:" .. tostring(currencyID)] = nil
+        end
+        ui.hiddenUtilityResources = hidden
+        ui.utility.fixedSectionVisibilityVersion = 2
+    end
+    return ui.utility
+end
+
+function Service:SetSectionVisible(sectionKey, visible)
+    local settingKey = sectionKey == "upgrades" and "showUpgradeSection"
+        or sectionKey == "pvp" and "showPvpSection" or nil
+    if not settingKey then return false end
+    local settings = self:GetSettings()
+    local nextValue = visible == true
+    if settings[settingKey] == nextValue then return false end
+    if not nextValue then
+        local ids = sectionKey == "upgrades" and Addon.Data.MID_UTILITY_UPGRADE_CRESTS
+            or Addon.Data.MID_UTILITY_PVP_CURRENCIES
+        local hidden = Addon.Database:GetUI().hiddenUtilityResources
+        for _, currencyID in ipairs(ids or {}) do
+            hidden["currency:" .. tostring(currencyID)] = nil
+        end
+    end
+    settings[settingKey] = nextValue
+    if Addon.UI and type(Addon.UI.RefreshUtility) == "function" then
+        Addon.UI:RefreshUtility()
+    end
+    return true
 end
 
 function Service:IsHidden(entryKey)

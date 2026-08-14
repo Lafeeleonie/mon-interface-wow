@@ -1,8 +1,8 @@
-## Interface: 120001, 120005, 120007
+## Interface: 120100
 ## Title: Majestic Beast Tracker
 ## Notes: Tracks daily Majestic Lure beast cooldowns across all characters
 ## Author: Vichob
-## Version: v2.1.0
+## Version: v2.1.1
 ## SavedVariables: MajesticBeastTrackerDB
 ## X-Curse-Project-ID: 1481252
 ## OptionalDeps: !Mechanic

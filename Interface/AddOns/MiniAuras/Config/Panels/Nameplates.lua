@@ -2,6 +2,7 @@
 local _, addon = ...
 local mini = addon.Framework
 local L = addon.L
+local dbDefaults = addon.Config.Defaults
 local DROPDOWN_WIDTH = 200
 local GROW_OPTIONS = {
 	"LEFT",
@@ -14,6 +15,7 @@ local COLUMNS = 4
 local columnWidth
 local config = addon.Config
 local helpers = addon.Config.PanelHelpers
+local moduleName = addon.Utils.ModuleName
 
 ---@class NameplatesConfig
 local M = {}
@@ -22,7 +24,9 @@ config.Nameplates = M
 
 ---@param parent table Tab content frame
 ---@param options NameplateSpellTypeOptions
-local function BuildSpellTypeSettings(parent, options)
+---@param defaults table The shipped values for this bar, which the sliders clamp back to when
+---the typed input is not a number.
+local function BuildSpellTypeSettings(parent, options, defaults)
 	local container = CreateFrame("Frame", nil, parent)
 
 	container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
@@ -32,7 +36,7 @@ local function BuildSpellTypeSettings(parent, options)
 	local sliderWidth = columnWidth * 2 - horizontalSpacing
 
 	-- Each bar can show CC and/or defensives, so the colour tooltip covers both.
-	local colorTooltip = L["Change the colour of the glow/border. CC spells use dispel type colours (e.g., blue for magic) and Defensive spells are green."]
+	local colorTooltip = L["Change the colour of the glow/border. CC spells use dispel type colours (e.g., blue for magic), defensive and important spells use the category colours."]
 
 	local enabledChk = mini:Checkbox({
 		Parent = container,
@@ -42,7 +46,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.Enabled = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -57,7 +61,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.ShowCC = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -73,7 +77,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.ShowDefensives = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -89,7 +93,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.ShowImportant = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -105,7 +109,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.Icons.Glow = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -120,7 +124,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ReverseCooldown = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -136,7 +140,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ColorByCategory = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -152,7 +156,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.ShowTooltips = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -168,7 +172,7 @@ local function BuildSpellTypeSettings(parent, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ShowMilliseconds = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 
@@ -180,10 +184,11 @@ local function BuildSpellTypeSettings(parent, options)
 		LabelText = L["Icon Size"],
 		Min = 10,
 		Max = 60,
-		Default = 32,
+		Default = defaults.Icons.Size,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "Size",
+		SettingsKey = moduleName.Nameplates,
 	})
 
 	-- Each bar can hold up to 8 icons.
@@ -192,10 +197,11 @@ local function BuildSpellTypeSettings(parent, options)
 		LabelText = L["Max Icons"],
 		Min = 1,
 		Max = 8,
-		Default = 6,
+		Default = defaults.Icons.MaxIcons,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "MaxIcons",
+		SettingsKey = moduleName.Nameplates,
 	})
 
 	maxIcons.Slider:SetPoint("LEFT", iconSize.Slider, "RIGHT", horizontalSpacing, 0)
@@ -206,6 +212,7 @@ local function BuildSpellTypeSettings(parent, options)
 		Target = options,
 		Key = "Grow",
 		Width = DROPDOWN_WIDTH,
+		SettingsKey = moduleName.Nameplates,
 	})
 
 	growDdl.Label:SetPoint("TOPLEFT", glowChk, "BOTTOMLEFT", 4, -verticalSpacing)
@@ -217,11 +224,12 @@ local function BuildSpellTypeSettings(parent, options)
 		LabelText = L["Icon Padding"],
 		Min = 0,
 		Max = 20,
-		Default = 2,
-		Fallback = 2,
+		Default = defaults.Icons.Spacing,
+		Fallback = defaults.Icons.Spacing,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "Spacing",
+		SettingsKey = moduleName.Nameplates,
 	})
 
 	iconSpacing.Slider:SetPoint("TOPLEFT", iconSize.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 2)
@@ -230,6 +238,7 @@ local function BuildSpellTypeSettings(parent, options)
 		Parent = container,
 		Offset = options.Offset,
 		Width = sliderWidth,
+		SettingsKey = moduleName.Nameplates,
 	})
 
 	offsetX.Slider:SetPoint("TOPLEFT", iconSpacing.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 2)
@@ -252,7 +261,7 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.Enemy.IgnorePets = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 	enemyIgnorePetsChk:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
@@ -266,7 +275,7 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.Friendly.IgnorePets = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 	friendlyIgnorePetsChk:SetPoint("TOP", enemyIgnorePetsChk, "TOP", 0, 0)
@@ -281,7 +290,7 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.ScaleWithNameplate = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 	scaleWithNameplateChk:SetPoint("TOPLEFT", enemyIgnorePetsChk, "BOTTOMLEFT", 0, -verticalSpacing)
@@ -295,11 +304,58 @@ local function BuildSettingsTab(parent, options)
 		end,
 		SetValue = function(value)
 			options.AnchorToHealthBar = value
-			config:Apply()
+			config:Apply(moduleName.Nameplates)
 		end,
 	})
 	anchorToHealthBarChk:SetPoint("TOP", scaleWithNameplateChk, "TOP", 0, 0)
 	anchorToHealthBarChk:SetPoint("LEFT", parent, "LEFT", checkColumnWidth * 2, 0)
+
+	-- The checkbox pairs need two grid columns apiece for their labels, which leaves the last
+	-- column free; the swatches go there so the rows run the full width of the tab.
+	---@param swatch table
+	---@param row table The checkbox whose row the swatch sits on, centred against it.
+	local function PlaceSwatch(swatch, row)
+		swatch:SetPoint("LEFT", parent, "LEFT", checkColumnWidth * 4, 0)
+		swatch:SetPoint("TOP", row, "TOP", 0, -math.floor((row:GetHeight() - swatch:GetHeight()) / 2))
+	end
+
+	-- Module wide rather than per bar: a category should read the same colour wherever it lands,
+	-- and every bar's own tab is already a full grid of checkboxes.
+	local importantSwatch = mini:ColorSwatch({
+		Parent = parent,
+		LabelText = L["Important"],
+		Tooltip = L["Change the colour of the glow on important spells."],
+		HasOpacity = false,
+		GetValue = function()
+			local color = options.ImportantColor
+			return color.R, color.G, color.B, color.A
+		end,
+		SetValue = function(r, g, b, a)
+			local color = options.ImportantColor
+			color.R, color.G, color.B, color.A = r, g, b, a
+			config:Apply(moduleName.Nameplates)
+		end,
+	})
+
+	PlaceSwatch(importantSwatch, enemyIgnorePetsChk)
+
+	local defensiveSwatch = mini:ColorSwatch({
+		Parent = parent,
+		LabelText = L["Defensive"],
+		Tooltip = L["Change the colour of the glow on defensive spells."],
+		HasOpacity = false,
+		GetValue = function()
+			local color = options.DefensiveColor
+			return color.R, color.G, color.B, color.A
+		end,
+		SetValue = function(r, g, b, a)
+			local color = options.DefensiveColor
+			color.R, color.G, color.B, color.A = r, g, b, a
+			config:Apply(moduleName.Nameplates)
+		end,
+	})
+
+	PlaceSwatch(defensiveSwatch, scaleWithNameplateChk)
 end
 
 ---@param parent table
@@ -326,7 +382,7 @@ function M:Build(parent, options)
 	enabledDivider:SetPoint("TOP", lines, "BOTTOM", 0, -verticalSpacing)
 
 	local enabledEverywhere = helpers:BuildEnableRow(parent, enabledDivider,
-		db.Modules.NameplatesModule.Enabled)
+		db.Modules.NameplatesModule.Enabled, nil, moduleName.Nameplates)
 
 	local subPanelHeight = 285
 
@@ -350,9 +406,11 @@ function M:Build(parent, options)
 		},
 	})
 
+	local plateDefaults = dbDefaults.Modules.NameplatesModule
+
 	BuildSettingsTab(tabCtrl:GetContent("settings"), options)
-	BuildSpellTypeSettings(tabCtrl:GetContent("enemyBar1"),     options.Enemy.Bar1)
-	BuildSpellTypeSettings(tabCtrl:GetContent("enemyBar2"),     options.Enemy.Bar2)
-	BuildSpellTypeSettings(tabCtrl:GetContent("friendlyBar1"),  options.Friendly.Bar1)
-	BuildSpellTypeSettings(tabCtrl:GetContent("friendlyBar2"),  options.Friendly.Bar2)
+	BuildSpellTypeSettings(tabCtrl:GetContent("enemyBar1"),     options.Enemy.Bar1, plateDefaults.Enemy.Bar1)
+	BuildSpellTypeSettings(tabCtrl:GetContent("enemyBar2"),     options.Enemy.Bar2, plateDefaults.Enemy.Bar2)
+	BuildSpellTypeSettings(tabCtrl:GetContent("friendlyBar1"),  options.Friendly.Bar1, plateDefaults.Friendly.Bar1)
+	BuildSpellTypeSettings(tabCtrl:GetContent("friendlyBar2"),  options.Friendly.Bar2, plateDefaults.Friendly.Bar2)
 end

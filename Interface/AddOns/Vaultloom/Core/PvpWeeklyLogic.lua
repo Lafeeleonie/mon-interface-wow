@@ -145,7 +145,9 @@ function Logic:BuildSnapshot(existing)
             completed = completed + 1
         end
     end
-    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
+    local secondsUntilReset, resetAt = Addon.WoWApi:GetWeeklyResetInfo(
+        type(existing) == "table" and existing.resetAt or nil
+    )
     return {
         generatedAt = type(time) == "function" and time() or 0,
         resetAt = resetAt,

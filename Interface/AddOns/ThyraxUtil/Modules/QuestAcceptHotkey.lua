@@ -317,7 +317,10 @@ function module:UpdateBinding(force)
         end
     end
 
-    self:UpdateVisualHint(candidate)
+    -- Only show the hint when the key is actually bound right now. With a
+    -- candidate but no binding (key set to NONE, or an EditBox has focus)
+    -- the hint would advertise a hotkey that does nothing.
+    self:UpdateVisualHint(shouldBind and candidate or nil)
 end
 
 
@@ -354,7 +357,6 @@ end
 
 function module:OnDisable()
     self.isActive = false
-    if self.pollFrame then self.pollFrame:SetScript("OnUpdate", nil) end
     if self.bindingOwner then ClearOverrideBindings(self.bindingOwner) end
     if self.hintFrame then self.hintFrame:Hide() end
     self.bindingActive = false

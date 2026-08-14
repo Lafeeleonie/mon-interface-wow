@@ -63,6 +63,9 @@ local function findHouse(houses, neighborhoodGUID)
 end
 
 local function chooseNeighborhood(houses, initiative, activeNeighborhoodGUID, rememberedNeighborhoodGUID)
+    if rememberedNeighborhoodGUID and findHouse(houses, rememberedNeighborhoodGUID) then
+        return rememberedNeighborhoodGUID
+    end
     if activeNeighborhoodGUID then return activeNeighborhoodGUID end
     if type(initiative) == "table" and initiative.isLoaded == true and initiative.neighborhoodGUID then
         return initiative.neighborhoodGUID
@@ -91,6 +94,77 @@ local function couponReward(task)
         end
     end
     return 0
+end
+
+local function firstPositiveNumber(...)
+    for index = 1, select("#", ...) do
+        local candidate = select(index, ...)
+        local value = tonumber(candidate)
+        if value and value > 0 then return value end
+    end
+end
+
+local function addUniqueText(target, seen, value)
+    if type(value) ~= "string" or value == "" or seen[value] then return end
+    seen[value] = true
+    target[#target + 1] = value
+end
+
+local function rewardName(reward)
+    if type(reward) ~= "table" then return nil end
+    for _, key in ipairs({ "rewardName", "name", "title", "displayName", "description", "rewardText" }) do
+        if type(reward[key]) == "string" and reward[key] ~= "" then return reward[key] end
+    end
+
+    local decorID = tonumber(reward.decorID or reward.decorRecordID or reward.recordID)
+    if decorID then
+        local ok, name = safeCall(C_HousingDecor, "GetDecorName", decorID)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+
+    local itemID = tonumber(reward.itemID or reward.rewardItemID)
+    if itemID then
+        local ok, name = safeCall(C_Item, "GetItemNameByID", itemID)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+
+    local currencyID = tonumber(reward.currencyID or reward.rewardCurrencyID)
+    if currencyID then
+        local ok, info = safeCall(C_CurrencyInfo, "GetCurrencyInfo", currencyID)
+        if ok and type(info) == "table" and type(info.name) == "string" then
+            local amount = firstPositiveNumber(
+                reward.amount,
+                reward.quantity,
+                reward.rewardAmount,
+                reward.totalRewardAmount
+            )
+            return amount and string.format("%s %s", formatValue(amount), info.name) or info.name
+        end
+    end
+end
+
+local function milestoneRewardLines(milestone)
+    local lines, seen = {}, {}
+    if type(milestone) ~= "table" then return lines end
+    for _, key in ipairs({ "rewardName", "rewardText", "rewardDescription" }) do
+        addUniqueText(lines, seen, milestone[key])
+    end
+    for _, key in ipairs({ "reward", "rewardInfo" }) do
+        addUniqueText(lines, seen, rewardName(milestone[key]))
+    end
+    for _, reward in ipairs(sequence(milestone.rewards or milestone.rewardList)) do
+        addUniqueText(lines, seen, rewardName(reward))
+    end
+    addUniqueText(lines, seen, rewardName({
+        decorID = milestone.rewardDecorID or milestone.decorID,
+        itemID = milestone.rewardItemID or milestone.itemID,
+        currencyID = milestone.rewardCurrencyID or milestone.currencyID,
+        amount = milestone.rewardAmount or milestone.amount,
+    }))
+
+    local coupons = couponReward(milestone)
+    if coupons > 0 then addUniqueText(lines, seen, string.format(L.HOUSING_TASK_COUPONS, coupons)) end
+    return lines
 end
 
 local function trackedLookup()
@@ -132,7 +206,11 @@ local function collectTasks(rawTasks)
                 local text = string.format(L.HOUSING_TASK_COUPONS, coupons)
                 meta[#meta + 1], tooltip[#tooltip + 1] = text, text
             end
-            if repeatable then meta[#meta + 1] = L.HOUSING_TASK_REPEATABLE end
+            if repeatable then
+                meta[#meta + 1] = L.HOUSING_TASK_REPEATABLE
+                tooltip[#tooltip + 1] = L.HOUSING_TASK_DIMINISHING_HINT
+                tooltip[#tooltip + 1] = string.format(L.HOUSING_TASK_HOUSE_XP_CAP, Data.houseXPPerEndeavor)
+            end
             if isTracked then meta[#meta + 1] = L.HOUSING_TASK_TRACKED end
             if repeatable and numeric(task.timesCompleted) > 0 then
                 tooltip[#tooltip + 1] = string.format(L.HOUSING_TASK_TIMES, numeric(task.timesCompleted))
@@ -183,33 +261,65 @@ local function collectTasks(rawTasks)
 end
 
 local function collectMilestones(initiative, progress)
-    local entries, thresholds, maximum = {}, {}, 0
+    local entries, thresholds, source, maximum = {}, {}, {}, 0
     for _, milestone in ipairs(sequence(initiative and initiative.milestones)) do
         local threshold = numeric(milestone and milestone.requiredContributionAmount)
         if threshold > 0 then
             thresholds[#thresholds + 1] = threshold
+            source[#source + 1] = { threshold = threshold, milestone = milestone }
             maximum = math.max(maximum, threshold)
         end
     end
     table.sort(thresholds)
-    for _, threshold in ipairs(thresholds) do
+    table.sort(source, function(left, right) return left.threshold < right.threshold end)
+    for _, record in ipairs(source) do
+        local threshold = record.threshold
         local remaining = math.max(0, threshold - progress)
+        local rewards = milestoneRewardLines(record.milestone)
+        local tooltip = { string.format("%d / %d", progress, threshold) }
+        if #rewards > 0 then
+            tooltip[#tooltip + 1] = L.HOUSING_MILESTONE_REWARDS
+            for _, reward in ipairs(rewards) do tooltip[#tooltip + 1] = reward end
+        else
+            tooltip[#tooltip + 1] = L.HOUSING_MILESTONE_REWARD_HINT
+        end
         entries[#entries + 1] = {
             label = string.format(L.HOUSING_MILESTONE_LABEL, threshold),
-            text = remaining == 0 and L.HOUSING_MILESTONE_REACHED or string.format(L.HOUSING_MILESTONE_LEFT, remaining),
+            text = remaining == 0 and L.HOUSING_MILESTONE_REWARD_READY
+                or string.format(L.HOUSING_MILESTONE_LEFT, remaining),
             status = remaining == 0 and "complete"
                 or remaining <= math.max(5, math.floor(threshold * 0.15)) and "turnin" or "open",
             hideStatusBadge = true,
             tooltipTitle = string.format(L.HOUSING_MILESTONE_LABEL, threshold),
-            tooltipLines = { string.format("%d / %d", progress, threshold) },
+            tooltipLines = tooltip,
+            rewards = rewards,
         }
     end
     return entries, thresholds, maximum
 end
 
-local function collectActivity(activityInfo)
+local function taskContributionLookup(rawTasks)
+    local byID, byName = {}, {}
+    for _, task in ipairs(sequence(rawTasks)) do
+        if type(task) == "table" then
+            local amount = firstPositiveNumber(
+                task.progressContributionAmount,
+                task.contributionAmount,
+                task.taskContributionAmount,
+                task.amount
+            )
+            local taskID = tonumber(task.ID or task.taskID or task.initiativeTaskID)
+            if amount and taskID then byID[taskID] = amount end
+            if amount and type(task.taskName) == "string" then byName[task.taskName] = amount end
+        end
+    end
+    return byID, byName
+end
+
+local function collectActivity(activityInfo, rawTasks)
     local entries = {}
     local activities = sequence(activityInfo and activityInfo.taskActivity)
+    local contributionByID, contributionByName = taskContributionLookup(rawTasks)
     table.sort(activities, function(left, right)
         return numeric(left and left.completionTime) > numeric(right and right.completionTime)
     end)
@@ -219,14 +329,32 @@ local function collectActivity(activityInfo)
         if type(activity) == "table" then
             local taskName = type(activity.taskName) == "string" and activity.taskName or L.UNKNOWN
             local sourceName = type(activity.playerName) == "string" and activity.playerName or L.UNKNOWN
-            local amount = formatValue(activity.amount)
-            local tooltip = { sourceName, string.format(L.HOUSING_ACTIVITY_AMOUNT, amount) }
+            local taskInfo = type(activity.taskInfo) == "table" and activity.taskInfo
+                or type(activity.task) == "table" and activity.task or nil
+            local taskID = tonumber(activity.taskID or activity.initiativeTaskID or activity.ID
+                or taskInfo and (taskInfo.taskID or taskInfo.initiativeTaskID or taskInfo.ID))
+            local amount = firstPositiveNumber(
+                activity.progressContributionAmount,
+                activity.contributionAmount,
+                activity.taskContributionAmount,
+                activity.contribution,
+                activity.amount,
+                activity.quantity,
+                activity.value,
+                taskInfo and taskInfo.progressContributionAmount,
+                taskInfo and taskInfo.contributionAmount,
+                taskID and contributionByID[taskID],
+                contributionByName[taskName]
+            )
+            local amountText = amount and string.format(L.HOUSING_ACTIVITY_AMOUNT, formatValue(amount))
+                or L.HOUSING_ACTIVITY_AMOUNT_UNKNOWN
+            local tooltip = { sourceName, amountText }
             if numeric(activity.completionTime) > 0 and type(date) == "function" then
                 tooltip[#tooltip + 1] = date("%d.%m.%Y %H:%M", activity.completionTime)
             end
             entries[#entries + 1] = {
                 label = string.format(L.HOUSING_ACTIVITY_BY, sourceName, taskName),
-                text = string.format(L.HOUSING_ACTIVITY_AMOUNT, amount),
+                text = amountText,
                 status = sourceName == playerName and "complete" or "open",
                 hideStatusBadge = true,
                 tooltipTitle = taskName,
@@ -244,14 +372,12 @@ function Logic:IsAvailable()
         and type(C_CurrencyInfo.GetCurrencyInfo) == "function"
 end
 
-function Logic:Scan(runtime, weekly)
+function Logic:Scan(runtime, weekly, requestedNeighborhoodGUID)
     runtime = type(runtime) == "table" and runtime or {}
     if not self:IsAvailable() then
         return nil, { unavailable = true }
     end
 
-    local okHouses, liveHouses = safeCall(C_Housing, "GetPlayerOwnedHouses")
-    if okHouses and type(liveHouses) == "table" then runtime.houseList = liveHouses end
     local houses = type(runtime.houseList) == "table" and runtime.houseList or {}
     local _, rawInitiative = safeCall(C_NeighborhoodInitiative, "GetNeighborhoodInitiativeInfo")
     local _, activeNeighborhoodGUID = safeCall(C_NeighborhoodInitiative, "GetActiveNeighborhood")
@@ -259,10 +385,10 @@ function Logic:Scan(runtime, weekly)
         houses,
         rawInitiative,
         activeNeighborhoodGUID,
-        runtime.viewingNeighborhoodGUID
+        requestedNeighborhoodGUID or runtime.selectedNeighborhoodGUID or runtime.viewingNeighborhoodGUID
     )
-    local selectedHouse = findHouse(houses, activeNeighborhoodGUID)
-        or findHouse(houses, targetNeighborhoodGUID)
+    local selectedHouse = findHouse(houses, targetNeighborhoodGUID)
+        or findHouse(houses, activeNeighborhoodGUID)
         or houses[1]
     if not targetNeighborhoodGUID and selectedHouse then targetNeighborhoodGUID = selectedHouse.neighborhoodGUID end
 
@@ -291,12 +417,15 @@ function Logic:Scan(runtime, weekly)
         or runtime.lastHouseLevelFavor
 
     local _, rawActivity = safeCall(C_NeighborhoodInitiative, "GetInitiativeActivityLogInfo")
-    local activity = type(rawActivity) == "table" and rawActivity.isLoaded == true and rawActivity or nil
+    local activity = type(rawActivity) == "table"
+        and rawActivity.isLoaded == true
+        and (not targetNeighborhoodGUID or rawActivity.neighborhoodGUID == targetNeighborhoodGUID)
+        and rawActivity or nil
     local needs = {
         houseList = #houses == 0,
         initiative = targetNeighborhoodGUID ~= nil
             and (staleInitiative or not (initiative and initiative.isLoaded == true) or needsTasks),
-        activity = (not activeNeighborhoodGUID or targetNeighborhoodGUID == activeNeighborhoodGUID) and activity == nil,
+        activity = targetNeighborhoodGUID ~= nil and activity == nil,
         favor = houseGUID ~= nil and favor == nil,
         houseGUID = houseGUID,
         neighborhoodGUID = targetNeighborhoodGUID,
@@ -357,30 +486,37 @@ function Logic:Scan(runtime, weekly)
     return {
         available = true,
         updatedAt = type(time) == "function" and time() or 0,
+        neighborhoodGUID = targetNeighborhoodGUID,
+        activeNeighborhoodGUID = activeNeighborhoodGUID,
+        initiativeID = numeric(initiative and initiative.initiativeID),
+        cycleID = numeric(initiative and (initiative.cycleID or initiative.currentCycleID or initiative.initiativeID)),
+        currentProgress = currentProgress,
+        maxProgress = maxProgress,
+        isComplete = maxProgress > 0 and currentProgress >= maxProgress,
+        isActive = targetNeighborhoodGUID ~= nil and targetNeighborhoodGUID == activeNeighborhoodGUID,
         title = initiative and initiative.title or L.HOUSING_TITLE,
         subtitle = "",
         statCards = {
             {
                 label = L.HOUSING_SUMMARY_HOME_LEVEL,
                 value = currentLevel > 0 and string.format("%d/%d", currentLevel, maxLevel > 0 and maxLevel or currentLevel) or "--",
-                meta = nextLevelFavor > 0 and string.format("%d / %d", currentFavor, nextLevelFavor)
-                    or currentLevel > 0 and L.HOUSING_HOME_MAX or "",
+                meta = currentLevel > 0 and L.HOUSING_SUMMARY_HOME_LEVEL_META or "",
+            },
+            {
+                label = L.HOUSING_HOME_FAVOR,
+                value = nextLevelFavor > 0 and string.format("%d / %d", currentFavor, nextLevelFavor)
+                    or currentLevel > 0 and L.HOUSING_HOME_MAX or "--",
+                meta = nextLevelFavor > 0 and L.HOUSING_SUMMARY_HOME_FAVOR_META or "",
             },
             {
                 label = couponName,
-                value = tostring(coupons),
-                meta = couponCap > 0 and string.format("%d / %d", coupons, couponCap) or couponName,
+                value = couponCap > 0 and string.format("%d / %d", coupons, couponCap) or tostring(coupons),
+                meta = L.HOUSING_SUMMARY_COUPON_META,
             },
             {
                 label = L.HOUSING_SUMMARY_CONTRIBUTION,
                 value = tostring(math.floor(playerContribution + 0.5)),
-                meta = string.format("%d / %d", currentProgress, maxProgress),
-            },
-            {
-                label = L.HOUSING_SUMMARY_TASKS,
-                value = string.format("%d/%d", completedTasks, taskCount),
-                meta = #trackedTasks > 0 and string.format("%d %s", #trackedTasks, L.HOUSING_TASK_TRACKED)
-                    or L.HOUSING_TRACKED_EMPTY,
+                meta = string.format(L.HOUSING_SUMMARY_TASK_META, completedTasks, taskCount),
             },
         },
         progress = {
@@ -392,7 +528,22 @@ function Logic:Scan(runtime, weekly)
             note = table.concat(notes, "  |  "),
         },
         loadingTasks = needsTasks,
+        rewardSummary = {
+            complete = maxProgress > 0 and currentProgress >= maxProgress,
+            title = L.HOUSING_REWARD_SUMMARY_TITLE,
+            status = maxProgress > 0 and currentProgress >= maxProgress
+                and L.HOUSING_REWARD_SUMMARY_UNLOCKED or L.HOUSING_REWARD_SUMMARY_PROGRESS,
+            text = maxProgress > 0 and currentProgress >= maxProgress
+                and L.HOUSING_REWARD_SUMMARY_COMPLETE
+                or nextMilestone and string.format(L.HOUSING_REWARD_SUMMARY_NEXT, nextMilestone)
+                or L.HOUSING_REWARD_SUMMARY_PENDING,
+        },
         house = {
+            neighborhoodGUID = selectedHouse and selectedHouse.neighborhoodGUID,
+            houseGUID = selectedHouse and selectedHouse.houseGUID,
+            neighborhoodName = selectedHouse and selectedHouse.neighborhoodName,
+            houseName = selectedHouse and selectedHouse.houseName,
+            isActive = activeHouse == true,
             title = houseTitle,
             subtitle = houseSubtitle,
             meta = string.format(
@@ -413,8 +564,144 @@ function Logic:Scan(runtime, weekly)
         tasks = tasks,
         trackedTasks = trackedTasks,
         milestones = milestones,
-        activity = collectActivity(activity),
+        activity = collectActivity(activity, rawTasks),
     }, needs
+end
+
+local function shallowCopy(source)
+    local result = {}
+    for key, value in pairs(type(source) == "table" and source or {}) do
+        result[key] = value
+    end
+    return result
+end
+
+local function progressNumbers(view)
+    local progress = type(view) == "table" and view.progress or nil
+    local maximum = numeric(view and view.maxProgress)
+    if maximum <= 0 then maximum = numeric(progress and progress.maxThreshold) end
+    local current = numeric(view and view.currentProgress)
+    if current <= 0 and type(progress and progress.value) == "string" then
+        current = numeric(progress.value:match("^(%d+)"))
+    end
+    return current, maximum
+end
+
+function Logic:IsViewComplete(view)
+    if type(view) ~= "table" or view.available ~= true then return false end
+    if view.isComplete == true then return true end
+    local current, maximum = progressNumbers(view)
+    return maximum > 0 and current >= maximum
+end
+
+local function neighborhoodCard(house, view, activeNeighborhoodGUID)
+    local neighborhoodGUID = house and house.neighborhoodGUID or view and view.neighborhoodGUID
+    local current, maximum = progressNumbers(view)
+    local progress = type(view) == "table" and view.progress or nil
+    local home = type(view) == "table" and view.house or nil
+    local neighborhoodName = house and house.neighborhoodName or home and home.neighborhoodName
+    local houseName = house and house.houseName or home and home.houseName or home and home.title
+    local title = type(neighborhoodName) == "string" and neighborhoodName ~= "" and neighborhoodName
+        or type(houseName) == "string" and houseName ~= "" and houseName
+        or L.HOUSING_HOME_NONE
+    return {
+        neighborhoodGUID = neighborhoodGUID,
+        houseGUID = house and house.houseGUID or home and home.houseGUID,
+        title = title,
+        houseName = houseName,
+        endeavorTitle = view and view.title or L.HOUSING_LOADING,
+        levelValue = home and home.levelValue or "--",
+        favorValue = home and home.favorValue or "--",
+        currentProgress = current,
+        maxProgress = maximum,
+        progressValue = maximum > 0 and string.format("%d / %d", current, maximum) or "--",
+        progressRatio = maximum > 0 and clamp(current / maximum, 0, 1) or 0,
+        complete = false,
+        active = neighborhoodGUID ~= nil and neighborhoodGUID == activeNeighborhoodGUID,
+        available = type(view) == "table" and view.available == true,
+    }
+end
+
+function Logic:BuildPortfolio(viewsByNeighborhood, houses, activeNeighborhoodGUID, selectedNeighborhoodGUID, weekly)
+    viewsByNeighborhood = type(viewsByNeighborhood) == "table" and viewsByNeighborhood or {}
+    houses = type(houses) == "table" and houses or {}
+
+    if not selectedNeighborhoodGUID or not findHouse(houses, selectedNeighborhoodGUID) then
+        selectedNeighborhoodGUID = activeNeighborhoodGUID
+            or houses[1] and houses[1].neighborhoodGUID
+    end
+
+    local cards, order = {}, {}
+    for _, house in ipairs(houses) do
+        if house.neighborhoodGUID then
+            local view = viewsByNeighborhood[house.neighborhoodGUID]
+            local card = neighborhoodCard(house, view, activeNeighborhoodGUID)
+            card.complete = self:IsViewComplete(view)
+            cards[#cards + 1] = card
+            order[#order + 1] = house.neighborhoodGUID
+        end
+    end
+
+    local selectedView = selectedNeighborhoodGUID and viewsByNeighborhood[selectedNeighborhoodGUID]
+        or activeNeighborhoodGUID and viewsByNeighborhood[activeNeighborhoodGUID]
+        or order[1] and viewsByNeighborhood[order[1]]
+    local portfolio = shallowCopy(selectedView)
+    if type(selectedView) ~= "table" then
+        portfolio = self:BuildView(nil)
+    end
+    portfolio.neighborhoods = cards
+    portfolio.neighborhoodOrder = order
+    portfolio.houses = houses
+    portfolio.viewsByNeighborhood = viewsByNeighborhood
+    portfolio.activeNeighborhoodGUID = activeNeighborhoodGUID
+    portfolio.selectedNeighborhoodGUID = selectedNeighborhoodGUID
+    portfolio.neighborhoodGUID = selectedNeighborhoodGUID or portfolio.neighborhoodGUID
+    portfolio.isActive = selectedNeighborhoodGUID ~= nil
+        and selectedNeighborhoodGUID == activeNeighborhoodGUID
+    portfolio.isComplete = self:IsViewComplete(selectedView)
+    portfolio.weekly = weekly or portfolio.weekly
+
+    local activeView = activeNeighborhoodGUID and viewsByNeighborhood[activeNeighborhoodGUID]
+    if self:IsViewComplete(activeView) then
+        local candidate
+        for _, card in ipairs(cards) do
+            if card.neighborhoodGUID ~= activeNeighborhoodGUID
+                and card.available
+                and not card.complete
+                and (not candidate or card.progressRatio < candidate.progressRatio)
+            then
+                candidate = card
+            end
+        end
+        if candidate then
+            portfolio.switchSuggestion = {
+                sourceNeighborhoodGUID = activeNeighborhoodGUID,
+                targetNeighborhoodGUID = candidate.neighborhoodGUID,
+                sourceTitle = activeView and activeView.house and (
+                    activeView.house.neighborhoodName or activeView.house.title
+                ) or L.HOUSING_HOME_ACTIVE,
+                targetTitle = candidate.title,
+                targetProgressValue = candidate.progressValue,
+                cycleID = numeric(activeView and activeView.cycleID),
+            }
+        end
+    end
+    return portfolio
+end
+
+function Logic:SelectPortfolioView(portfolio, selectedNeighborhoodGUID)
+    if type(portfolio) ~= "table" then return self:BuildView(nil) end
+    local views = type(portfolio.viewsByNeighborhood) == "table" and portfolio.viewsByNeighborhood or nil
+    if not views or not selectedNeighborhoodGUID or type(views[selectedNeighborhoodGUID]) ~= "table" then
+        return portfolio
+    end
+    return self:BuildPortfolio(
+        views,
+        portfolio.houses or {},
+        portfolio.activeNeighborhoodGUID,
+        selectedNeighborhoodGUID,
+        portfolio.weekly
+    )
 end
 
 function Logic:BuildView(snapshot)

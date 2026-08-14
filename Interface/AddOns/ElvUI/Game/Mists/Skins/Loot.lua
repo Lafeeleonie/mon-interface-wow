@@ -13,14 +13,13 @@ local UnitIsFriend = UnitIsFriend
 local UnitName = UnitName
 
 local GetItemQualityByID = C_Item.GetItemQualityByID
-
 local C_LootHistory_GetNumItems = C_LootHistory.GetNumItems
 local C_LootHistory_GetItem = C_LootHistory.GetItem
 local LOOT, ITEMS = LOOT, ITEMS
 
 local function UpdateLoots()
 	local numItems = C_LootHistory_GetNumItems()
-	for i=1, numItems do
+	for i = 1, numItems do
 		local frame = _G.LootHistoryFrame.itemFrames[i]
 		if frame and not frame.IsSkinned then
 			local Icon = frame.Icon:GetTexture()

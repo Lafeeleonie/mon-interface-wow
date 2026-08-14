@@ -7,7 +7,7 @@ local DIFFICULTY_DELVES = 208
 --- @class MythicPlusPull: AceAddon, AceConsole-3.0, NumyAceEvent-3.0
 local MPP = LibStub('AceAddon-3.0'):NewAddon(name, 'AceConsole-3.0', 'NumyAceEvent-3.0');
 
-local L = LibStub('AceLocale-3.0'):GetLocale(name)
+local L = ns.L
 local LibGetFrame = LibStub('LibGetFrame-1.0');
 
 --[==[@debug@
@@ -110,8 +110,8 @@ function MPP:OnInitialize()
 
     self.loaded = true
 
-    if NumyProfiler then
-        NumyProfiler:WrapModules('MythicPlusPull', 'Core', self);
+    if NumyFunctionProfiler then
+        NumyFunctionProfiler:WrapModules('MythicPlusPull', 'Core', self);
     end
 end
 

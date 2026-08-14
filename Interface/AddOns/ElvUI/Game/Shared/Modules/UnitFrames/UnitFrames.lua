@@ -17,7 +17,7 @@ local CreateFrame = CreateFrame
 local GameTooltip = GameTooltip
 local GetInstanceInfo = GetInstanceInfo
 local GetInventoryItemLink = GetInventoryItemLink
-local GetInventorySlotInfo = GetInventorySlotInfo
+local GetInventorySlotInfo = (C_PaperDollInfo and C_PaperDollInfo.GetInventorySlotInfo) or GetInventorySlotInfo
 local IsInInstance = IsInInstance
 local PlaySound = PlaySound
 local RegisterStateDriver = RegisterStateDriver
@@ -28,9 +28,6 @@ local UnitIsEnemy = UnitIsEnemy
 local UnitIsFriend = UnitIsFriend
 local UnregisterStateDriver = UnregisterStateDriver
 
-local CastingBarFrame_OnLoad = CastingBarFrame_OnLoad
-local CastingBarFrame_SetUnit = CastingBarFrame_SetUnit
-local PetCastingBarFrame_OnLoad = PetCastingBarFrame_OnLoad
 local CompactRaidFrameManager_SetSetting = CompactRaidFrameManager_SetSetting
 
 local IsAddOnLoaded = C_AddOns.IsAddOnLoaded
@@ -345,7 +342,7 @@ end
 
 function UF:CreateRaisedElement(frame)
 	local RaisedElement = CreateFrame('Frame', '$parent_RaisedElement', frame)
-	local RaisedLevel = frame:GetFrameLevel() + 100
+	local RaisedLevel = 100 -- why is this not always on the set level?
 
 	RaisedElement:SetAllPoints()
 	RaisedElement:SetFrameLevel(RaisedLevel)
@@ -355,15 +352,16 @@ function UF:CreateRaisedElement(frame)
 	RaisedElement.__owner = frame
 
 	-- layer levels (level +1 is icons)
-	RaisedElement.AuraLevel = RaisedLevel
-	RaisedElement.PrivateAurasLevel = RaisedLevel + 5
-	RaisedElement.PVPSpecLevel = RaisedLevel + 10
-	RaisedElement.AuraBarLevel = RaisedLevel + 15
-	RaisedElement.RaidDebuffLevel = RaisedLevel + 20
-	RaisedElement.AuraWatchLevel = RaisedLevel + 25
-	RaisedElement.RestingIconLevel = RaisedLevel + 30
-	RaisedElement.RaidRoleLevel = RaisedLevel + 35
-	RaisedElement.CastBarLevel = RaisedLevel + 40
+	RaisedElement.AuraHighlightLevel = RaisedLevel - 10
+	RaisedElement.AuraLevel = RaisedLevel + 10
+	RaisedElement.PrivateAurasLevel = RaisedLevel + 15
+	RaisedElement.PVPSpecLevel = RaisedLevel + 20
+	RaisedElement.AuraBarLevel = RaisedLevel + 25
+	RaisedElement.RaidDebuffLevel = RaisedLevel + 30
+	RaisedElement.AuraWatchLevel = RaisedLevel + 35
+	RaisedElement.RestingIconLevel = RaisedLevel + 40
+	RaisedElement.RaidRoleLevel = RaisedLevel + 45
+	RaisedElement.CastBarLevel = RaisedLevel + 50
 
 	return RaisedElement
 end
@@ -620,10 +618,17 @@ function UF:UpdateColors()
 	ElvUF.colors.DebuffHighlight.Bleed = E:SetColorTable(ElvUF.colors.DebuffHighlight.Bleed, db.debuffHighlight.Bleed)
 end
 
-function UF:Update_StatusBars(statusbars)
-	for statusBar in pairs(statusbars or UF.statusbars) do
-		UF:Update_StatusBar(statusBar)
-		UF:Update_StatusBar(statusBar.bg)
+do
+	function UF:Update_AllStatusBars(_, data)
+		UF:Update_StatusBar(self, data.texture)
+		UF:Update_StatusBar(self.bg, data.texture)
+	end
+
+	local info = {}
+	function UF:Update_StatusBars(statusbars)
+		info.texture = LSM:Fetch('statusbar', UF.db.statusbar)
+
+		E:CoroutineUpdate(UF.Update_AllStatusBars, statusbars or UF.statusbars, info)
 	end
 end
 
@@ -634,7 +639,7 @@ function UF:Update_StatusBar(statusBar, texture)
 		texture = LSM:Fetch('statusbar', UF.db.statusbar)
 	end
 
-	local useBlank = statusBar.parent and statusBar.parent.isTransparent or statusBar.isTransparent
+	local useBlank = (statusBar.parent and statusBar.parent.isTransparent) or statusBar.isTransparent
 	local newTexture = (not useBlank and texture) or E.media.blankTex
 
 	if statusBar:IsObjectType('StatusBar') then
@@ -645,14 +650,24 @@ function UF:Update_StatusBar(statusBar, texture)
 end
 
 function UF:Update_FontString(object)
-	object:FontTemplate(LSM:Fetch('font', UF.db.font), UF.db.fontSize, UF.db.fontOutline)
+	object:FontTemplate(UF.db.font, UF.db.fontSize, UF.db.fontOutline)
 end
 
-function UF:Update_FontStrings()
-	local font, size, outline = LSM:Fetch('font', UF.db.font), UF.db.fontSize, UF.db.fontOutline
-	for obj in pairs(UF.fontstrings) do
-		obj:FontTemplate(font, size, outline)
+do
+	function UF:Update_AllFontStrings(_, data)
+		self:FontTemplate(data.font, data.size, data.outline)
 	end
+
+	local info = {}
+	function UF:Update_FontStrings()
+		info.font, info.size, info.outline = UF.db.font, UF.db.fontSize, UF.db.fontOutline
+
+		E:CoroutineUpdate(UF.Update_AllFontStrings, UF.fontstrings, info)
+	end
+end
+
+function UF:Update_Templates()
+	E:CoroutineUpdate(E.UpdateUnitframeTemplate, E.unitFrameElements)
 end
 
 function UF:Construct_PrivateAuras(frame)
@@ -778,50 +793,66 @@ function UF:Configure_FontString(obj)
 	obj:FontTemplate() --This is temporary.
 end
 
+function UF:Update_UnitFrame(frame)
+	local enabled = UF.db.units[self].enable
+	frame:SetEnabled(enabled)
+
+	if enabled then
+		frame:Update()
+		E:EnableMover(frame.mover.name)
+	else
+		E:DisableMover(frame.mover.name)
+	end
+end
+
+function UF:Update_GroupFrame(group)
+	local frame = UF[self]
+
+	local enabled = UF.db.units[group].enable
+	if group == 'arena' then
+		frame:SetAttribute('oUF-enableArenaPrep', enabled)
+	end
+
+	frame:SetEnabled(enabled)
+
+	if enabled then
+		frame:Update()
+		E:EnableMover(frame.mover.name)
+	else
+		E:DisableMover(frame.mover.name)
+	end
+
+	if frame.isForced then
+		UF:ForceShow(frame)
+	end
+end
+
 function UF:Update_AllFrames()
 	if not E.private.unitframe.enable then return end
 
 	UF.multiplier = UF.db.multiplier
 
+	UF:UpdateAllHeaders()
 	UF:UpdateColors()
+
+	E:CoroutineUpdate(UF.Update_UnitFrame, UF.units)
+	E:CoroutineUpdate(UF.Update_GroupFrame, UF.groupunits)
+
 	UF:Update_FontStrings()
 	UF:Update_StatusBars()
+	UF:Update_Templates()
+end
 
-	for unit, frame in pairs(UF.units) do
-		local enabled = UF.db.units[unit].enable
-		frame:SetEnabled(enabled)
+function UF:UpdateGroupHeader(_, data)
+	UF:CreateAndUpdateHeaderGroup(self, nil, nil, nil, data.skip)
+end
 
-		if enabled then
-			frame:Update()
-			E:EnableMover(frame.mover.name)
-		else
-			E:DisableMover(frame.mover.name)
-		end
+function UF:UpdateAllHeaders(skip)
+	if E.private.unitframe.disabledBlizzardFrames.party then
+		ElvUF:DisableBlizzard('party')
 	end
 
-	for unit, group in pairs(UF.groupunits) do
-		local frame = UF[unit]
-
-		local enabled = UF.db.units[group].enable
-		if group == 'arena' then
-			frame:SetAttribute('oUF-enableArenaPrep', enabled)
-		end
-
-		frame:SetEnabled(enabled)
-
-		if enabled then
-			frame:Update()
-			E:EnableMover(frame.mover.name)
-		else
-			E:DisableMover(frame.mover.name)
-		end
-
-		if frame.isForced then
-			UF:ForceShow(frame)
-		end
-	end
-
-	UF:UpdateAllHeaders()
+	E:CoroutineUpdate(UF.UpdateGroupHeader, UF.headers, { skip = skip })
 end
 
 function UF:CreateAndUpdateUFGroup(group, numGroup)
@@ -1135,8 +1166,11 @@ do
 end
 
 function UF:PLAYER_ENTERING_WORLD(_, initLogin, isReload)
-	UF:RegisterRaidDebuffIndicator()
 	UF:UpdateRangeSpells()
+
+	if not E.Retail then
+		UF:RegisterRaidDebuffIndicator()
+	end
 
 	local _, instanceType = IsInInstance()
 	if instanceType == 'raid' then
@@ -1543,16 +1577,6 @@ function UF:RegisterRaidDebuffIndicator()
 	end
 end
 
-function UF:UpdateAllHeaders(skip)
-	if E.private.unitframe.disabledBlizzardFrames.party then
-		ElvUF:DisableBlizzard('party')
-	end
-
-	for group in pairs(UF.headers) do
-		UF:CreateAndUpdateHeaderGroup(group, nil, nil, nil, skip)
-	end
-end
-
 do
 	local function EventlessUpdate(frame, elapsed)
 		local unit = frame.__eventless and frame.unit
@@ -1774,19 +1798,11 @@ do
 	local disabledParty = false
 	local disabledArena = false
 	local lockedParent = {}
-	local lockedAlpha = {}
 
 	-- lock Boss, Party, and Arena
 	local function LockParent(frame, parent)
 		if parent ~= E.HiddenFrame then
 			frame:SetParent(E.HiddenFrame)
-		end
-	end
-
-	-- normally, we want to reparent but this can break Blizzard Auras on nameplates
-	local function LockAlpha(frame, alpha)
-		if not frame:IsForbidden() and alpha ~= 0 then
-			frame:SetAlpha(0)
 		end
 	end
 
@@ -1806,15 +1822,6 @@ do
 				lockedParent[frame] = true
 			end
 		end
-
-		local lockAlpha = which == 2
-		if lockAlpha and not lockedAlpha[frame] then
-			NP:BlizzardPlate_HookAuras(frame) -- setup Blizzard Auras
-
-			hooksecurefunc(frame, 'SetAlpha', LockAlpha)
-
-			lockedAlpha[frame] = true
-		end
 	end
 
 	function ElvUF:DisableBlizzard(unit)
@@ -1827,7 +1834,7 @@ do
 				if plate and not handledPlates[plate] then
 					handledPlates[plate] = true
 
-					HideFrame(plate, E.Retail and 2 or 1)
+					HideFrame(plate, 1)
 				end
 			end
 		elseif E.private.unitframe.enable and not handledUnits[unit] then
@@ -1854,17 +1861,9 @@ do
 					end
 				end
 
-				if E.hasEditMode then
-					if disable.castbar then
-						HideFrame(_G.PlayerCastingBarFrame)
-						HideFrame(_G.PetCastingBarFrame)
-					end
-				elseif disable.castbar then
-					CastingBarFrame_SetUnit(_G.CastingBarFrame)
-					CastingBarFrame_SetUnit(_G.PetCastingBarFrame)
-				else
-					CastingBarFrame_OnLoad(_G.CastingBarFrame, 'player', true, false)
-					PetCastingBarFrame_OnLoad(_G.PetCastingBarFrame)
+				if disable.castbar then
+					HideFrame(_G.PlayerCastingBarFrame)
+					HideFrame(_G.PetCastingBarFrame)
 				end
 			elseif disable.player and unit == 'pet' then
 				HideFrame(_G.PetFrame)
@@ -1905,11 +1904,28 @@ do
 			elseif not disabledArena and disable.arena and strmatch(unit, 'arena%d*$') then
 				disabledArena = true
 
-				if _G.CompactArenaFrame then -- Retail
-					HideFrame(_G.CompactArenaFrame, 1)
+				local compactArena = _G.CompactArenaFrame
+				if compactArena then -- Retail
+					HideFrame(compactArena, 1)
 
-					for _, frame in next, _G.CompactArenaFrame.memberUnitFrames do
-						HideFrame(frame, true)
+					local compactUnitframes = compactArena.memberUnitFrames
+					if compactUnitframes then
+						for _, frame in next, compactUnitframes do
+							HideFrame(frame, true)
+						end
+					end
+
+					-- Old Arena Frames, they're still used for flag carriers etc in battlegrounds
+					local arenaContainer = _G.ArenaEnemyMatchFramesContainer
+					if arenaContainer then
+						HideFrame(arenaContainer)
+
+						local arenaUnitframes = arenaContainer.UnitFrames
+						if arenaUnitframes then
+							for _, frame in next, arenaUnitframes do
+								HideFrame(frame, true)
+							end
+						end
 					end
 				elseif _G.ArenaEnemyFrames then
 					_G.ArenaEnemyFrames:UnregisterAllEvents()
@@ -2025,10 +2041,13 @@ function UF:SetStatusBarColor(bar, r, g, b, custom, overrideAlpha, overrideBackd
 		end
 	end
 
-	if bar.invertColors then
-		bar:GetStatusBarTexture():SetVertexColor(backR, backG, backB, backA)
-	else
-		bar:GetStatusBarTexture():SetVertexColor(mainR, mainG, mainB, mainA)
+	local barTexture = bar:GetStatusBarTexture()
+	if barTexture then
+		if bar.invertColors then
+			barTexture:SetVertexColor(backR, backG, backB, backA)
+		else
+			barTexture:SetVertexColor(mainR, mainG, mainB, mainA)
+		end
 	end
 end
 
@@ -2198,9 +2217,32 @@ do -- Clique support for registering clicks
 	end
 end
 
+do
+	local units = {} -- track units
+	function UF:Configure_UnitAuras(frame)
+		local unit = frame.unit -- update when needed
+		if not unit or (units[frame] == unit) then return end
+
+		units[frame] = unit
+
+		E:Auras_GroupUnit(frame.Auras, unit)
+		E:Auras_GroupUnit(frame.Buffs, unit)
+		E:Auras_GroupUnit(frame.Debuffs, unit)
+		E:Auras_GroupUnit(frame.AuraBars, unit)
+		E:Auras_GroupUnit(frame.AuraWatch, unit)
+		E:Auras_GroupUnit(frame.AuraHighlight, unit)
+	end
+end
+
 function UF:UpdateAllElements(event)
-	if self.PrivateAuras and event == 'OnAttributeChanged' then
-		UF:Configure_PrivateAuras(self)
+	if event == 'OnAttributeChanged' then
+		if self.PrivateAuras then
+			UF:Configure_PrivateAuras(self)
+		end
+
+		if E.Retail then
+			UF:Configure_UnitAuras(self)
+		end
 	end
 end
 
@@ -2260,12 +2302,7 @@ function UF:Initialize()
 
 	UF:RegisterEvent('SPELLS_CHANGED', 'UpdateRangeSpells')
 	UF:RegisterEvent('CHARACTER_POINTS_CHANGED', 'UpdateRangeSpells')
-
-	if E.hasEditMode then
-		UF:RegisterEvent('LEARNED_SPELL_IN_SKILL_LINE', 'UpdateRangeSpells')
-	else
-		UF:RegisterEvent('LEARNED_SPELL_IN_TAB', 'UpdateRangeSpells')
-	end
+	UF:RegisterEvent('LEARNED_SPELL_IN_SKILL_LINE', 'UpdateRangeSpells')
 
 	if E.Retail or E.Wrath or E.Mists then
 		UF:RegisterEvent('PLAYER_TALENT_UPDATE', 'UpdateRangeSpells')

@@ -51,12 +51,16 @@ function Logic:IsDifficultyKey(key)
 end
 
 function Logic:IsSubTabKey(key)
-    return key == "midnight" or key == "season1"
+    for _, definition in ipairs(DATA.subTabs or {}) do
+        if definition.key == key then return true end
+    end
+    return false
 end
 
 function Logic:IsSnapshotValid(snapshot, currentTime)
     currentTime = number(currentTime) or now()
-    return type(snapshot) == "table" and (number(snapshot.resetAt) or 0) > currentTime
+    return type(snapshot) == "table"
+        and Addon.WoWApi:GetResetState(snapshot.resetAt, currentTime) ~= Addon.WoWApi.RESET_EXPIRED
 end
 
 local function getSubTabDefinition(subTabKey)
@@ -371,7 +375,7 @@ local function seasonalCandidates(name, uiMapID, byKey, byID)
     return candidates
 end
 
-local function scanSeasonOne(existing, difficultyKey, lockouts, lockoutsAvailable)
+local function scanSeasonal(existing, difficultyKey, lockouts, lockoutsAvailable)
     if type(C_ChallengeMode) ~= "table" or type(C_ChallengeMode.GetMapTable) ~= "function"
         or type(C_ChallengeMode.GetMapUIInfo) ~= "function"
     then
@@ -428,13 +432,14 @@ function Logic:ScanSnapshot(subTabKey, identity, existing, difficultyKey, isCurr
     currentTime = number(currentTime) or now()
     subTabKey = self:IsSubTabKey(subTabKey) and subTabKey or "midnight"
     difficultyKey = self:IsDifficultyKey(difficultyKey) and difficultyKey or "normal"
-    local _, resetAt = Addon.WoWApi:GetDailyResetInfo()
+    local _, resetAt = Addon.WoWApi:GetDailyResetInfo(type(existing) == "table" and existing.resetAt or nil)
     resetAt = number(resetAt) or 0
     local validExisting = self:IsSnapshotValid(existing, currentTime) and existing or nil
     local lockouts, lockoutsAvailable = readMythicLockouts(isCurrentCharacter)
     local dungeons, scanError
-    if subTabKey == "season1" then
-        dungeons, scanError = scanSeasonOne(validExisting, difficultyKey, lockouts, lockoutsAvailable)
+    local definition = getSubTabDefinition(subTabKey)
+    if definition.seasonal == true then
+        dungeons, scanError = scanSeasonal(validExisting, difficultyKey, lockouts, lockoutsAvailable)
     else
         dungeons, scanError = scanMidnight(validExisting, difficultyKey, lockouts, lockoutsAvailable)
     end

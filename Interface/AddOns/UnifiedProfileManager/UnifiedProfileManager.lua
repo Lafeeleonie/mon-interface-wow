@@ -76,10 +76,10 @@ do
 end
 
 function UPM:ADDON_LOADED()
-    if NumyProfiler then
-        --- @type NumyProfiler
-        local NumyProfiler = NumyProfiler;
-        NumyProfiler:WrapModules(name, 'Main', self);
+    if NumyFunctionProfiler then
+        --- @type NumyFunctionProfiler
+        local NumyFunctionProfiler = NumyFunctionProfiler;
+        NumyFunctionProfiler:WrapModules(name, 'Main', self);
     end
     UPM:UnregisterEvent('ADDON_LOADED');
     UnifiedProfileManagerDB = UnifiedProfileManagerDB or {};

@@ -632,8 +632,8 @@ function Runtime:ApplyFrameStyle(frameStyle)
     if frameStyle == "compact" then
         self.frame:SetBackdrop({
             bgFile = Addon.Assets.cardInset,
-            edgeFile = WHITE_TEXTURE,
-            edgeSize = 1,
+            edgeFile = Addon.Assets.roundedColorBorder,
+            edgeSize = 4,
             insets = { left = 1, right = 1, top = 1, bottom = 1 },
         })
         self.frame:SetBackdropColor(1, 1, 1, 0.96)

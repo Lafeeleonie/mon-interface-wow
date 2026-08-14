@@ -5,6 +5,8 @@ local LSM = E.Libs.LSM
 local ipairs = ipairs
 local strfind = strfind
 
+local UnitIsEnemy = UnitIsEnemy
+local UnitReaction = UnitReaction
 local CreateFrame = CreateFrame
 local WrapString = C_StringUtil and C_StringUtil.WrapString
 local GetAuraApplicationDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
@@ -62,7 +64,7 @@ function UF:AuraBars_UpdateBar(bar)
 		end
 	end
 
-	bar:SetReverseFill(not not bars.reverseFill)
+	bar:SetReverseFill(bars.reverseFill)
 	bar.spark:ClearAllPoints()
 	bar.spark:Point(bars.reverseFill and 'LEFT' or 'RIGHT', bar:GetStatusBarTexture())
 	bar.spark:Point('BOTTOM')
@@ -74,20 +76,40 @@ function UF:AuraBars_UpdateBar(bar)
 end
 
 function UF:Construct_AuraBarHeader(frame)
-	local auraBar = CreateFrame('Frame', '$parent_AuraBars', frame)
-	auraBar:SetFrameLevel(frame.RaisedElementParent.AuraBarLevel)
-	auraBar:SetSize(1, 1)
+	if E.Retail then
+		local bars = E:Auras_Create(frame, 'AuraBars')
+		bars:SetFrameLevel(frame.RaisedElementParent.AuraBarLevel)
 
-	auraBar.PreSetPosition = UF.SortAuras
-	auraBar.PostCreateBar = UF.Construct_AuraBars
-	auraBar.PostUpdateBar = UF.PostUpdateBar_AuraBars
-	auraBar.CustomFilter = UF.AuraFilter
+		return bars
+	else
+		local auraBar = CreateFrame('Frame', '$parent_AuraBars', frame)
+		auraBar:SetFrameLevel(frame.RaisedElementParent.AuraBarLevel)
+		auraBar:SetSize(1, 1)
 
-	auraBar.sparkEnabled = true
-	auraBar.initialAnchor = 'BOTTOMRIGHT'
-	auraBar.type = 'aurabar'
+		auraBar.PreSetPosition = UF.SortAuras
+		auraBar.PostCreateBar = UF.Construct_AuraBars
+		auraBar.PostUpdateBar = UF.PostUpdateBar_AuraBars
+		auraBar.CustomFilter = UF.AuraFilter
 
-	return auraBar
+		auraBar.sparkEnabled = true
+		auraBar.initialAnchor = 'BOTTOMRIGHT'
+		auraBar.type = 'aurabar'
+
+		return auraBar
+	end
+end
+
+function UF:AuraBars_GetFilter(element, unit)
+	local isEnemy, reaction = UnitIsEnemy(unit, 'player'), UnitReaction(unit, 'player')
+	return (not isEnemy and (not reaction or reaction > 4) and (element.friendlyAuraType or 'HELPFUL')) or element.enemyAuraType or 'HARMFUL'
+end
+
+function UF:AuraBars_UpdateFilter(bars, unit)
+	bars.filter = UF:AuraBars_GetFilter(bars, unit)
+	bars.barColor = (bars.filter == 'HARMFUL' and UF.db.colors.auraBarDebuff) or UF.db.colors.auraBarBuff
+
+	UF:UpdateFilters(bars) -- attach the objects
+	UF:GroupFilters(bars, bars.filter) -- build the groups
 end
 
 function UF:Configure_AuraBars(frame)
@@ -196,8 +218,41 @@ function UF:Configure_AuraBars(frame)
 			bars.initialAnchor = 'BOTTOM'..p4
 			bars:Point(p3..p4, attachTo, p1..p4, xOffset or (right and -(BORDER * 2)) or (bars.height + UF.BORDER), yOffset)
 		end
-	elseif frame:IsElementEnabled('AuraBars') then
-		frame:DisableElement('AuraBars')
+
+		if E.Retail then
+			bars.isAuraBar = true
+			bars.size = db.height
+			bars.numAuras = db.maxBars
+			bars.maxFrameCount = db.maxBars
+			bars.isTransparent = UF.db.colors.transparentAurabars -- always on for now
+			bars.invertAurabars = UF.db.colors.invertAurabars
+			bars.maxDuration = (db.maxDuration and db.maxDuration > 0) and db.maxDuration or nil
+			bars.sortMethod = E.AuraContainerSortMethod[db.sortMethod]
+			bars.statusbarTexture = LSM:Fetch('statusbar', UF.db.statusbar)
+			bars.countPosition, bars.countXOffset, bars.countYOffset = db.countPosition, db.countXOffset, db.countYOffset
+			bars.countFont, bars.countFontSize, bars.countFontOutline = db.countFont, db.countFontSize, db.countFontOutline
+
+			bars.allowList = db.useAllowlist and E:Auras_GetFilter(E.global.unitframe.aurafilters, db.allowList or 'Whitelist') or nil
+			bars.blockList = db.useBlocklist and E:Auras_GetFilter(E.global.unitframe.aurafilters, db.blockList or 'Blacklist') or nil
+			bars.candidateFilters = E:Auras_CanidateFilters(bars.allowList, bars.blockList, bars.maxDuration)
+
+			UF:AuraBars_UpdateFilter(bars, frame.unit)
+
+			E:Auras_GroupUnit(bars, frame.unit)
+			E:Auras_SetContainer(bars)
+			E:Auras_SetLineSize(bars)
+
+			bars:SetEnabled(true)
+		end
+	else
+		if frame:IsElementEnabled('AuraBars') then
+			frame:DisableElement('AuraBars')
+		end
+
+		if E.Retail then
+			bars:SetEnabled(false)
+		end
+
 		bars:Hide()
 	end
 end

@@ -2,54 +2,84 @@ local E, L, V, P, G = unpack(ElvUI)
 local UF = E:GetModule('UnitFrames')
 
 local GetAuraDispelTypeColor = C_UnitAuras.GetAuraDispelTypeColor
+local UnitCanAssist = UnitCanAssist
 
 local FALLBACK = Mixin({ r = 0, g = 0, b = 0, a = 0 }, ColorMixin)
 
 function UF:Construct_AuraHighlight(frame)
-	local element = frame:CreateTexture(nil, 'OVERLAY')
-	element:SetInside(frame.Health.backdrop)
-	element:SetTexture(E.media.blankTex)
-	element:SetVertexColor(0, 0, 0, 0)
-	element:SetBlendMode('ADD')
-	element.PostUpdate = UF.PostUpdate_AuraHighlight
+	if E.Retail then
+		return E:Auras_Create(frame, 'AuraHighlight')
+	else
+		local element = frame:CreateTexture(nil, 'OVERLAY')
+		element:SetInside(frame.Health.backdrop)
+		element:SetTexture(E.media.blankTex)
+		element:SetVertexColor(0, 0, 0, 0)
+		element:SetBlendMode('ADD')
+		element.PostUpdate = UF.PostUpdate_AuraHighlight
 
-	local glow = frame:CreateShadow(nil, true)
-	glow:Hide()
+		local glow = frame:CreateShadow(nil, true)
+		glow:Hide()
 
-	frame.AuraHightlightGlow = glow
-	frame.AuraHighlightFilter = true
-	frame.AuraHighlightFilterTable = E.global.unitframe.AuraHighlightColors
+		frame.AuraHightlightGlow = glow
+		frame.AuraHighlightFilter = true
+		frame.AuraHighlightFilterTable = E.global.unitframe.AuraHighlightColors
 
-	if frame.Health then
-		element:SetParent(frame.Health)
-		glow:SetParent(frame.Health)
+		if frame.Health then
+			element:SetParent(frame.Health)
+			glow:SetParent(frame.Health)
+		end
+
+		return element
 	end
+end
 
-	return element
+function UF:SetEnabled_AuraHighlight(container, unit)
+	container.canAssist = UnitCanAssist('player', unit)
+	container:SetEnabled(container.enabled and container.canAssist)
 end
 
 function UF:Configure_AuraHighlight(frame)
 	local mode = E.db.unitframe.debuffHighlighting
 	local db = mode ~= 'NONE' and (frame.db and frame.db.debuffHighlight)
-	if db and db.enable then
+
+	local enabled = db and db.enable
+	local highlight = frame.AuraHighlight
+	if E.Retail then
+		highlight.enabled = enabled
+
+		UF:SetEnabled_AuraHighlight(highlight, frame.unit)
+	end
+
+	if enabled then
 		if not frame:IsElementEnabled('AuraHighlight') then
 			frame:EnableElement('AuraHighlight')
 		end
 
-		frame.AuraHighlight:SetBlendMode(UF.db.colors.debuffHighlight.blendMode)
-		frame.AuraHighlight:SetAllPoints(frame.Health:GetStatusBarTexture())
-		frame.AuraHighlightFilterTable = E.global.unitframe.AuraHighlightColors
+		if E.Retail then
+			highlight.filter = 'HARMFUL|DISPELLABLE'
+			highlight.blendMode = UF.db.colors.debuffHighlight.blendMode
+			highlight:SetFrameLevel(frame.RaisedElementParent.AuraHighlightLevel)
+			highlight:SetAllPoints(frame.Health:GetStatusBarTexture())
+			highlight.isHighlight = true
 
-		if mode == 'GLOW' then
-			frame.AuraHighlightBackdrop = true
-
-			if frame.ThreatIndicator then
-				frame.AuraHightlightGlow:SetAllPoints(frame.ThreatIndicator.MainGlow)
-			elseif frame.TargetGlow then
-				frame.AuraHightlightGlow:SetAllPoints(frame.TargetGlow)
-			end
+			E:Auras_GroupUnit(highlight, frame.unit)
+			E:Auras_SetHighlight(highlight)
 		else
-			frame.AuraHighlightBackdrop = false
+			highlight:SetBlendMode(UF.db.colors.debuffHighlight.blendMode)
+			highlight:SetAllPoints(frame.Health:GetStatusBarTexture())
+			frame.AuraHighlightFilterTable = E.global.unitframe.AuraHighlightColors
+
+			if mode == 'GLOW' then
+				frame.AuraHighlightBackdrop = true
+
+				if frame.ThreatIndicator then
+					frame.AuraHightlightGlow:SetAllPoints(frame.ThreatIndicator.MainGlow)
+				elseif frame.TargetGlow then
+					frame.AuraHightlightGlow:SetAllPoints(frame.TargetGlow)
+				end
+			else
+				frame.AuraHighlightBackdrop = false
+			end
 		end
 	elseif frame:IsElementEnabled('AuraHighlight') then
 		frame:DisableElement('AuraHighlight')

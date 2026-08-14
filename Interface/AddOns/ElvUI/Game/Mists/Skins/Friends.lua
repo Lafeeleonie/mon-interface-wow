@@ -3,12 +3,12 @@ local S = E:GetModule('Skins')
 
 local _G = _G
 local next = next
+local hooksecurefunc = hooksecurefunc
 
 local BNConnected = BNConnected
 local BNFeaturesEnabled = BNFeaturesEnabled
 local GetGuildRosterInfo = GetGuildRosterInfo
 local GetQuestDifficultyColor = GetQuestDifficultyColor
-local hooksecurefunc = hooksecurefunc
 
 local GetCVarBool = C_CVar.GetCVarBool
 local WhoFrameColumn_SetWidth = WhoFrameColumn_SetWidth
@@ -342,11 +342,10 @@ function S:FriendsFrame()
 	_G.FriendsFrameBroadcastInputRight:Kill()
 	_G.FriendsFrameBroadcastInputMiddle:Kill()
 
+	hooksecurefunc('FriendsFrame_Update', UpdateFriendsFrame)
 	hooksecurefunc('FriendsFrame_CheckBattlenetStatus', CheckBattlenetStatus)
 
 	_G.FriendsFrame_CheckBattlenetStatus()
-
-	hooksecurefunc('FriendsFrame_Update', UpdateFriendsFrame)
 
 	S:HandleEditBox(_G.AddFriendNameEditBox)
 	_G.AddFriendFrame:SetTemplate('Transparent')

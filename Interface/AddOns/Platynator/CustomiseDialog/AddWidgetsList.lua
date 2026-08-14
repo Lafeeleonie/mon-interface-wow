@@ -1,0 +1,750 @@
+---@class addonTablePlatynator
+local addonTable = select(2, ...)
+
+local function GetColor(rgb, a)
+  local color = CreateColorFromRGBHexString(rgb)
+  return {r = color.r, g = color.g, b = color.b, a = a}
+end
+
+addonTable.CustomiseDialog.DesignWidgets = {
+  {
+    name = addonTable.Locales.BARS,
+    special = "header",
+  },
+  {
+    name = addonTable.Locales.HEALTH,
+    kind = "bars",
+    default = {
+      kind = "health",
+      anchor = {"TOPLEFT", -140, 50},
+      scale = 1,
+      layer = 1,
+      animate = false,
+      background = {
+        asset = "Platy: Fade Bottom",
+        color = GetColor("FFFFFF", 1),
+        applyColor = false,
+      },
+      foreground = {
+        asset = "Platy: Fade Bottom",
+      },
+      border = {
+        asset = "Platy: 7px",
+        color = GetColor("000000", 1),
+        width = 1,
+        height = 1,
+      },
+      absorb = {
+        asset = "Platy: Absorb Wide",
+        color = GetColor("FFFFFF", 1)
+      },
+      marker = {
+        asset = "none",
+      },
+      autoColors = {
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["classColors"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["tapped"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["threat"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["reaction"].default),
+      }
+    },
+  },
+  {
+    name = addonTable.Locales.HEALTH_FILL_TEXT,
+    kind = "specialBars",
+    default = {
+      kind = "healthFillText",
+      anchor = {"TOPLEFT", -140, 50},
+      scale = 1,
+      layer = 1,
+      animate = false,
+      background = {
+        color = GetColor("4F4F4F"),
+        applyColor = false,
+      },
+      absorb = {
+        color = GetColor("21c4ff")
+      },
+      autoColors = {
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["classColors"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["tapped"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["threat"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["reaction"].default),
+      }
+    },
+  },
+  {
+    name = addonTable.Locales.CAST,
+    kind = "bars",
+    default = {
+      kind = "cast",
+      anchor = {"TOPLEFT", -140, 50},
+      autoColors = {
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["importantCast"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["uninterruptableCast"].default),
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["cast"].default),
+      },
+      marker = {
+        asset = "none",
+      },
+      interruptMarker = {
+        asset = "none",
+        color = GetColor("FFFFFF"),
+      },
+      background = {
+        asset = "Platy: Fade Bottom",
+        color = GetColor("FFFFFF", 1),
+        applyColor = false,
+      },
+      foreground = {
+        asset = "Platy: Fade Bottom",
+      },
+      border = {
+        asset = "Platy: 7px",
+        color = GetColor("000000", 1),
+        width = 1,
+        height = 1,
+      },
+      scale = 1,
+      layer = 1,
+    },
+  },
+  {
+    name = addonTable.Locales.ENERGY,
+    kind = "bars",
+    default = {
+      kind = "energy",
+      anchor = {"TOPLEFT", -140, 50},
+      autoColors = {
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["energy"].default),
+      },
+      powerTypes = {
+        mana = false,
+        rage = true,
+        energy = true,
+      },
+      mobTypes = {
+        boss = true,
+        miniboss = true,
+      },
+      marker = {
+        asset = "none",
+      },
+      background = {
+        asset = "Platy: Fade Bottom",
+        color = GetColor("FFFFFF", 1),
+        applyColor = false,
+      },
+      foreground = {
+        asset = "Platy: Fade Bottom",
+      },
+      border = {
+        asset = "Platy: 7px",
+        color = GetColor("000000", 1),
+        width = 1,
+        height = 1,
+      },
+      scale = 1,
+      layer = 1,
+    },
+  },
+  {
+    name = addonTable.Locales.PLAYER_POWER,
+    kind = "specialBars",
+    default = {
+      kind = "power",
+      asset = "Platy: Soft Circle",
+      scale = 1 * 0.60,
+      layer = 3,
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.HIGHLIGHTS,
+    special = "header",
+  },
+  {
+    name = addonTable.Locales.AUTOMATIC,
+    kind = "highlights",
+    default = {
+      anchor = {"TOPLEFT", -140, 50},
+      kind = "automatic",
+      asset = "Platy: Soft Glow",
+      sliced = true,
+      width = 1.07,
+      height = 1.54,
+      color = GetColor("FFFFFF", 1),
+      autoColors = {
+        addonTable.CustomiseDialog.AddAlphaToColors(CopyTable(addonTable.CustomiseDialog.ColorsConfig["threat"].default)),
+      },
+      scale = 1,
+      layer = 3,
+    },
+  },
+  {
+    name = addonTable.Locales.TARGETED,
+    kind = "highlights",
+    default = {
+      anchor = {"TOPLEFT", -140, 50},
+      kind = "target",
+      asset = "Platy: Glow",
+      sliced = false,
+      width = 1,
+      height = 1,
+      color = GetColor("FFFFFF", 1),
+      scale = 1,
+      layer = 0,
+    },
+  },
+  {
+    name = addonTable.Locales.SOFT_TARGET,
+    kind = "highlights",
+    default = {
+      anchor = {"TOPLEFT", -140, 50},
+      kind = "softTarget",
+      asset = "Platy: Glow",
+      sliced = false,
+      width = 1,
+      height = 1,
+      color = GetColor("FFFFFF", 1),
+      scale = 1,
+      layer = 0,
+    },
+  },
+  {
+    name = addonTable.Locales.FOCUSED,
+    kind = "highlights",
+    default = {
+      anchor = {"TOPLEFT", -140, 50},
+      kind = "focus",
+      asset = "Platy: Glow",
+      sliced = false,
+      width = 1,
+      height = 1,
+      color = GetColor("FFFFFF", 1),
+      scale = 1,
+      layer = 0,
+    },
+  },
+  {
+    name = addonTable.Locales.MOUSEOVER,
+    kind = "highlights",
+    default = {
+      anchor = {"TOPLEFT", -140, 50},
+      kind = "mouseover",
+      asset = "Platy: Glow",
+      sliced = false,
+      width = 1,
+      height = 1,
+      color = GetColor("AAAAAA", 1),
+      scale = 1,
+      layer = 0,
+      includeTarget = true,
+    },
+  },
+  {
+    name = addonTable.Locales.FIXED,
+    kind = "highlights",
+    default = {
+      anchor = {"TOPLEFT", -140, 50},
+      kind = "fixed",
+      asset = "Platy: Feathered",
+      sliced = true,
+      height = 1.1,
+      width = 1,
+      color = GetColor("AAAAAA", 1),
+      scale = 1,
+      layer = 0,
+    },
+  },
+  {
+    name = addonTable.Locales.ANIMATED_BORDER,
+    kind = "highlights",
+    default = {
+      anchor = {"TOPLEFT", -140, 50},
+      kind = "animatedBorder",
+      asset = "Platy: Animated Dashes Long",
+      width = 1,
+      height = 1,
+      borderWidth = 1,
+      color = GetColor("FFFFFF", 1),
+      autoColors = {
+        addonTable.CustomiseDialog.AddAlphaToColors(CopyTable(addonTable.CustomiseDialog.ColorsConfig["importantCast"].default)),
+      },
+      scale = 1,
+      layer = 3,
+    },
+  },
+  {
+    name = addonTable.Locales.AURAS,
+    special = "header",
+  },
+  {
+    name = addonTable.Locales.DEBUFFS,
+    kind = "auras",
+    noDuplicates = true,
+    default = {
+      kind = "debuffs",
+      anchor = {"TOPLEFT", -140, 50},
+      scale = 1,
+      layer = 1,
+      height = 1,
+      limit = 30,
+      padding = 0.1,
+      direction = "RIGHT",
+      sorting = {
+        kind = "duration",
+        reversed = false,
+      },
+      filters = {
+        important = true,
+        fromYou = true,
+      },
+      showType = false,
+      showSwipe = true,
+      showTooltips = true,
+      texts = {
+        countdown = {
+          anchor = {},
+          scale = Round(14/12 * 100) / 100,
+          color = GetColor("FFFFFF"),
+          visible = true,
+          showFractions = false,
+        },
+        stacks = {
+          anchor = {"TOPRIGHT", 12, -1},
+          scale = Round(11/12 * 100) / 100,
+          color = GetColor("FFFFFF"),
+          visible = true,
+        }
+      }
+    },
+  },
+  {
+    name = addonTable.Locales.BUFFS,
+    kind = "auras",
+    noDuplicates = true,
+    default = {
+      kind = "buffs",
+      anchor = {"TOPLEFT", -140, 50},
+      scale = 1,
+      layer = 1,
+      height = 1,
+      limit = 30,
+      padding = 0.1,
+      direction = "LEFT",
+      sorting = {
+        kind = "duration",
+        reversed = false,
+      },
+      filters = {
+        dispelable = false,
+        important = true,
+        enrage = false,
+      },
+      showType = true,
+      showSwipe = true,
+      showTooltips = true,
+      texts = {
+        countdown = {
+          anchor = {},
+          scale = Round(14/12 * 100) / 100,
+          color = GetColor("FFFFFF"),
+          visible = true,
+          showFractions = false,
+        },
+        stacks = {
+          anchor = {"TOPRIGHT", 12, -1},
+          scale = Round(11/12 * 100) / 100,
+          color = GetColor("FFFFFF"),
+          visible = true,
+        }
+      }
+    },
+  },
+  {
+    name = addonTable.Locales.CROWD_CONTROL,
+    kind = "auras",
+    noDuplicates = true,
+    default = {
+      kind = "crowdControl",
+      anchor = {"TOPLEFT", -140, 50},
+      scale = 1,
+      layer = 1,
+      height = 1,
+      limit = 30,
+      padding = 0.1,
+      direction = "RIGHT",
+      showType = false,
+      showSwipe = true,
+      showTooltips = true,
+      sorting = {
+        kind = "duration",
+        reversed = false,
+      },
+      filters = {
+        fromYou = false,
+      },
+      texts = {
+        countdown = {
+          anchor = {},
+          scale = Round(14/12 * 100) / 100,
+          color = GetColor("FFFFFF"),
+          visible = true,
+          showFractions = false,
+        },
+        stacks = {
+          anchor = {"TOPRIGHT", 12, -1},
+          scale = Round(11/12 * 100) / 100,
+          color = GetColor("FFFFFF"),
+          visible = true,
+        }
+      }
+    },
+  },
+  {
+    name = addonTable.Locales.TEXTS,
+    special = "header",
+  },
+  {
+    name = addonTable.Locales.CREATURE_NAME,
+    kind = "texts",
+    default = {
+      kind = "creatureName",
+      scale = 1.1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      maxWidth = 1,
+      color = GetColor("FFFFFF"),
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+      autoColors = {}
+    },
+  },
+  {
+    name = addonTable.Locales.GUILD,
+    kind = "texts",
+    default = {
+      kind = "guild",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      maxWidth = 1,
+      color = GetColor("FFFFFF"),
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+      playerGuild = true,
+      npcRole = true,
+      autoColors = {}
+    },
+  },
+  {
+    name = addonTable.Locales.HEALTH_VALUE,
+    kind = "texts",
+    default = {
+      kind = "health",
+      scale = 0.98,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      displayTypes = {"percentage"}, -- or "absolute", or both
+      maxWidth = 0,
+      color = GetColor("FFFFFF"),
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+      significantFigures = 0,
+      showPercentSymbol = true,
+      formatMultiple = "%s (%s)"
+    },
+  },
+  {
+    name = addonTable.Locales.DAMAGE_ABSORB_VALUE,
+    kind = "texts",
+    default = {
+      kind = "damageAbsorb",
+      scale = 0.98,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+    },
+  },
+  {
+    name = addonTable.Locales.ENERGY_PERCENTAGE,
+    kind = "texts",
+    default = {
+      kind = "energy",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      align = "CENTER",
+      shorten = "NONE",
+
+      showPercentSymbol = true,
+      powerTypes = {
+        mana = false,
+        rage = true,
+        energy = true,
+      },
+      mobTypes = {
+        boss = true,
+        miniboss = true,
+      },
+    },
+  },
+  {
+    name = addonTable.Locales.CAST_NAME,
+    kind = "texts",
+    default = {
+      kind = "castSpellName",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+    },
+  },
+  {
+    name = addonTable.Locales.CAST_TIME_LEFT,
+    kind = "texts",
+    default = {
+      kind = "castTimeLeft",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      align = "CENTER",
+      shorten = "NONE",
+    },
+  },
+  {
+    name = addonTable.Locales.LEVEL,
+    kind = "texts",
+    default = {
+      kind = "level",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+      autoColors = {
+        CopyTable(addonTable.CustomiseDialog.ColorsConfig["difficulty"].default),
+      },
+      showModifiers = false,
+    },
+  },
+  {
+    name = addonTable.Locales.TARGET,
+    kind = "texts",
+    default = {
+      kind = "target",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      applyClassColors = true,
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+    },
+  },
+  {
+    name = addonTable.Locales.CAST_TARGET,
+    kind = "texts",
+    default = {
+      kind = "castTarget",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      applyClassColors = true,
+      align = "CENTER",
+      shorten = "NONE",
+    },
+  },
+  {
+    name = addonTable.Locales.CAST_INTERRUPTER,
+    kind = "texts",
+    default = {
+      kind = "castInterrupter",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      applyClassColors = true,
+      align = "CENTER",
+      shorten = "NONE",
+    },
+  },
+  {
+    name = addonTable.Locales.QUEST_OBJECTIVE,
+    kind = "texts",
+    default = {
+      kind = "quest",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+    },
+  },
+  {
+    name = addonTable.Locales.MYTHIC_PLUS_FORCES_VALUE,
+    kind = "texts",
+    default = {
+      kind = "mythicPlusForces",
+      scale = 1,
+      layer = 2,
+      anchor = {"TOPLEFT", -140, 50},
+      displayTypes = {"percentage"}, -- or "absolute", or both
+      color = GetColor("FFFFFF"),
+      maxWidth = 0,
+      align = "CENTER",
+      shorten = "NONE",
+      truncate = false,
+      showPercentSymbol = true,
+      formatMultiple = "%s (%s)"
+    },
+  },
+  {
+    name = addonTable.Locales.ICONS,
+    special = "header",
+  },
+  {
+    name = addonTable.Locales.QUEST_OBJECTIVE,
+    kind = "markers",
+    default = {
+      kind = "quest",
+      scale = 1 * 0.9,
+      layer = 3,
+      asset = "normal/quest-blizzard",
+      color = GetColor("ffffff"),
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.CAST,
+    kind = "markers",
+    default = {
+      kind = "castIcon",
+      scale = 1,
+      layer = 3,
+      asset = "normal/cast-icon",
+      color = GetColor("ffffff"),
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.CANNOT_INTERRUPT,
+    kind = "markers",
+    default = {
+      kind = "cannotInterrupt",
+      scale = 1 * 0.5,
+      layer = 3,
+      asset = "normal/shield-soft",
+      color = GetColor("647b7f"),
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.ELITE,
+    kind = "markers",
+    default = {
+      kind = "elite",
+      scale = 1 * 0.8,
+      layer = 3,
+      asset = "special/blizzard-elite-midnight",
+      color = GetColor("ffffff"),
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.RARE,
+    kind = "markers",
+    default = {
+      kind = "rare",
+      scale = 1,
+      layer = 3,
+      asset = "normal/blizzard-rare-midnight",
+      color = GetColor("ffffff"),
+      anchor = {"TOPLEFT", -140, 50},
+      includeElites = true,
+    },
+  },
+  {
+    name = addonTable.Locales.PVP_FLAG_CARRIER,
+    kind = "markers",
+    default = {
+      kind = "pvp",
+      scale = 1,
+      layer = 3,
+      asset = "normal/blizzard-pvp",
+      color = GetColor("ffffff"),
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.PLAYER_FACTION,
+    kind = "markers",
+    default = {
+      kind = "faction",
+      scale = 1,
+      layer = 3,
+      asset = "faction-icon",
+      color = GetColor("ffffff"),
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.RAID_MARKER,
+    kind = "markers",
+    default = {
+      kind = "raid",
+      scale = 1,
+      layer = 3,
+      asset = "normal/blizzard-raid",
+      color = GetColor("ffffff"),
+      anchor = {"TOPLEFT", -140, 50},
+    },
+  },
+  {
+    name = addonTable.Locales.REGIONS,
+    special = "header",
+  },
+  {
+    name = addonTable.Locales.CLICK,
+    kind = "regions",
+    noDuplicates = true,
+    default = {
+      kind = "click",
+    },
+  },
+  {
+    name = addonTable.Locales.STACK,
+    kind = "regions",
+    noDuplicates = true,
+    default = {
+      kind = "stack",
+    },
+  },
+}

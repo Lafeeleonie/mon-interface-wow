@@ -1,8 +1,8 @@
-## Interface: 120007
+## Interface: 120100, 120007
 ## Title: ThyraxUtil
 ## Notes: Mouse Tracker, Quest Accept Hotkey & Combat QoL
 ## Author: Thyrax
-## Version: 5.2.4
+## Version: 5.2.5r
 ## IconTexture: Interface\AddOns\ThyraxUtil\icon.tga
 ## SavedVariables: ThyraxUtilDB
 

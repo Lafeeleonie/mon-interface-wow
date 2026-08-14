@@ -2,6 +2,7 @@
 local _, addon = ...
 local mini = addon.Framework
 local L = addon.L
+local dbDefaults = addon.Config.Defaults
 local DROPDOWN_WIDTH = 200
 local GROW_OPTIONS = {
 	"LEFT",
@@ -17,6 +18,7 @@ local columnWidth
 local enabledColumnWidth
 local config = addon.Config
 local helpers = addon.Config.PanelHelpers
+local moduleName = addon.Utils.ModuleName
 
 ---@class CrowdControlConfig
 local M = {}
@@ -25,7 +27,9 @@ config.CrowdControl = M
 
 ---@param panel table
 ---@param options CrowdControlInstanceOptions
-local function BuildInstance(panel, options)
+---@param defaults CrowdControlInstanceOptions The shipped values for this group, which the
+---sliders clamp back to when the typed input is not a number.
+local function BuildInstance(panel, options, defaults)
 	local parent = CreateFrame("Frame", nil, panel)
 	local sliderWidth = columnWidth * 2 - horizontalSpacing
 
@@ -38,7 +42,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.ExcludePlayer = value
-			addon:Refresh()
+			config:Apply(moduleName.CrowdControl)
 		end,
 	})
 
@@ -53,7 +57,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.Glow = value
-			config:Apply()
+			config:Apply(moduleName.CrowdControl)
 		end,
 	})
 
@@ -69,7 +73,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ColorByDispelType = value
-			config:Apply()
+			config:Apply(moduleName.CrowdControl)
 		end,
 	})
 
@@ -85,7 +89,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ReverseCooldown = value
-			config:Apply()
+			config:Apply(moduleName.CrowdControl)
 		end,
 	})
 
@@ -101,7 +105,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.ShowTooltips = value
-			config:Apply()
+			config:Apply(moduleName.CrowdControl)
 		end,
 	})
 
@@ -117,7 +121,7 @@ local function BuildInstance(panel, options)
 		end,
 		SetValue = function(value)
 			options.Icons.ShowMilliseconds = value
-			config:Apply()
+			config:Apply(moduleName.CrowdControl)
 		end,
 	})
 
@@ -126,9 +130,10 @@ local function BuildInstance(panel, options)
 	local size = helpers:BuildSizeControls({
 		Parent = parent,
 		Icons = options.Icons,
-		PixelDefault = 32,
-		PercentDefault = 80,
+		PixelDefault = defaults.Icons.Size,
+		PercentDefault = defaults.Icons.SizePercent,
 		Width = sliderWidth,
+		SettingsKey = moduleName.CrowdControl,
 	})
 
 	size.Checkbox:SetPoint("LEFT", parent, "LEFT", enabledColumnWidth, 0)
@@ -140,6 +145,7 @@ local function BuildInstance(panel, options)
 		Target = options,
 		Key = "Grow",
 		Width = DROPDOWN_WIDTH,
+		SettingsKey = moduleName.CrowdControl,
 	})
 
 	growDdl.Label:SetPoint("TOPLEFT", showMillisChk, "BOTTOMLEFT", 4, -verticalSpacing * 2)
@@ -151,11 +157,12 @@ local function BuildInstance(panel, options)
 		LabelText = L["Max Icons"],
 		Min = 1,
 		Max = 5,
-		Default = 3,
-		Fallback = 5,
+		Default = defaults.Icons.Count,
+		Fallback = defaults.Icons.Count,
 		Width = sliderWidth,
 		Target = options.Icons,
 		Key = "Count",
+		SettingsKey = moduleName.CrowdControl,
 	})
 
 	maxIcons.Slider:SetPoint("LEFT", size.Pixel.Slider, "RIGHT", horizontalSpacing, 0)
@@ -165,11 +172,12 @@ local function BuildInstance(panel, options)
 		LabelText = L["Icon Padding"],
 		Min = 0,
 		Max = 20,
-		Default = 2,
-		Fallback = 2,
+		Default = defaults.IconSpacing,
+		Fallback = defaults.IconSpacing,
 		Width = sliderWidth,
 		Target = options,
 		Key = "IconSpacing",
+		SettingsKey = moduleName.CrowdControl,
 	})
 
 	iconSpacing.Slider:SetPoint("TOPLEFT", size.Pixel.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 2)
@@ -178,6 +186,7 @@ local function BuildInstance(panel, options)
 		Parent = parent,
 		Offset = options.Offset,
 		Width = sliderWidth,
+		SettingsKey = moduleName.CrowdControl,
 	})
 
 	offsetX.Slider:SetPoint("TOPLEFT", iconSpacing.Slider, "BOTTOMLEFT", 0, -verticalSpacing * 2)
@@ -212,7 +221,8 @@ function M:Build(panel, default, raid)
 	enabledDivider:SetPoint("RIGHT", panel, "RIGHT")
 	enabledDivider:SetPoint("TOP", lines, "BOTTOM", 0, -verticalSpacing)
 
-	local enabledEverywhere = helpers:BuildEnableRow(panel, enabledDivider, db.Modules.CCModule.Enabled)
+	local enabledEverywhere = helpers:BuildEnableRow(panel, enabledDivider, db.Modules.CCModule.Enabled,
+		nil, moduleName.CrowdControl)
 
 	local subPanelHeight = 340
 	local tabContainer = CreateFrame("Frame", nil, panel)
@@ -244,13 +254,13 @@ function M:Build(panel, default, raid)
 	})
 
 	local defaultContent = tabCtrl:GetContent("default")
-	local defaultPanel = BuildInstance(defaultContent, default)
+	local defaultPanel = BuildInstance(defaultContent, default, dbDefaults.Modules.CCModule.Default)
 	defaultPanel:SetPoint("TOPLEFT",  defaultContent, "TOPLEFT",  0, 0)
 	defaultPanel:SetPoint("TOPRIGHT", defaultContent, "TOPRIGHT", 0, 0)
 	defaultPanel:SetHeight(subPanelHeight)
 
 	local raidContent = tabCtrl:GetContent("raid")
-	local raidPanel = BuildInstance(raidContent, raid)
+	local raidPanel = BuildInstance(raidContent, raid, dbDefaults.Modules.CCModule.Raid)
 	raidPanel:SetPoint("TOPLEFT",  raidContent, "TOPLEFT",  0, 0)
 	raidPanel:SetPoint("TOPRIGHT", raidContent, "TOPRIGHT", 0, 0)
 	raidPanel:SetHeight(subPanelHeight)

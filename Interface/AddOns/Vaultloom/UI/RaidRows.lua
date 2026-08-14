@@ -15,6 +15,8 @@ RaidRows.threeLineSelectionRowHeight = 84
 RaidRows.fourLineSelectionRowHeight = 100
 RaidRows.selectionRowSpacing = 6
 
+local DEFAULT_SELECTION_ICON_TEX_COORD = { 0.08, 0.92, 0.08, 0.92 }
+
 local STATUS_COLORS = {
     complete = { 0.34, 0.88, 0.48, 1 },
     open = Theme.colors.gold,
@@ -27,8 +29,9 @@ local STATUS_COLORS = {
 local function applyBackdrop(frame, alpha)
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     frame:SetBackdropColor(0.025, 0.022, 0.020, alpha or 0.86)
     frame:SetBackdropBorderColor(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.55)
@@ -84,12 +87,14 @@ function RaidRows:CreateSelectionRow(parent, previous)
         row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
     end
     row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints(row)
+    row.background:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+    row.background:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
     row.background:SetTexture(Assets.row)
     row.statusLine = row:CreateTexture(nil, "ARTWORK")
-    row.statusLine:SetPoint("TOPLEFT", 4, -5)
-    row.statusLine:SetPoint("BOTTOMLEFT", 4, 5)
+    row.statusLine:SetPoint("TOPLEFT", 4, -6)
+    row.statusLine:SetPoint("BOTTOMLEFT", 4, 6)
     row.statusLine:SetWidth(3)
+    row.statusLineMask = Widgets:AddRoundedStatusLineMask(row, row.statusLine)
     row.iconBackplate = row:CreateTexture(nil, "ARTWORK")
     row.iconBackplate:SetSize(36, 36)
     row.iconBackplate:SetPoint("LEFT", 12, 0)
@@ -97,7 +102,7 @@ function RaidRows:CreateSelectionRow(parent, previous)
     row.icon = row:CreateTexture(nil, "OVERLAY")
     row.icon:SetSize(31, 31)
     row.icon:SetPoint("CENTER", row.iconBackplate, "CENTER", 0, 0)
-    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon:SetTexCoord(unpack(DEFAULT_SELECTION_ICON_TEX_COORD))
     row.iconMask = addCircularMask(row, row.icon)
     row.iconRing = row:CreateTexture(nil, "OVERLAY", nil, 1)
     row.iconRing:SetSize(36, 36)
@@ -112,9 +117,9 @@ function RaidRows:CreateSelectionRow(parent, previous)
     if type(row.meta.SetMaxLines) == "function" then row.meta:SetMaxLines(1) end
     setSelectionRowLayout(row, "bottom")
     row.selection = row:CreateTexture(nil, "HIGHLIGHT")
-    row.selection:SetPoint("TOPLEFT", 3, -3)
-    row.selection:SetPoint("BOTTOMRIGHT", -3, 3)
-    row.selection:SetColorTexture(Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], 0.10)
+    row.selection:SetPoint("TOPLEFT", 5, -5)
+    row.selection:SetPoint("BOTTOMRIGHT", -5, 5)
+    row.selection:SetColorTexture(Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], 0.07)
     row:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(Theme.colors.gold[1], Theme.colors.gold[2], Theme.colors.gold[3], 0.90)
     end)
@@ -162,6 +167,8 @@ function RaidRows:SetSelectionRow(row, entry)
     row.value:SetTextColor(color[1], color[2], color[3], 1)
     row.statusLine:SetColorTexture(color[1], color[2], color[3], 0.95)
     row.icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    local iconTexCoord = entry.iconTexCoord or DEFAULT_SELECTION_ICON_TEX_COORD
+    row.icon:SetTexCoord(unpack(iconTexCoord))
     row.selected = entry.selected == true
     row.selection:SetShown(row.selected)
     local border = row.selected and Theme.colors.gold or Theme.colors.goldDim
@@ -204,16 +211,15 @@ function RaidRows:CreateLootRow(parent, previous)
         row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
     end
     row.background = row:CreateTexture(nil, "BACKGROUND")
-    row.background:SetAllPoints(row)
+    row.background:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+    row.background:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
     row.background:SetTexture(Assets.row)
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetPoint("LEFT", 9, 0)
     row.icon:SetSize(35, 35)
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    row.iconBorder = row:CreateTexture(nil, "BACKGROUND", nil, 1)
-    row.iconBorder:SetPoint("TOPLEFT", row.icon, "TOPLEFT", -1, 1)
-    row.iconBorder:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", 1, -1)
-    row.iconBorder:SetColorTexture(Theme.colors.goldDim[1], Theme.colors.goldDim[2], Theme.colors.goldDim[3], 0.70)
+    row.iconMask = Widgets:AddRoundedIconMask(row, row.icon)
+    row.iconBorder = Widgets:CreateRoundedIconBorder(row, row.icon, 1, Theme.colors.goldDim)
     row.name = Widgets:CreateLabel(row, "GameFontHighlightSmall", "LEFT")
     row.name:SetPoint("TOPLEFT", 51, -8)
     row.name:SetPoint("TOPRIGHT", -66, -8)
@@ -317,9 +323,19 @@ function RaidRows:SetLootRow(row, item, character, difficultyKey, trackerService
     if item.veryRare then meta = meta ~= "" and (meta .. "  |  " .. L.RAID_LOOT_VERY_RARE) or L.RAID_LOOT_VERY_RARE end
     if item.extremelyRare then meta = meta ~= "" and (meta .. "  |  " .. L.RAID_LOOT_EXTREMELY_RARE) or L.RAID_LOOT_EXTREMELY_RARE end
     row.meta:SetText(meta)
-    local quality = item.quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[item.quality]
+    local qualityID = tonumber(item.quality)
+    if qualityID == nil and Addon.ArsenalLogic then
+        qualityID = Addon.ArsenalLogic:ResolveQuality(nil, item.link, item.itemID)
+    end
+    local quality = qualityID and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[qualityID]
     if quality then row.name:SetTextColor(quality.r, quality.g, quality.b, 1)
     else row.name:SetTextColor(Theme.colors.parchment[1], Theme.colors.parchment[2], Theme.colors.parchment[3], 1) end
+    row.iconBorder:SetBackdropBorderColor(
+        quality and quality.r or Theme.colors.goldDim[1],
+        quality and quality.g or Theme.colors.goldDim[2],
+        quality and quality.b or Theme.colors.goldDim[3],
+        quality and 0.95 or 0.70
+    )
     local state = row.trackerService:GetLootTrackerState(row.characterKey, difficultyKey, item.itemID)
     if state and Addon.JournalLootTracker then
         Addon.JournalLootTracker:RegisterItem(row.characterKey, difficultyKey, item, source)

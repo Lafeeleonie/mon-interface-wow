@@ -3,7 +3,9 @@ local AB = E:GetModule('ActionBars')
 
 local _G = _G
 local gsub = gsub
-local ipairs = ipairs
+local next = next
+
+local GameTooltip = GameTooltip
 local CreateFrame = CreateFrame
 local GetBindingKey = GetBindingKey
 local PetHasActionBar = PetHasActionBar
@@ -12,13 +14,8 @@ local IsPetAttackAction = IsPetAttackAction
 local GetPetActionSlotUsable = GetPetActionSlotUsable
 local GetPetActionCooldown = GetPetActionCooldown
 local RegisterStateDriver = RegisterStateDriver
-local GameTooltip = GameTooltip
-
-local AutoCastShine_AutoCastStart = AutoCastShine_AutoCastStart
-local AutoCastShine_AutoCastStop = AutoCastShine_AutoCastStop
 local PetActionButton_StartFlash = PetActionButton_StartFlash
 local PetActionButton_StopFlash = PetActionButton_StopFlash
-local PetActionBar_ShowGrid = PetActionBar_ShowGrid
 local PetActionBar_UpdateCooldowns = PetActionBar_UpdateCooldowns
 
 local Masque = E.Masque
@@ -31,7 +28,7 @@ bar.buttons = {}
 function AB:UpdatePet(event, unit)
 	if (event == 'UNIT_FLAGS' and unit ~= 'pet') or (event == 'UNIT_PET' and unit ~= 'player') then return end
 
-	for i, button in ipairs(bar.buttons) do
+	for i, button in next, bar.buttons do
 		local name, texture, isToken, isActive, autoCastAllowed, autoCastEnabled, spellID = GetPetActionInfo(i)
 		local buttonName = 'PetActionButton'..i
 		local autoCast = button.AutoCastOverlay or button.AutoCastable
@@ -89,13 +86,7 @@ function AB:UpdatePet(event, unit)
 			autoCast:Hide()
 		end
 
-		if E.hasEditMode then
-			autoCast:ShowAutoCastEnabled(autoCastEnabled)
-		elseif autoCastEnabled then
-			AutoCastShine_AutoCastStart(button.AutoCastShine)
-		else
-			AutoCastShine_AutoCastStop(button.AutoCastShine)
-		end
+		autoCast:ShowAutoCastEnabled(autoCastEnabled)
 
 		if not PetHasActionBar() and texture and name ~= 'PET_ACTION_FOLLOW' then
 			if PetActionButton_StopFlash then
@@ -156,7 +147,7 @@ function AB:PositionAndSizeBarPet()
 	local _, horizontal, anchorUp, anchorLeft = AB:GetGrowth(point)
 	local useMasque = MasqueGroup and E.private.actionbar.masque.petBar
 
-	for i, button in ipairs(bar.buttons) do
+	for i, button in next, bar.buttons do
 		local lastButton = _G['PetActionButton'..i-1]
 		local lastColumnButton = _G['PetActionButton'..i-buttonsPerRow]
 
@@ -179,7 +170,7 @@ function AB:PositionAndSizeBarPet()
 
 		AB:HandleButtonAutoCast(bar, button)
 		AB:HandleButton(bar, button, i, lastButton, lastColumnButton)
-		AB:StyleButton(button, nil, useMasque, true)
+		AB:StyleButton(button, nil, useMasque, true, 'barPet')
 	end
 
 	AB:HandleBackdropMultiplier(bar, backdropSpacing, buttonSpacing, db.widthMult, db.heightMult, anchorUp, anchorLeft, horizontal, lastShownButton, anchorRowButton)
@@ -194,9 +185,10 @@ function AB:PositionAndSizeBarPet()
 end
 
 function AB:UpdatePetBindings()
-	for i, button in ipairs(bar.buttons) do
+	for i, button in next, bar.buttons do
 		if button.HotKey then
 			button.HotKey:SetText(GetBindingKey('BONUSACTIONBUTTON'..i))
+
 			AB:FixKeybindText(button)
 			AB:FixKeybindColor(button)
 		end
@@ -210,7 +202,7 @@ function AB:UpdatePetCooldowns()
 		local forbidden = GameTooltip:IsForbidden()
 		local owner = GameTooltip:GetOwner()
 
-		for i, button in ipairs(bar.buttons) do
+		for i, button in next, bar.buttons do
 			local start, duration = GetPetActionCooldown(i)
 			button.cooldown:SetCooldown(start, duration)
 
@@ -226,7 +218,7 @@ function AB:PetBar_OnShow()
 end
 
 function AB:PetBar_OnHide()
-	for _, button in ipairs(bar.buttons) do
+	for _, button in next, bar.buttons do
 		if button.spellDataLoadedCancelFunc then
 			button.spellDataLoadedCancelFunc()
 			button.spellDataLoadedCancelFunc = nil
@@ -280,13 +272,12 @@ function AB:CreateBarPet()
 	bar:SetScript('OnHide', AB.PetBar_OnHide)
 	bar:SetScript('OnShow', AB.PetBar_OnShow)
 
-	if E.hasEditMode then
-		AB:RegisterEvent('PET_UI_UPDATE', 'UpdatePet')
-	else
-		PetActionBar_ShowGrid()
-	end
+	AB:HookScript(bar, 'OnEnter', 'Bar_OnEnter')
+	AB:HookScript(bar, 'OnLeave', 'Bar_OnLeave')
 
+	AB:RegisterEvent('PET_BAR_UPDATE_COOLDOWN', 'UpdatePetCooldowns')
 	AB:RegisterEvent('PET_BAR_UPDATE', 'UpdatePet')
+	AB:RegisterEvent('PET_UI_UPDATE', 'UpdatePet')
 	AB:RegisterEvent('PLAYER_CONTROL_GAINED', 'UpdatePet')
 	AB:RegisterEvent('PLAYER_CONTROL_LOST', 'UpdatePet')
 	AB:RegisterEvent('PLAYER_ENTERING_WORLD', 'UpdatePet')
@@ -294,12 +285,8 @@ function AB:CreateBarPet()
 	AB:RegisterEvent('SPELLS_CHANGED', 'UpdatePet')
 	AB:RegisterEvent('UNIT_FLAGS', 'UpdatePet')
 	AB:RegisterEvent('UNIT_PET', 'UpdatePet')
-	AB:RegisterEvent('PET_BAR_UPDATE_COOLDOWN', 'UpdatePetCooldowns')
 
 	E:CreateMover(bar, 'PetAB', L["Pet Bar"], nil, nil, nil, 'ALL,ACTIONBARS', nil, 'actionbar,barPet')
 
 	AB:UpdatePetBindings()
-
-	AB:HookScript(bar, 'OnEnter', 'Bar_OnEnter')
-	AB:HookScript(bar, 'OnLeave', 'Bar_OnLeave')
 end

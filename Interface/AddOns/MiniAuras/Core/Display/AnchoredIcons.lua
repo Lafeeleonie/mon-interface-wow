@@ -10,9 +10,9 @@ local M = {}
 addon.Core.AnchoredIcons = M
 
 -- The geometry shared by every display that hangs an icon container off a unit frame: the crowd
--- control and auras modules both keep one container (and, on 12.1, one aura display) per raid
--- frame anchor, and positioned them with identical code. Only the aura groups they build and the
--- categories they budget actually differ, so that stays in the modules and this holds the rest.
+-- control and auras modules both keep one container and one aura display per raid frame anchor,
+-- and positioned them with identical code. Only the aura groups they build and the categories
+-- they budget actually differ, so that stays in the modules and this holds the rest.
 
 ---@type Db
 local db
@@ -51,8 +51,8 @@ function M:AnchorContainer(container, anchor, options)
 	frame:SetPoint(anchorPoint, anchor, relativeToPoint, options.Offset.X, options.Offset.Y)
 end
 
----12.1 path: positions an entry's aura display on its anchor, chaining after the kick container
----while a kick icon is showing (the kick occupied slot 1 in the legacy layout).
+---Positions an entry's aura display on its anchor, chaining after the kick container while a
+---kick icon is showing.
 ---@param entry table an entry carrying Display and Container
 ---@param anchor table
 ---@param options table the module's per-instance options (Grow, IconSpacing, Offset)
@@ -82,8 +82,8 @@ function M:AnchorAuraDisplay(entry, anchor, options, kickActive)
 	)
 end
 
----12.1 path: renders the kick icon into an entry's container (slot 1) and re-anchors the aura
----display around it. Aura icons themselves are container-driven and need no update here.
+---Renders the kick icon into an entry's container (slot 1) and re-anchors the aura display
+---around it. Aura icons themselves are container-driven and need no update here.
 ---Schedules its own follow-up on expiry, since no aura event fires to clear the icon.
 ---@param entry table an entry carrying Container, Anchor, Display and KickTimer
 ---@param options table the module's per-instance options
@@ -113,6 +113,9 @@ end
 ---dormant and for a single entry whose feature was switched off.
 ---@param entry table
 function M:TeardownEntry(entry)
+	-- A leftover flag would let the visibility hook restyle a torn-down entry back into life.
+	entry.StyleStale = nil
+
 	if entry.Watcher then
 		entry.Watcher:Disable()
 	end
@@ -124,6 +127,35 @@ function M:TeardownEntry(entry)
 
 	if entry.Container then
 		entry.Container:ResetAllSlots()
+		entry.Container.Frame:Hide()
+	end
+end
+
+---Whether an anchor is worth laying anything out on. A unit frame the addon has taken away keeps
+---its entry - WoW frames can never be freed, so a returning anchor has to find its own container
+---again rather than build a second one - but there is nothing to style on it while it is gone.
+---@param anchor table
+---@return boolean
+function M:IsAnchorShown(anchor)
+	return frames:IsAnchorUsable(anchor)
+end
+
+---Takes one entry off screen without disabling it, for an anchor that is merely out of sight.
+---Deliberately not TeardownEntry: a frame can come back through the unit-frame visibility hook
+---with no refresh behind it, and a disabled display would show nothing until the next one.
+---
+---Marks the entry as carrying stale styling, because the refresh that skipped it is also the
+---refresh that would have applied any option the user just changed. RestyleIfStale reads the flag
+---on the way back in, so a frame that returns without a refresh behind it is still current.
+---@param entry table
+function M:HideEntry(entry)
+	entry.StyleStale = true
+
+	if entry.Display then
+		entry.Display:Hide()
+	end
+
+	if entry.Container then
 		entry.Container.Frame:Hide()
 	end
 end
@@ -142,33 +174,28 @@ end
 ---geometry, style and per-group budgets to the aura display (one ApplyConfig restyle rather than
 ---a setter per property), re-renders and re-anchors, and resolves the test-mode handover that
 ---swaps the live display for the test container.
----@param entry table Entry carrying Container, Anchor, Unit and (12.1) Display.
+---@param entry table Entry carrying Container, Anchor, Unit and Display.
 ---@param anchor table
 ---@param options table Module per-instance options (Grow, Offset, IconSpacing).
----@param iconSize number
----@param slotCount number Kick/test container slot count.
----@param style AuraDisplayStyle? Style for the display; may be the shared scratch.
----@param budgets table<string, number>? Group key -> icon budget; modules zero a group to
----switch its category off.
----@param testModeActive boolean
----@param excludePlayer boolean? Resolved by the module (pets never exclude the player).
----@param kickActive boolean Whether a kick icon currently occupies the container.
----@param render fun(entry: table)? Live re-render, skipped in test mode.
-function M:ApplyEntryOptions(entry, anchor, options, iconSize, slotCount, style, budgets,
-	testModeActive, excludePlayer, kickActive, render)
+---@param settings EntrySettings Everything the module resolved for this entry.
+function M:ApplyEntryOptions(entry, anchor, options, settings)
 	local container = entry.Container
 	local spacing = options.IconSpacing or 2
 	local display = entry.Display
+	local testModeActive = settings.TestModeActive
+	local excludePlayer = settings.ExcludePlayer
 
-	container:SetIconSize(iconSize)
-	container:SetCount(slotCount)
+	entry.StyleStale = nil
+
+	container:SetIconSize(settings.IconSize)
+	container:SetCount(settings.SlotCount)
 	container:SetSpacing(spacing)
 
 	if display then
-		display:ApplyConfig(iconSize, spacing, style)
+		display:ApplyConfig(settings.IconSize, spacing, settings.Style)
 
-		if budgets then
-			for groupKey, maxIcons in pairs(budgets) do
+		if settings.Budgets then
+			for groupKey, maxIcons in pairs(settings.Budgets) do
 				display:SetMaxIcons(groupKey, maxIcons)
 			end
 		end
@@ -176,8 +203,8 @@ function M:ApplyEntryOptions(entry, anchor, options, iconSize, slotCount, style,
 		display:SetEnabled(true)
 	end
 
-	if not testModeActive and render then
-		render(entry)
+	if not testModeActive and settings.Render then
+		settings.Render(entry)
 	end
 
 	self:AnchorContainer(container, anchor, options)
@@ -192,11 +219,62 @@ function M:ApplyEntryOptions(entry, anchor, options, iconSize, slotCount, style,
 		-- and fake icons don't mix.
 		display:Hide()
 	else
-		self:AnchorAuraDisplay(entry, anchor, options, kickActive)
+		self:AnchorAuraDisplay(entry, anchor, options, settings.KickActive)
 		frames:ShowHideDisplay(display, anchor, excludePlayer)
 	end
+end
+
+---Styles one entry on its anchor, or takes it off screen while the anchor is not there. Entries
+---outlive their anchors, so a raid's worth of them can still be here in a five-man; styling and
+---re-anchoring what nobody can see is the whole of the cost.
+---@param entry table
+---@param anchor table
+---@param apply fun(entry: table, anchor: table, options: table, extra: any) the module's restyle
+---@param options table the module's per-instance options for this entry
+---@param extra any? handed back to apply, for whatever else the module resolved per entry
+function M:ApplyOrHideEntry(entry, anchor, apply, options, extra)
+	if self:IsAnchorShown(anchor) then
+		apply(entry, anchor, options, extra)
+	else
+		self:HideEntry(entry)
+	end
+end
+
+---Restyles an entry whose frame came back through the unit-frame visibility hook. That frame
+---carries the styling of the refresh that skipped it, and nothing else on that path would put it
+---right.
+---@param entry table
+---@param anchor table
+---@param entryEnabled boolean What the refresh path would decide for this entry: a torn-down one
+---must not be styled back into life.
+---@param apply fun(entry: table, anchor: table, options: table, extra: any)
+---@param options table
+---@param extra any?
+---@return boolean restyled apply ends in the same show/hide as the hook, so it stands in for it.
+function M:RestyleIfStale(entry, anchor, entryEnabled, apply, options, extra)
+	if not entry.StyleStale or not entryEnabled or not self:IsAnchorShown(anchor) then
+		return false
+	end
+
+	apply(entry, anchor, options, extra)
+
+	return true
 end
 
 function M:Init()
 	db = mini:GetSavedVars()
 end
+
+---What a module resolves per entry before handing it to ApplyEntryOptions. A table rather than a
+---parameter list because the flags are all booleans, and three of them in a row read as nothing
+---at the call site.
+---@class EntrySettings
+---@field IconSize number
+---@field SlotCount number Kick/test container slot count.
+---@field Style AuraDisplayStyle? Style for the display; may be the shared scratch.
+---@field Budgets table<string, number>? Group key -> icon budget; modules zero a group to switch
+---its category off.
+---@field TestModeActive boolean
+---@field ExcludePlayer boolean? Resolved by the module (pets never exclude the player).
+---@field KickActive boolean Whether a kick icon currently occupies the container.
+---@field Render fun(entry: table)? Live re-render, skipped in test mode.

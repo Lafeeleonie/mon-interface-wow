@@ -5,14 +5,35 @@ local L = addon.L
 local config = addon.Config
 local verticalSpacing = mini.VerticalSpacing
 local horizontalSpacing = mini.HorizontalSpacing
--- Locale keys, not display strings: the locale can change after this file loads, so every
--- L[] lookup happens at build time inside the functions below.
+-- The text is behind functions rather than stored inline because the locale can change after this
+-- file loads, so every lookup has to happen at build time. Spelling each key out in a literal
+-- lookup also keeps it visible to the locale checker, which cannot follow an indirect one.
 local ENABLE_ROW = {
-	{ Key = "World", Label = "World", Tooltip = "Enable this module in the open world." },
-	{ Key = "Arena", Label = "Arena", Tooltip = "Enable this module in arena." },
-	{ Key = "BattleGrounds", Label = "Battlegrounds", Tooltip = "Enable this module in battlegrounds." },
-	{ Key = "Dungeons", Label = "Dungeons", Tooltip = "Enable this module in dungeons." },
-	{ Key = "Raid", Label = "Raid", Tooltip = "Enable this module in raids." },
+	{
+		Key = "World",
+		Label = function() return L["World"] end,
+		Tooltip = function() return L["Enable this module in the open world."] end,
+	},
+	{
+		Key = "Arena",
+		Label = function() return L["Arena"] end,
+		Tooltip = function() return L["Enable this module in arena."] end,
+	},
+	{
+		Key = "BattleGrounds",
+		Label = function() return L["Battlegrounds"] end,
+		Tooltip = function() return L["Enable this module in battlegrounds."] end,
+	},
+	{
+		Key = "Dungeons",
+		Label = function() return L["Dungeons"] end,
+		Tooltip = function() return L["Enable this module in dungeons."] end,
+	},
+	{
+		Key = "Raid",
+		Label = function() return L["Raid"] end,
+		Tooltip = function() return L["Enable this module in raids."] end,
+	},
 }
 local SPELL_ICON_SIZE = 18
 
@@ -27,8 +48,9 @@ addon.Config.PanelHelpers = M
 ---@param anchor table? Frame the row hangs below; nil starts the row at the parent's top left.
 ---@param enabled table The module's Enabled table, written in place.
 ---@param tooltips table<string, string>? Per-context tooltip overrides, keyed like Enabled.
+---@param settingsKey string? ModuleName value scoping the refresh to the module that changed.
 ---@return table firstCheckbox
-function M:BuildEnableRow(parent, anchor, enabled, tooltips)
+function M:BuildEnableRow(parent, anchor, enabled, tooltips, settingsKey)
 	local columnWidth = mini:ColumnWidth(5, 0, 0)
 	local first
 
@@ -36,14 +58,14 @@ function M:BuildEnableRow(parent, anchor, enabled, tooltips)
 		local key = entry.Key
 		local checkbox = mini:Checkbox({
 			Parent = parent,
-			LabelText = L[entry.Label],
-			Tooltip = tooltips and tooltips[key] or L[entry.Tooltip],
+			LabelText = entry.Label(),
+			Tooltip = tooltips and tooltips[key] or entry.Tooltip(),
 			GetValue = function()
 				return enabled[key]
 			end,
 			SetValue = function(value)
 				enabled[key] = value
-				config:Apply()
+				config:Apply(settingsKey)
 			end,
 		})
 
@@ -97,7 +119,7 @@ function M:BuildClampedSlider(opts)
 
 			if target[key] ~= newValue then
 				target[key] = newValue
-				config:Apply()
+				config:Apply(opts.SettingsKey)
 
 				if opts.OnChanged then
 					opts.OnChanged()
@@ -126,7 +148,7 @@ function M:BuildSizeControls(opts)
 		SetValue = function(value)
 			icons.SizeIsPercent = value
 			refresh()
-			config:Apply()
+			config:Apply(opts.SettingsKey)
 		end,
 	})
 
@@ -139,6 +161,7 @@ function M:BuildSizeControls(opts)
 		Width = opts.Width,
 		Target = icons,
 		Key = "Size",
+		SettingsKey = opts.SettingsKey,
 	})
 
 	local percent = M:BuildClampedSlider({
@@ -151,6 +174,7 @@ function M:BuildSizeControls(opts)
 		Width = opts.Width,
 		Target = icons,
 		Key = "SizePercent",
+		SettingsKey = opts.SettingsKey,
 	})
 
 	percent.Slider:SetPoint("TOPLEFT", pixel.Slider, "TOPLEFT", 0, 0)
@@ -185,7 +209,7 @@ function M:BuildGrowDropdown(opts)
 	local setValue = opts.SetValue or function(value)
 		if opts.Target[opts.Key] ~= value then
 			opts.Target[opts.Key] = value
-			config:Apply()
+			config:Apply(opts.SettingsKey)
 		end
 	end
 
@@ -222,6 +246,7 @@ function M:BuildOffsetSliders(opts)
 		Width = opts.Width,
 		Target = opts.Offset,
 		Key = "X",
+		SettingsKey = opts.SettingsKey,
 	})
 
 	local offsetY = M:BuildClampedSlider({
@@ -233,6 +258,7 @@ function M:BuildOffsetSliders(opts)
 		Width = opts.Width,
 		Target = opts.Offset,
 		Key = "Y",
+		SettingsKey = opts.SettingsKey,
 	})
 
 	offsetY.Slider:SetPoint("LEFT", offsetX.Slider, "RIGHT", horizontalSpacing, 0)
@@ -274,6 +300,30 @@ function M:BuildMediaDropdown(opts)
 	opts.RefreshOn:HookScript("OnShow", Refresh)
 
 	return dropdown, modern
+end
+
+---Trims a name that would run past its column, ending it in an ellipsis. Counts characters
+---rather than bytes, and steps back off a continuation byte so a cut in a multi-byte locale
+---never lands mid-character and leaves a broken glyph.
+---@param name string
+---@param maxLength number Characters the column fits.
+---@return string
+function M:TrimName(name, maxLength)
+	local length = strlenutf8 and strlenutf8(name) or #name
+
+	if length <= maxLength then
+		return name
+	end
+
+	local cut = maxLength - 3
+
+	if strlenutf8 and strlenutf8(name) ~= #name then
+		while cut > 1 and name:byte(cut + 1) and name:byte(cut + 1) >= 128 and name:byte(cut + 1) < 192 do
+			cut = cut - 1
+		end
+	end
+
+	return name:sub(1, cut) .. "..."
 end
 
 ---The icon-plus-tooltip button every spell row shares. The caller assigns button.SpellId, sets
@@ -349,6 +399,7 @@ end
 ---@field Fallback number? Shown while the stored value is nil, without writing it.
 ---@field Float boolean? Clamp without rounding.
 ---@field OnChanged fun()? Runs after a changed value has been applied.
+---@field SettingsKey string? ModuleName value scoping the refresh to the module that changed.
 
 ---@class SizeControlsOptions
 ---@field Parent table
@@ -356,6 +407,7 @@ end
 ---@field PixelDefault number
 ---@field PercentDefault number
 ---@field Width number?
+---@field SettingsKey string? ModuleName value scoping the refresh to the module that changed.
 
 ---@class SizeControls
 ---@field Checkbox table The Relative size checkbox.
@@ -371,12 +423,14 @@ end
 ---@field Key string? Defaults are built from Target[Key].
 ---@field GetValue (fun(): string)?
 ---@field SetValue (fun(value: string))?
+---@field SettingsKey string? ModuleName value scoping the refresh to the module that changed.
 
 ---@class OffsetSlidersOptions
 ---@field Parent table
 ---@field Offset table The {X, Y} offset table, written in place.
 ---@field Width number?
 ---@field Range number? Symmetric slider range, default 250.
+---@field SettingsKey string? ModuleName value scoping the refresh to the module that changed.
 
 ---@class MediaDropdownOptions
 ---@field Parent table

@@ -17,10 +17,6 @@ local REFRESH_EVENTS = {
     "MAJOR_FACTION_RENOWN_LEVEL_CHANGED",
 }
 
-local function now()
-    return type(time) == "function" and time() or 0
-end
-
 local function getRecord(characterKey)
     local record = Addon.Database:Get().characters[characterKey]
     return type(record) == "table" and record or nil
@@ -32,9 +28,8 @@ function Service:GetSnapshot(characterKey)
     if type(snapshot) ~= "table" then
         return nil
     end
-    local resetAt = tonumber(snapshot.resetAt) or 0
-    if resetAt > 0 and resetAt <= now() then
-        record.snapshots.pveDelves = nil
+    if Addon.WoWApi:IsResetExpired(snapshot.resetAt) then
+        Addon.Database:ClearCharacterSnapshot(characterKey, "pveDelves", "expired")
         return nil
     end
     return snapshot
@@ -44,7 +39,10 @@ local function scanStoredWeeklyDrop(db, resetAt)
     for _, record in pairs(db.characters or {}) do
         local snapshot = type(record) == "table" and type(record.snapshots) == "table" and record.snapshots.pveDelves or nil
         local snapshotResetAt = type(snapshot) == "table" and tonumber(snapshot.resetAt) or 0
-        if snapshotResetAt > now() and (resetAt <= 0 or math.abs(snapshotResetAt - resetAt) <= 120) then
+        local resetState = Addon.WoWApi:GetResetState(resetAt)
+        if Addon.WoWApi:GetResetState(snapshotResetAt) == Addon.WoWApi.RESET_ACTIVE
+            and (resetState ~= Addon.WoWApi.RESET_ACTIVE or math.abs(snapshotResetAt - resetAt) <= 120)
+        then
             for _, row in ipairs(snapshot.rows or {}) do
                 if row.key == "delve_weekly_drop" and (row.completed == true or row.status == "complete") then
                     return true
@@ -59,9 +57,8 @@ local function getMemory(resetAt)
     local db = Addon.Database:Get()
     local memory = type(db.pveDelvesMemory) == "table" and db.pveDelvesMemory or nil
     local savedResetAt = memory and tonumber(memory.resetAt) or 0
-    local expired = savedResetAt > 0 and savedResetAt <= now()
-    local movedToDifferentReset = resetAt > 0 and savedResetAt > 0 and math.abs(savedResetAt - resetAt) > 120
-    if not memory or expired or movedToDifferentReset then
+    local expired = Addon.WoWApi:IsResetExpired(savedResetAt)
+    if not memory or expired then
         memory = { resetAt = resetAt }
         db.pveDelvesMemory = memory
     end
@@ -85,8 +82,8 @@ local function collectDelves()
     local _, resetAt = Addon.WoWApi:GetWeeklyResetInfo()
     local snapshot = Addon.PveDelvesLogic:BuildSnapshot(getMemory(resetAt), existing)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.pveDelves = snapshot
+        local stored = Addon.Database:CommitCharacterSnapshot(identity.key, "pveDelves", snapshot, "refresh")
+        if not stored then snapshot = existing end
     end
     return {
         characterKey = identity.key,

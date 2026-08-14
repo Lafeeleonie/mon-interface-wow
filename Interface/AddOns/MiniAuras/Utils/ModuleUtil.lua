@@ -24,9 +24,7 @@ local ModuleName = {
 	AllyKickTracker = "AllyKickTrackerModule",
 	Trinkets = "TrinketsModule",
 	RaidFrameAuras = "RaidFrameAurasModule",
-	Precog = "PrecogModule",
-	FriendlyCooldownTracker = "FriendlyCooldownTrackerModule",
-	EnemyCooldownTracker    = "EnemyCooldownTrackerModule",
+	CustomAuras = "CustomAurasModule",
 }
 
 ---@class ModuleUtil
@@ -34,6 +32,14 @@ local M = {}
 
 addon.Utils.ModuleUtil = M
 addon.Utils.ModuleName = ModuleName
+
+---Neighborhoods and house interiors are instanced maps, so without this they would count as
+---dungeons; nothing here has combat, so no module has anything to show. Feature-detected
+---because the mock client does not model the housing API.
+local function IsInHousing()
+	return type(C_Housing) == "table"
+		and (C_Housing.IsOnNeighborhoodMap() or C_Housing.IsInsideHouseOrPlot())
+end
 
 ---Resolves the configured icon size, either as a static pixel value or as a percentage of
 ---the anchor frame's height when Icons.SizeIsPercent is enabled.
@@ -134,9 +140,81 @@ function M:GetColorRGB(configured)
 	return colorRgbScratch
 end
 
+---Fills a caller-owned table with a configured {R, G, B} colour, in both shapes the icon backends
+---read: [1..3] for AuraContainerDisplay's group tints and r/g/b for IconSlotContainer's test
+---icons. Unlike GetColorRGB this writes into the caller's table, because the category colours are
+---live two at a time and a shared scratch could only hold one of them.
+---@param target table
+---@param configured table? A colour table with R/G/B fields.
+---@param default table Fallback with R/G/B fields, for a profile saved before the option existed.
+---@return table target
+function M:FillColor(target, configured, default)
+	local r = (configured and configured.R) or default.R
+	local g = (configured and configured.G) or default.G
+	local b = (configured and configured.B) or default.B
+
+	target[1], target[2], target[3] = r, g, b
+	target.r, target.g, target.b = r, g, b
+
+	return target
+end
+
+---Wraps a function so that however many times it is called in one frame, it runs once, on the
+---next. The roster events burst - a raid forming fires GROUP_ROSTER_UPDATE per member joining -
+---and each one otherwise drives a full module refresh with a fresh closure to go with it.
+---
+---The deferral is the point as well as the saving: the frame addons rebuild their own frames on
+---the same event, so a refresh reads the anchors only once they have settled.
+---
+---The second return cancels whatever is queued, for a teardown that would otherwise be undone by
+---a run it asked for a moment earlier. Queueing after a cancel works as normal.
+---@param callback fun()
+---@return fun() queue
+---@return fun() cancel
+function M:Coalesced(callback)
+	local queued = false
+	-- A cancelled timer is still on its way and still fires, so this counts how many of the next
+	-- runs are to refuse. A flag could not tell one apart from the request that came after it.
+	local stranded = 0
+
+	local function run()
+		queued = false
+
+		if stranded > 0 then
+			stranded = stranded - 1
+			return
+		end
+
+		callback()
+	end
+
+	local function queue()
+		if queued then
+			return
+		end
+
+		queued = true
+		C_Timer.After(0, run)
+	end
+
+	local function cancel()
+		if queued then
+			stranded = stranded + 1
+			queued = false
+		end
+	end
+
+	return queue, cancel
+end
+
 ---@param moduleName string The module key (e.g., "AlertsModule", "CcModule")
 ---@return boolean
 function M:IsModuleEnabled(moduleName)
+	-- Housing outranks every context, Always included; test mode still previews there.
+	if IsInHousing() then
+		return false
+	end
+
 	if not db or not db.Modules or not db.Modules[moduleName] then
 		return true -- Default to enabled if settings don't exist
 	end

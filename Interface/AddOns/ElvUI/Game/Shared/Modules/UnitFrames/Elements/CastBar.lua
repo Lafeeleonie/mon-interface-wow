@@ -1,6 +1,5 @@
 local E, L, V, P, G = unpack(ElvUI)
 local UF = E:GetModule('UnitFrames')
-local LSM = E.Libs.LSM
 local ElvUF = E.oUF
 
 local abs, next = abs, next
@@ -153,6 +152,7 @@ function UF:Construct_Castbar(frame, moverName)
 	castbar.Shield = castbar:CreateTexture(nil, 'OVERLAY', nil, 2)
 	castbar.Shield:SetTexture(E.media.blankTex)
 	castbar.Shield:SetAlpha(0) -- disable is so its hidden on classic
+	UF.statusbars[castbar.Shield] = 'castbarShield'
 
 	--Set to castbar.SafeZone
 	castbar.LatencyTexture = castbar:CreateTexture(nil, 'OVERLAY', nil, 3)
@@ -241,14 +241,14 @@ function UF:Configure_Castbar(frame)
 	--Font Options
 	local customFont = db.customTextFont
 	if customFont.enable then
-		castbar.Text:FontTemplate(LSM:Fetch('font', customFont.font), customFont.fontSize, customFont.fontStyle)
+		castbar.Text:FontTemplate(customFont.font, customFont.fontSize, customFont.fontStyle)
 	else
 		UF:Update_FontString(castbar.Text)
 	end
 
 	customFont = db.customTimeFont
 	if customFont.enable then
-		castbar.Time:FontTemplate(LSM:Fetch('font', customFont.font), customFont.fontSize, customFont.fontStyle)
+		castbar.Time:FontTemplate(customFont.font, customFont.fontSize, customFont.fontStyle)
 	else
 		UF:Update_FontString(castbar.Time)
 	end
@@ -525,8 +525,8 @@ function UF:GetInterruptColor(db, unit)
 			return colors.castNoInterrupt.r, colors.castNoInterrupt.g, colors.castNoInterrupt.b
 		end
 	elseif ((custom and custom.useClassColor) or (not custom and UF.db.colors.castClassColor)) and UnitIsPlayer(unit) then
-		local _, Class = UnitClass(unit)
-		local t = Class and colors.class[Class]
+		local _, classToken = UnitClass(unit)
+		local t = E:NotSecretValue(classToken) and classToken and colors.class[classToken]
 		if t then return t.r, t.g, t.b end
 	elseif (custom and custom.useReactionColor) or (not custom and UF.db.colors.castReactionColor) then
 		local Reaction = UnitReaction(unit, 'player')
@@ -615,7 +615,7 @@ function UF:PostCastStart(unit)
 			end
 
 			-- Base ticks upgraded by another aura
-			local auraTicks = baseTicks and global.AuraChannelTicks[spellID]
+			local auraTicks = baseTicks and not E.Retail and global.AuraChannelTicks[spellID]
 			if auraTicks then
 				for auraID, tickCount in next, auraTicks.spells do
 					if E:GetAuraByID(unit, auraID, auraTicks.filter) then

@@ -2,8 +2,8 @@ local E, L, V, P, G = unpack(ElvUI)
 local S = E:GetModule('Skins')
 
 local _G = _G
-local format, pairs, strmatch = format, pairs, strmatch
 local hooksecurefunc = hooksecurefunc
+local format, pairs, strmatch = format, pairs, strmatch
 
 local GetBattlefieldScore = GetBattlefieldScore
 local IsActiveBattlefieldArena = IsActiveBattlefieldArena
@@ -44,7 +44,6 @@ function S:SkinWorldStateScore()
 
 	for i = 1, 3 do
 		S:HandleTab(_G['WorldStateScoreFrameTab'..i])
-		_G['WorldStateScoreFrameTab'..i..'Text']:SetPoint('CENTER', 0, 2)
 	end
 
 	-- Reposition Tabs

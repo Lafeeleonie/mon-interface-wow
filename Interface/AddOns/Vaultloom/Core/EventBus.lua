@@ -3,6 +3,10 @@ local _, Addon = ...
 local EventBus = {
     subscriptions = {},
     ownerEvents = {},
+    activeCounts = {},
+    compactionNeeded = {},
+    mutationVersion = 0,
+    dispatchDepth = 0,
 }
 
 Addon.EventBus = EventBus
@@ -10,31 +14,90 @@ Addon.EventBus = EventBus
 local eventFrame = CreateFrame("Frame")
 EventBus.frame = eventFrame
 
-local function removeOwnerFromEvent(self, eventName, owner)
+local function unregisterEvent(eventName)
+    local ok, errorMessage = pcall(eventFrame.UnregisterEvent, eventFrame, eventName)
+    if not ok then
+        Addon.Logger:Write(
+            "WARN",
+            "eventbus.unregister",
+            "Could not unregister %s: %s",
+            eventName,
+            tostring(errorMessage)
+        )
+    end
+end
+
+local function compactEvent(self, eventName)
     local handlers = self.subscriptions[eventName]
     if type(handlers) ~= "table" then
+        self.compactionNeeded[eventName] = nil
         return
     end
 
-    for index = #handlers, 1, -1 do
-        if handlers[index].owner == owner then
-            table.remove(handlers, index)
+    -- Removals stay addressable until the outermost dispatch has finished.
+    -- Compaction is cold-path work and never allocates a second list.
+    local writeIndex = 1
+    for readIndex = 1, #handlers do
+        local handler = handlers[readIndex]
+        if handler.removedAt == nil then
+            if writeIndex ~= readIndex then
+                handlers[writeIndex] = handler
+            end
+            writeIndex = writeIndex + 1
+        end
+    end
+    for index = #handlers, writeIndex, -1 do
+        handlers[index] = nil
+    end
+
+    self.compactionNeeded[eventName] = nil
+    if (tonumber(self.activeCounts[eventName]) or 0) == 0 then
+        self.subscriptions[eventName] = nil
+        self.activeCounts[eventName] = nil
+    end
+end
+
+local function compactPendingEvents(self)
+    if self.dispatchDepth ~= 0 then
+        return
+    end
+    for eventName in pairs(self.compactionNeeded) do
+        compactEvent(self, eventName)
+    end
+end
+
+local function removeOwnerFromEvent(self, eventName, owner)
+    local handlers = self.subscriptions[eventName]
+    if type(handlers) ~= "table" then
+        return false
+    end
+
+    local removedAt
+    local removedCount = 0
+    for index = 1, #handlers do
+        local handler = handlers[index]
+        if handler.owner == owner and handler.removedAt == nil then
+            if removedAt == nil then
+                self.mutationVersion = self.mutationVersion + 1
+                removedAt = self.mutationVersion
+            end
+            handler.removedAt = removedAt
+            removedCount = removedCount + 1
         end
     end
 
-    if #handlers == 0 then
-        self.subscriptions[eventName] = nil
-        local ok, errorMessage = pcall(eventFrame.UnregisterEvent, eventFrame, eventName)
-        if not ok then
-            Addon.Logger:Write(
-                "WARN",
-                "eventbus.unregister",
-                "Could not unregister %s: %s",
-                eventName,
-                tostring(errorMessage)
-            )
-        end
+    if removedCount == 0 then
+        return false
     end
+
+    local activeCount = math.max(0, (tonumber(self.activeCounts[eventName]) or 0) - removedCount)
+    self.activeCounts[eventName] = activeCount
+    self.compactionNeeded[eventName] = true
+    if activeCount == 0 then
+        unregisterEvent(eventName)
+    end
+    compactPendingEvents(self)
+    return true
 end
 
 function EventBus:Subscribe(eventName, owner, callback)
@@ -42,16 +105,17 @@ function EventBus:Subscribe(eventName, owner, callback)
         return false
     end
 
-    self.ownerEvents[owner] = self.ownerEvents[owner] or {}
-    if self.ownerEvents[owner][eventName] then
+    local events = self.ownerEvents[owner]
+    if type(events) == "table" and events[eventName] then
         removeOwnerFromEvent(self, eventName, owner)
+        events[eventName] = nil
     end
 
     local handlers = self.subscriptions[eventName]
-    if not handlers then
+    local activeCount = tonumber(self.activeCounts[eventName]) or 0
+    if activeCount == 0 then
         local ok, registered = pcall(eventFrame.RegisterEvent, eventFrame, eventName)
         if not ok or registered == false then
-            local events = self.ownerEvents[owner]
             if events and next(events) == nil then
                 self.ownerEvents[owner] = nil
             end
@@ -64,16 +128,24 @@ function EventBus:Subscribe(eventName, owner, callback)
             )
             return false
         end
+    end
 
+    if type(handlers) ~= "table" then
         handlers = {}
         self.subscriptions[eventName] = handlers
     end
 
+    self.mutationVersion = self.mutationVersion + 1
     handlers[#handlers + 1] = {
         owner = owner,
         callback = callback,
+        callsite = "event." .. eventName,
+        addedAt = self.mutationVersion,
     }
-    self.ownerEvents[owner][eventName] = true
+    self.activeCounts[eventName] = activeCount + 1
+    events = events or {}
+    self.ownerEvents[owner] = events
+    events[eventName] = true
     return true
 end
 
@@ -120,36 +192,43 @@ function EventBus:Dispatch(eventName, ...)
     end
 
     local handlers = self.subscriptions[eventName]
-    if type(handlers) ~= "table" or #handlers == 0 then
+    if type(handlers) ~= "table" or (tonumber(self.activeCounts[eventName]) or 0) == 0 then
         return
     end
 
-    local snapshot = {}
-    for index, handler in ipairs(handlers) do
-        snapshot[index] = handler
-    end
-
-    for _, handler in ipairs(snapshot) do
-        if Addon.PerformanceDiagnostics.active == true then
-            Addon.PerformanceDiagnostics:Call(
-                handler.owner,
-                "event",
-                eventName,
-                "event." .. eventName,
-                handler.callback,
-                eventName,
-                ...
-            )
-        else
-            Addon:SafeCall("event." .. eventName, handler.callback, eventName, ...)
+    -- A fixed limit plus mutation generations reproduces snapshot membership
+    -- without allocating and copying a handler table for every event.
+    local dispatchVersion = self.mutationVersion
+    local handlerLimit = #handlers
+    self.dispatchDepth = self.dispatchDepth + 1
+    for index = 1, handlerLimit do
+        local handler = handlers[index]
+        if handler.addedAt <= dispatchVersion
+            and (handler.removedAt == nil or handler.removedAt > dispatchVersion)
+        then
+            if Addon.PerformanceDiagnostics.active == true then
+                Addon.PerformanceDiagnostics:Call(
+                    handler.owner,
+                    "event",
+                    eventName,
+                    handler.callsite,
+                    handler.callback,
+                    eventName,
+                    ...
+                )
+            else
+                Addon:SafeCall(handler.callsite, handler.callback, eventName, ...)
+            end
         end
     end
+    self.dispatchDepth = self.dispatchDepth - 1
+    compactPendingEvents(self)
 end
 
 function EventBus:GetSubscriptionCount()
     local count = 0
-    for _, handlers in pairs(self.subscriptions) do
-        count = count + #handlers
+    for _, activeCount in pairs(self.activeCounts) do
+        count = count + activeCount
     end
     return count
 end

@@ -5,6 +5,34 @@ local FEATURE_ID = "stat_focus"
 local MODE_PRESET = "preset"
 local MODE_CUSTOM = "custom"
 
+local DEFAULT_CONTENT_KEY = "solo"
+local DEFAULT_BUILD_KEY = "standard"
+local TOOLTIP_STYLE_CLEAN = "clean"
+local TOOLTIP_STYLE_FULL = "full"
+local CONTENT_KEYS = { "solo", "delve", "raid", "mythicplus" }
+local VALID_CONTENT_KEYS = {
+    solo = true,
+    delve = true,
+    raid = true,
+    mythicplus = true,
+}
+local CONTENT_COMMANDS = {
+    solo = "solo",
+    delve = "delve",
+    delves = "delve",
+    raid = "raid",
+    mythic = "mythicplus",
+    mythics = "mythicplus",
+    mythicplus = "mythicplus",
+    mplus = "mythicplus",
+    ["m+"] = "mythicplus",
+}
+local CONTENT_LABEL_KEYS = {
+    solo = "FEATURE_VALUE_STAT_SOLO",
+    delve = "FEATURE_VALUE_STAT_DELVE",
+    raid = "FEATURE_VALUE_STAT_RAID",
+    mythicplus = "FEATURE_VALUE_STAT_MYTHIC_PLUS",
+}
 local DEFAULT_STAT_ORDER = { "HASTE", "MASTERY", "CRIT", "VERSATILITY" }
 local DOT_TEXTURE_TOKEN = "stat_focus_dot_"
 local DOT_TEXTURES = {
@@ -94,16 +122,116 @@ local RANK_COLORS = {
 }
 
 local DISPLAY_SETTING_KEYS = {
-    tooltip_text = true,
     stat_colors = true,
     stat_dots = true,
 }
 
 local DISPLAY_SETTING_DEFAULTS = {
-    tooltip_text = true,
     stat_colors = false,
     stat_dots = false,
 }
+
+-- WoW item class IDs are stable API values: 2 = Weapon, 4 = Armor.
+-- Requiring an equipment location also excludes armor tokens and other
+-- non-equippable items that happen to use one of these item classes.
+local EQUIPMENT_ITEM_CLASSES = {
+    [2] = true,
+    [4] = true,
+}
+
+local function getTooltipItemReference(tooltip, data)
+    if type(data) == "table" then
+        local ok, value = pcall(function()
+            return data.itemID or data.id or data.hyperlink or data.itemLink or data.link
+        end)
+        if ok and (type(value) == "number" or (type(value) == "string" and value ~= "")) then
+            return value
+        end
+    end
+
+    if tooltip and type(tooltip.GetItem) == "function" then
+        local ok, _, itemLink = pcall(tooltip.GetItem, tooltip)
+        if ok and type(itemLink) == "string" and itemLink ~= "" then
+            return itemLink
+        end
+    end
+
+    return nil
+end
+
+local function isSupportedEquipmentTooltip(tooltip, data)
+    local itemReference = getTooltipItemReference(tooltip, data)
+    if itemReference == nil or not C_Item or type(C_Item.GetItemInfoInstant) ~= "function" then
+        return false
+    end
+
+    local ok, itemID, _, _, equipLocation, _, classID = pcall(C_Item.GetItemInfoInstant, itemReference)
+    if not ok or not tonumber(itemID) or not EQUIPMENT_ITEM_CLASSES[tonumber(classID)] then
+        return false
+    end
+
+    return type(equipLocation) == "string"
+        and equipLocation ~= ""
+        and equipLocation ~= "INVTYPE_NON_EQUIP"
+end
+
+local function copyStatOrder(order)
+    local result = {}
+    for index, stat in ipairs(type(order) == "table" and order or {}) do
+        result[index] = stat
+    end
+    return #result > 0 and result or nil
+end
+
+local function normalizeProfileRecord(profile, fallbackMode, fallbackOrder, fallbackBuildKey)
+    profile = type(profile) == "table" and profile or {}
+    local mode = profile.mode
+    if mode ~= MODE_CUSTOM and mode ~= MODE_PRESET then
+        mode = fallbackMode == MODE_CUSTOM and MODE_CUSTOM or MODE_PRESET
+    end
+    profile.mode = mode
+    profile.order = type(profile.order) == "table" and profile.order
+        or (mode == MODE_CUSTOM and copyStatOrder(fallbackOrder) or nil)
+    if mode ~= MODE_CUSTOM then
+        profile.order = nil
+    end
+    profile.buildKey = type(profile.buildKey) == "string" and profile.buildKey ~= ""
+        and profile.buildKey
+        or (type(fallbackBuildKey) == "string" and fallbackBuildKey ~= "" and fallbackBuildKey)
+        or DEFAULT_BUILD_KEY
+    return profile
+end
+
+local function normalizeSpecRecord(record)
+    if type(record) ~= "table" then
+        return nil
+    end
+
+    local legacy = record.version ~= 2
+    local legacyMode = record.mode == MODE_CUSTOM and MODE_CUSTOM or MODE_PRESET
+    local legacyOrder = type(record.order) == "table" and record.order or nil
+    local legacyBuildKey = type(record.buildKey) == "string" and record.buildKey ~= ""
+        and record.buildKey or DEFAULT_BUILD_KEY
+    record.version = 2
+    record.contentKey = VALID_CONTENT_KEYS[record.contentKey] and record.contentKey or DEFAULT_CONTENT_KEY
+    record.profiles = type(record.profiles) == "table" and record.profiles or {}
+
+    for _, contentKey in ipairs(CONTENT_KEYS) do
+        local fallbackMode = legacy and legacyMode or MODE_PRESET
+        local fallbackOrder = legacy and legacyOrder or nil
+        record.profiles[contentKey] = normalizeProfileRecord(
+            record.profiles[contentKey],
+            fallbackMode,
+            fallbackOrder,
+            legacyBuildKey
+        )
+    end
+
+    record.mode = nil
+    record.order = nil
+    record.buildKey = nil
+    return record
+end
 
 local Runtime = {
     enabled = false,
@@ -193,18 +321,59 @@ local function getSpecRecord(create)
             and store.characters[characterKey] or {}
         store.characters[characterKey][context.specKey] = type(store.characters[characterKey][context.specKey]) == "table"
             and store.characters[characterKey][context.specKey] or {}
-        return store.characters[characterKey][context.specKey], context
+        return normalizeSpecRecord(store.characters[characterKey][context.specKey]), context
     end
 
     local characterStore = type(store.characters) == "table" and store.characters[characterKey] or nil
-    return type(characterStore) == "table" and characterStore[context.specKey] or nil, context
+    local record = type(characterStore) == "table" and characterStore[context.specKey] or nil
+    return normalizeSpecRecord(record), context
 end
 
-local function getPreset(context)
+local function getPreset(context, contentKey, buildKey)
     if not context or not Addon.StatFocusPresets then
         return nil
     end
-    return Addon.StatFocusPresets:Get(context.specID, context.classToken, context.specIndex)
+    return Addon.StatFocusPresets:GetProfile(
+        context.specID,
+        context.classToken,
+        context.specIndex,
+        contentKey,
+        buildKey
+    )
+end
+
+local function getActiveProfileRecord(create)
+    local record, context = getSpecRecord(create)
+    if not record then
+        return nil, context, nil
+    end
+    local contentKey = VALID_CONTENT_KEYS[record.contentKey] and record.contentKey or DEFAULT_CONTENT_KEY
+    if create then
+        record.profiles[contentKey] = normalizeProfileRecord(record.profiles[contentKey])
+    end
+    return record.profiles[contentKey], context, record
+end
+
+local function isBuildAvailable(context, contentKey, buildKey)
+    if buildKey == DEFAULT_BUILD_KEY then
+        return true
+    end
+    if not context or not Addon.StatFocusPresets
+        or type(Addon.StatFocusPresets.GetAvailableBuilds) ~= "function"
+    then
+        return false
+    end
+    for _, candidate in ipairs(Addon.StatFocusPresets:GetAvailableBuilds(
+        context.specID,
+        context.classToken,
+        context.specIndex,
+        contentKey
+    )) do
+        if candidate == buildKey then
+            return true
+        end
+    end
+    return false
 end
 
 local function flattenTiers(tiers)
@@ -370,95 +539,189 @@ local function splitWords(message)
     return words
 end
 
-function Runtime:GetPreset()
-    return getPreset(getCurrentContext())
+local function getContentLabel(contentKey)
+    local key = CONTENT_LABEL_KEYS[contentKey]
+    return key and Addon.L[key] or tostring(contentKey or DEFAULT_CONTENT_KEY)
+end
+
+local function getBuildLabel(buildKey)
+    if buildKey == DEFAULT_BUILD_KEY then
+        return Addon.L.FEATURE_VALUE_STAT_STANDARD_BUILD
+    end
+    return tostring(buildKey or DEFAULT_BUILD_KEY)
+end
+
+function Runtime:GetCurrentContentProfile()
+    local record = getSpecRecord(false)
+    return record and record.contentKey or DEFAULT_CONTENT_KEY
+end
+
+function Runtime:SetCurrentContentProfile(contentKey)
+    contentKey = VALID_CONTENT_KEYS[contentKey] and contentKey or DEFAULT_CONTENT_KEY
+    local record, context = getSpecRecord(true)
+    if not record then
+        return DEFAULT_CONTENT_KEY
+    end
+    record.contentKey = contentKey
+    local profile = record.profiles[contentKey]
+    if not isBuildAvailable(context, contentKey, profile.buildKey) then
+        profile.buildKey = DEFAULT_BUILD_KEY
+    end
+    self:RefreshTrackedTooltips()
+    return contentKey
+end
+
+function Runtime:GetCurrentBuildProfile()
+    local profile, context, record = getActiveProfileRecord(false)
+    if not profile or not record then
+        return DEFAULT_BUILD_KEY
+    end
+    if not isBuildAvailable(context, record.contentKey, profile.buildKey) then
+        profile.buildKey = DEFAULT_BUILD_KEY
+    end
+    return profile.buildKey
+end
+
+function Runtime:SetCurrentBuildProfile(buildKey)
+    buildKey = type(buildKey) == "string" and buildKey ~= "" and buildKey or DEFAULT_BUILD_KEY
+    local profile, context, record = getActiveProfileRecord(true)
+    if not profile or not record then
+        return DEFAULT_BUILD_KEY
+    end
+    if not isBuildAvailable(context, record.contentKey, buildKey) then
+        buildKey = DEFAULT_BUILD_KEY
+    end
+    profile.buildKey = buildKey
+    self:RefreshTrackedTooltips()
+    return buildKey
+end
+
+function Runtime:GetPreset(contentKey, buildKey)
+    contentKey = contentKey or self:GetCurrentContentProfile()
+    buildKey = buildKey or self:GetCurrentBuildProfile()
+    return getPreset(getCurrentContext(), contentKey, buildKey)
 end
 
 function Runtime:GetCurrentMode()
-    local record = getSpecRecord(false)
-    return type(record) == "table" and record.mode == MODE_CUSTOM and MODE_CUSTOM or MODE_PRESET
+    local profile = getActiveProfileRecord(false)
+    return type(profile) == "table" and profile.mode == MODE_CUSTOM and MODE_CUSTOM or MODE_PRESET
 end
 
 function Runtime:SetCurrentMode(mode)
     mode = mode == MODE_CUSTOM and MODE_CUSTOM or MODE_PRESET
-    local record, context = getSpecRecord(true)
-    if not record or not context then
+    local profile, context, record = getActiveProfileRecord(true)
+    if not profile or not context or not record then
         return MODE_PRESET
     end
-    record.mode = mode
+    profile.mode = mode
     if mode == MODE_CUSTOM then
-        local preset = getPreset(context)
-        record.order = normalizeCustomOrder(record.order, preset and preset.tiers)
+        local preset = getPreset(context, record.contentKey, profile.buildKey)
+        profile.order = normalizeCustomOrder(profile.order, preset and preset.tiers)
+    else
+        profile.order = nil
     end
     self:RefreshTrackedTooltips()
     return mode
 end
 
 function Runtime:GetCustomTiers()
-    local record, context = getSpecRecord(false)
-    if type(record) ~= "table" then
+    local profile, context, record = getActiveProfileRecord(false)
+    if type(profile) ~= "table" or not context or not record then
         return nil
     end
-    local preset = getPreset(context)
-    local order = normalizeCustomOrder(record.order, preset and preset.tiers)
+    local preset = getPreset(context, record.contentKey, profile.buildKey)
+    local order = normalizeCustomOrder(profile.order, preset and preset.tiers)
     if not order then
         return nil
     end
-    record.order = order
+    profile.order = order
     return copyFlatStatsToTiers(order)
 end
 
 function Runtime:SetCustomOrder(stats)
-    local record, context = getSpecRecord(true)
-    if not record or not context then
+    local profile, context, record = getActiveProfileRecord(true)
+    if not profile or not context or not record then
         return nil
     end
-    local preset = getPreset(context)
+    local preset = getPreset(context, record.contentKey, profile.buildKey)
     local order = normalizeCustomOrder(stats, preset and preset.tiers)
     if not order then
         return nil
     end
-    record.mode = MODE_CUSTOM
-    record.order = order
+    profile.mode = MODE_CUSTOM
+    profile.order = order
     self:RefreshTrackedTooltips()
     return order
 end
 
 function Runtime:ClearCustomOrder()
+    local profile = getActiveProfileRecord(false)
+    if type(profile) == "table" then
+        profile.mode = MODE_PRESET
+        profile.order = nil
+    end
+    self:RefreshTrackedTooltips()
+end
+
+function Runtime:ResetAllProfiles()
     local record = getSpecRecord(false)
     if type(record) == "table" then
-        record.mode = MODE_PRESET
-        record.order = nil
+        record.contentKey = DEFAULT_CONTENT_KEY
+        for _, contentKey in ipairs(CONTENT_KEYS) do
+            record.profiles[contentKey] = normalizeProfileRecord(record.profiles[contentKey])
+            record.profiles[contentKey].mode = MODE_PRESET
+            record.profiles[contentKey].order = nil
+            record.profiles[contentKey].buildKey = DEFAULT_BUILD_KEY
+        end
     end
     self:RefreshTrackedTooltips()
 end
 
 function Runtime:GetActiveTiers()
-    local context = getCurrentContext()
-    local preset = getPreset(context)
-    if self:GetCurrentMode() == MODE_CUSTOM then
-        local custom = self:GetCustomTiers()
-        if custom then
-            return custom, MODE_CUSTOM, preset, context
+    local record, context = getSpecRecord(false)
+    local contentKey = record and record.contentKey or DEFAULT_CONTENT_KEY
+    local profile = record and record.profiles[contentKey] or nil
+    local buildKey = profile and profile.buildKey or DEFAULT_BUILD_KEY
+    if not isBuildAvailable(context, contentKey, buildKey) then
+        buildKey = DEFAULT_BUILD_KEY
+        if profile then
+            profile.buildKey = buildKey
         end
     end
-    return preset and preset.tiers or nil, MODE_PRESET, preset, context
+    local preset = getPreset(context, contentKey, buildKey)
+    if type(profile) == "table" and profile.mode == MODE_CUSTOM then
+        local order = normalizeCustomOrder(profile.order, preset and preset.tiers)
+        if order then
+            profile.order = order
+            return copyFlatStatsToTiers(order), MODE_CUSTOM, preset, context, contentKey, buildKey
+        end
+    end
+    return preset and preset.tiers or nil, MODE_PRESET, preset, context, contentKey, buildKey
 end
 
 function Runtime:GetSummaryText()
-    local tiers, mode, _, context = self:GetActiveTiers()
+    local tiers, _, _, context, contentKey = self:GetActiveTiers()
     if not tiers then
         return Addon.L.FEATURE_STAT_FOCUS_NO_SPEC
     end
-    local modeLabel = mode == MODE_CUSTOM
-        and Addon.L.FEATURE_VALUE_CUSTOM
-        or Addon.L.FEATURE_VALUE_PRESET
-    local contextLabel = context and context.specName
-    local prefix = contextLabel and (modeLabel .. " - " .. contextLabel) or modeLabel
-    return prefix .. ": " .. formatTierSummary(tiers)
+    local labels = { getContentLabel(contentKey) }
+    if context and context.specName then
+        table.insert(labels, 1, context.specName)
+    end
+    return table.concat(labels, " · ") .. ": " .. formatTierSummary(tiers)
 end
 
 function Runtime:GetSettingValue(settingKey)
+    if settingKey == "tooltip_text_style" then
+        local saved = Addon.FeatureRegistry:GetState(FEATURE_ID).settings[settingKey]
+        return saved == TOOLTIP_STYLE_CLEAN and TOOLTIP_STYLE_CLEAN or TOOLTIP_STYLE_FULL
+    end
+    if settingKey == "content_profile" then
+        return self:GetCurrentContentProfile()
+    end
+    if settingKey == "build_profile" then
+        return self:GetCurrentBuildProfile()
+    end
     if settingKey == "priority_mode" then
         return self:GetCurrentMode()
     end
@@ -472,13 +735,26 @@ function Runtime:GetSettingValue(settingKey)
 end
 
 function Runtime:SetSettingValue(settingKey, value)
+    if settingKey == "tooltip_text_style" then
+        Addon.FeatureRegistry:GetState(FEATURE_ID).settings[settingKey] =
+            value == TOOLTIP_STYLE_CLEAN and TOOLTIP_STYLE_CLEAN or TOOLTIP_STYLE_FULL
+        if self.enabled == true then
+            self:RefreshTrackedTooltips()
+        end
+        return true
+    end
+    if settingKey == "content_profile" then
+        return self:SetCurrentContentProfile(value) == value
+    end
+    if settingKey == "build_profile" then
+        return self:SetCurrentBuildProfile(value) == value
+    end
     if settingKey == "priority_mode" then
         self:SetCurrentMode(value)
         return true
     end
     if DISPLAY_SETTING_KEYS[settingKey] then
         Addon.FeatureRegistry:GetState(FEATURE_ID).settings[settingKey] = value == true
-        self:EnsureVisibleDisplay(settingKey)
         if self.enabled == true then
             self:RefreshTrackedTooltips()
         end
@@ -488,7 +764,7 @@ function Runtime:SetSettingValue(settingKey, value)
 end
 
 function Runtime:ResetSettingValues()
-    self:ClearCustomOrder()
+    self:ResetAllProfiles()
 end
 
 local function restoreLineHints(tooltip)
@@ -596,33 +872,38 @@ function Runtime:ApplyLineHints(tooltip, rankMap, colorLines, addDots)
     tooltip.VaultloomStatFocusLineStates = #states > 0 and states or nil
 end
 
-function Runtime:AddSummary(tooltip, tiers, contextual)
-    local header = Addon.L.FEATURE_STAT_FOCUS_TOOLTIP_HEADER
+function Runtime:AddSummary(tooltip, tiers, textStyle, contentKey)
     tooltip:AddLine(" ")
-    tooltip:AddLine(header, 1, 0.82, 0.24, true)
-    tooltip:AddLine(formatTierSummary(tiers), 1, 1, 1, true)
-    if contextual then
-        tooltip:AddLine(Addon.L.FEATURE_STAT_FOCUS_CONTEXT_NOTE, 0.72, 0.68, 0.58, true)
+    if textStyle == TOOLTIP_STYLE_FULL then
+        tooltip:AddLine(
+            Addon.L.FEATURE_STAT_FOCUS_TOOLTIP_HEADER .. " · " .. getContentLabel(contentKey),
+            1,
+            0.82,
+            0.24,
+            true
+        )
     end
+    tooltip:AddLine(formatTierSummary(tiers), 1, 1, 1, true)
     tooltip.VaultloomStatFocusSummary = true
 end
 
-function Runtime:ApplyTooltip(tooltip)
+function Runtime:ApplyTooltip(tooltip, data)
     if self.enabled ~= true or not tooltip or tooltip.VaultloomStatFocusRendered then
         return
     end
 
-    local tiers, _, preset = self:GetActiveTiers()
+    if not isSupportedEquipmentTooltip(tooltip, data) then
+        return
+    end
+
+    local tiers, _, _, _, contentKey = self:GetActiveTiers()
     if not tiers then
         return
     end
     local rankMap = buildRankMap(tiers)
-    local showText = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "tooltip_text") == true
+    local textStyle = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "tooltip_text_style")
     local colorLines = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "stat_colors") == true
     local addDots = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "stat_dots") == true
-    if not showText and not colorLines and not addDots then
-        return
-    end
 
     ensureTooltipResetHook(tooltip)
     tooltip.VaultloomStatFocusRendered = true
@@ -631,9 +912,7 @@ function Runtime:ApplyTooltip(tooltip)
     if colorLines or addDots then
         self:ApplyLineHints(tooltip, rankMap, colorLines, addDots)
     end
-    if showText then
-        self:AddSummary(tooltip, tiers, preset and preset.contextual == true)
-    end
+    self:AddSummary(tooltip, tiers, textStyle, contentKey)
     if type(tooltip.Show) == "function" then
         tooltip:Show()
     end
@@ -648,21 +927,20 @@ function Runtime:EnsureHooks()
     if TooltipDataProcessor and type(TooltipDataProcessor.AddTooltipPostCall) == "function"
         and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item
     then
-        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
-            Runtime:ApplyTooltip(tooltip)
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
+            Runtime:ApplyTooltip(tooltip, data)
         end)
         return
     end
     if GameTooltip and type(GameTooltip.HookScript) == "function" then
         GameTooltip:HookScript("OnTooltipSetItem", function(tooltip)
-            Runtime:ApplyTooltip(tooltip)
+            Runtime:ApplyTooltip(tooltip, nil)
         end)
     end
 end
 
 function Runtime:OnEnable()
     self.enabled = true
-    self:EnsureVisibleDisplay("tooltip_text")
     self:EnsureHooks()
 end
 
@@ -673,23 +951,7 @@ function Runtime:OnDisable()
     end
 end
 
-function Runtime:EnsureVisibleDisplay(preferredSetting)
-    local showText = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "tooltip_text") == true
-    local colorLines = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "stat_colors") == true
-    local addDots = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "stat_dots") == true
-    if showText or colorLines or addDots then
-        return true
-    end
-
-    local settingKey = DISPLAY_SETTING_KEYS[preferredSetting] and preferredSetting or "tooltip_text"
-    Addon.FeatureRegistry:GetState(FEATURE_ID).settings[settingKey] = true
-    return false
-end
-
-function Runtime:OnSettingChanged(settingKey)
-    if DISPLAY_SETTING_KEYS[settingKey] then
-        self:EnsureVisibleDisplay(settingKey)
-    end
+function Runtime:OnSettingChanged()
     self:RefreshTrackedTooltips()
 end
 
@@ -704,6 +966,26 @@ function Runtime:HandleSlash(message)
     if first == "" or first == "show" or first == "status" then
         Addon:Print(self:GetSummaryText())
         Addon:Print(Addon.L.FEATURE_STAT_FOCUS_SLASH_HELP)
+        return true
+    end
+    local selectedContent = CONTENT_COMMANDS[first]
+    if selectedContent then
+        self:SetCurrentContentProfile(selectedContent)
+        Addon:Print(string.format(
+            Addon.L.FEATURE_STAT_FOCUS_PROFILE_SELECTED,
+            getContentLabel(selectedContent)
+        ))
+        Addon:Print(self:GetSummaryText())
+        return true
+    end
+    if first == "build" and words[2] then
+        local buildKey = words[2]:lower()
+        local selectedBuild = self:SetCurrentBuildProfile(buildKey)
+        Addon:Print(string.format(
+            Addon.L.FEATURE_STAT_FOCUS_BUILD_SELECTED,
+            getBuildLabel(selectedBuild)
+        ))
+        Addon:Print(self:GetSummaryText())
         return true
     end
     if first == "preset" or first == "auto" or first == "预设" or first == "自动" or first == "預設" or first == "自動" then

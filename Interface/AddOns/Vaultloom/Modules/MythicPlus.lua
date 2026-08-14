@@ -1,7 +1,8 @@
 local _, Addon = ...
 
+local Data = Addon.Data.MYTHIC_PLUS
 local Module = {
-    id = "mythicplus.season1",
+    id = Data.stateID,
     defaultEnabled = true,
 }
 local Service = {}
@@ -22,14 +23,27 @@ local function getRecord(characterKey)
     return type(record) == "table" and record or nil
 end
 
-function Service:GetSnapshot(characterKey)
+function Service:GetSnapshot(characterKey, seasonKey)
     local record = type(characterKey) == "string" and getRecord(characterKey) or nil
-    local snapshot = record and type(record.snapshots) == "table" and record.snapshots.mythicPlus or nil
+    local snapshots = record and type(record.snapshots) == "table" and record.snapshots or nil
+    seasonKey = type(seasonKey) == "string" and seasonKey or Data.seasonKey
+    local archive = snapshots and type(snapshots.mythicPlusSeasons) == "table"
+        and snapshots.mythicPlusSeasons or nil
+    local snapshot = archive and archive[seasonKey] or nil
+    if type(snapshot) ~= "table" and seasonKey == Data.seasonKey then
+        local legacy = snapshots and snapshots.mythicPlus or nil
+        if type(legacy) == "table"
+            and (legacy.seasonKey == seasonKey or (legacy.seasonKey == nil and seasonKey == "season1"))
+        then
+            snapshot = legacy
+        end
+    end
     return type(snapshot) == "table" and snapshot or nil
 end
 
-function Service:GetView(characterKey)
-    return Addon.MythicPlusLogic:BuildView(self:GetSnapshot(characterKey))
+function Service:GetView(characterKey, seasonKey)
+    seasonKey = Data.seasonKeys[seasonKey] and seasonKey or Data.seasonKey
+    return Addon.MythicPlusLogic:BuildView(self:GetSnapshot(characterKey, seasonKey), seasonKey)
 end
 
 function Service:GetWarbandOverview()
@@ -47,10 +61,32 @@ local function collect()
     local identity = Addon.StateStore:Get("character.identity") or Addon.WoWApi:GetCurrentCharacterIdentity()
     local record = identity and identity.key and getRecord(identity.key) or nil
     if not record then return nil end
-    local snapshot = Addon.MythicPlusLogic:Scan()
+    local existing = Service:GetSnapshot(identity.key)
+    local snapshot = Addon.MythicPlusLogic:Scan(existing)
     if snapshot then
-        record.snapshots = type(record.snapshots) == "table" and record.snapshots or {}
-        record.snapshots.mythicPlus = snapshot
+        local previousSnapshots = type(record.snapshots) == "table" and record.snapshots or {}
+        local previousSeasons = type(previousSnapshots.mythicPlusSeasons) == "table"
+            and previousSnapshots.mythicPlusSeasons or {}
+        local seasons = {}
+        for seasonKey, seasonSnapshot in pairs(previousSeasons) do
+            seasons[seasonKey] = seasonSnapshot
+        end
+        seasons[Data.seasonKey] = snapshot
+        local seasonsStored = Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "mythicPlusSeasons",
+            seasons,
+            "refresh"
+        )
+        -- Keep the legacy field as an active-season alias for older consumers
+        -- and SavedVariables written by pre-season-migration builds.
+        local legacyStored = Addon.Database:CommitCharacterSnapshot(
+            identity.key,
+            "mythicPlus",
+            snapshot,
+            "refresh"
+        )
+        if not seasonsStored or not legacyStored then snapshot = Service:GetSnapshot(identity.key) end
     else
         snapshot = Service:GetSnapshot(identity.key)
     end

@@ -7,17 +7,33 @@ local ContainerItems = Addon.ContainerItems
 local COLORS = {
     mill = { 0.18, 0.86, 0.42 },
     prospect = { 0.28, 0.74, 1.00 },
+    crush = { 1.00, 0.36, 0.24 },
+    scrap = { 0.10, 0.92, 0.92 },
+    shatter = { 0.78, 0.62, 1.00 },
+    transmute = { 0.22, 0.56, 1.00 },
     disenchant = { 0.66, 0.48, 1.00 },
     open = { 1.00, 0.78, 0.26 },
 }
 
 local MACRO_SALVAGE = "/run C_TradeSkillUI.CraftSalvage(%d,1,ItemLocation:CreateFromBagAndSlot(%d,%d))"
+local MACRO_TRADE_LOCK = "/cast %s\n/run ClickTargetTradeButton(7)"
+local PROCESSING_GLOW_ATLAS = "UI-HUD-ActionBar-Proc-Loop-Flipbook"
+local SECURE_MODIFIER_ATTRIBUTE = "vaultloom-modifier-state"
+local SECURE_MODIFIER_ARMED = "armed"
+local SECURE_MODIFIER_IDLE = "idle"
+local ACTION_TYPE_ATTRIBUTES = {
+    "type1",
+    "alt-type1",
+    "alt-shift-type1",
+    "alt-ctrl-type1",
+}
 
 local Runtime = {
     enabled = false,
     hooksReady = false,
     refreshGeneration = 0,
     salvageIndex = {},
+    candidateIndex = {},
     disenchantItems = {},
     disenchantAuthoritative = false,
     equipmentSetItems = {},
@@ -27,6 +43,37 @@ Addon.OneClickProcessing = Runtime
 
 local function isCombatLocked()
     return type(InCombatLockdown) == "function" and InCombatLockdown() == true
+end
+
+local function methodReturnsTrue(owner, methodName)
+    local method = owner and owner[methodName]
+    if type(method) ~= "function" then
+        return false
+    end
+    local ok, value = pcall(method, owner)
+    return ok and value == true
+end
+
+local function frameIsVisible(frame)
+    return frame and methodReturnsTrue(frame, "IsVisible")
+end
+
+local function isUnsafeInteractionContext(tooltip, owner)
+    if methodReturnsTrue(tooltip, "IsForbidden")
+        or methodReturnsTrue(owner, "IsAnchoringRestricted")
+        or methodReturnsTrue(owner, "IsAnchoringSecret")
+    then
+        return true
+    end
+    if type(UnitHasVehicleUI) == "function" and UnitHasVehicleUI("player") == true then
+        return true
+    end
+    local equipmentFlyout = PaperDollFrameItemFlyoutButtons or EquipmentFlyoutFrame
+    if frameIsVisible(equipmentFlyout) then
+        return true
+    end
+    local auctionFrame = AuctionHouseFrame or AuctionFrame
+    return frameIsVisible(auctionFrame)
 end
 
 local function isSpellKnown(spellID)
@@ -58,6 +105,43 @@ local function isRecipeKnown(recipeID)
         end
     end
     return isSpellKnown(recipeID)
+end
+
+local function getItemCount(itemID)
+    if C_Item and type(C_Item.GetItemCount) == "function" then
+        local ok, count = pcall(C_Item.GetItemCount, itemID)
+        if ok then
+            return tonumber(count) or 0
+        end
+    end
+    return 0
+end
+
+local function isKeyUsable(itemID)
+    if not (C_TooltipInfo and type(C_TooltipInfo.GetItemByID) == "function") then
+        return true
+    end
+    local ok, data = pcall(C_TooltipInfo.GetItemByID, itemID)
+    if not ok or type(data) ~= "table" or type(data.lines) ~= "table" then
+        return true
+    end
+    local restrictedType = Enum
+        and Enum.TooltipDataLineType
+        and Enum.TooltipDataLineType.RestrictedSkill
+    if restrictedType == nil then
+        return true
+    end
+    for _, line in ipairs(data.lines) do
+        if line.type == restrictedType then
+            local color = line.leftColor
+            if color and type(color.GetRGB) == "function" then
+                local colorOK, red, green, blue = pcall(color.GetRGB, color)
+                return colorOK and red >= 0.99 and green >= 0.99 and blue >= 0.99
+            end
+            return false
+        end
+    end
+    return true
 end
 
 local function getItemID(itemLink, fallback)
@@ -94,6 +178,29 @@ local function getModifierState()
     return altDown, shiftDown, controlDown
 end
 
+local function getModifierDriverCondition(modifier)
+    if modifier == "alt_shift" then
+        return "[mod:alt,mod:shift,nomod:ctrl] "
+            .. SECURE_MODIFIER_ARMED .. "; " .. SECURE_MODIFIER_IDLE
+    end
+    if modifier == "alt_ctrl" then
+        return "[mod:alt,mod:ctrl,nomod:shift] "
+            .. SECURE_MODIFIER_ARMED .. "; " .. SECURE_MODIFIER_IDLE
+    end
+    return "[mod:alt,nomod:shift,nomod:ctrl] "
+        .. SECURE_MODIFIER_ARMED .. "; " .. SECURE_MODIFIER_IDLE
+end
+
+local function getActionTypeAttribute(modifier)
+    if modifier == "alt_shift" then
+        return "alt-shift-type1"
+    end
+    if modifier == "alt_ctrl" then
+        return "alt-ctrl-type1"
+    end
+    return "alt-type1"
+end
+
 function Runtime:IsModifierActive()
     local altDown, shiftDown, controlDown = getModifierState()
     return Logic:ModifierMatches(
@@ -119,6 +226,10 @@ function Runtime:GetActionLabel(kind)
     local keys = {
         mill = "ONE_CLICK_ACTION_MILL",
         prospect = "ONE_CLICK_ACTION_PROSPECT",
+        crush = "ONE_CLICK_ACTION_CRUSH",
+        scrap = "ONE_CLICK_ACTION_SCRAP",
+        shatter = "ONE_CLICK_ACTION_SHATTER",
+        transmute = "ONE_CLICK_ACTION_TRANSMUTE",
         disenchant = "ONE_CLICK_ACTION_DISENCHANT",
         open = "ONE_CLICK_ACTION_OPEN",
     }
@@ -141,7 +252,24 @@ function Runtime:GetSpellIcon(spellID)
     return 134400
 end
 
+function Runtime:GetItemIcon(itemID)
+    if C_Item and type(C_Item.GetItemIconByID) == "function" then
+        local ok, icon = pcall(C_Item.GetItemIconByID, itemID)
+        if ok and icon then
+            return icon
+        end
+    end
+    if type(GetItemIcon) == "function" then
+        local ok, icon = pcall(GetItemIcon, itemID)
+        if ok and icon then
+            return icon
+        end
+    end
+    return 134400
+end
+
 function Runtime:RebuildProcessingData()
+    self.candidateIndex = Logic:BuildCatalogCandidateIndex()
     self.salvageIndex, self.salvageStats = Logic:BuildSalvageIndex(
         getSalvagableItemIDs,
         isRecipeKnown
@@ -185,6 +313,23 @@ end
 
 function Runtime:GetTooltipContext(tooltip, data)
     local owner = tooltip and type(tooltip.GetOwner) == "function" and tooltip:GetOwner() or nil
+    local ownerName = owner and type(owner.GetName) == "function" and owner:GetName() or nil
+    if ownerName == "TradeRecipientItem7ItemButton" then
+        local itemLink
+        if type(GetTradeTargetItemLink) == "function" then
+            local ok, value = pcall(GetTradeTargetItemLink, 7)
+            itemLink = ok and value or nil
+        end
+        if (type(itemLink) ~= "string" or itemLink == "")
+            and tooltip
+            and type(tooltip.GetItem) == "function"
+        then
+            local ok, _, value = pcall(tooltip.GetItem, tooltip)
+            itemLink = ok and value or nil
+        end
+        return owner, nil, nil, itemLink, "trade"
+    end
+
     local bagID, slotID = ContainerItems:GetButtonBagAndSlot(owner)
     local itemLink = bagID ~= nil and slotID ~= nil
         and ContainerItems:GetItemLink(bagID, slotID)
@@ -211,7 +356,7 @@ function Runtime:GetTooltipContext(tooltip, data)
         itemLink = ContainerItems:GetButtonItemLink(owner, bagID, slotID)
     end
 
-    return owner, tonumber(bagID), tonumber(slotID), itemLink
+    return owner, tonumber(bagID), tonumber(slotID), itemLink, "bag"
 end
 
 function Runtime:BuildItemContext(bagID, slotID)
@@ -289,21 +434,61 @@ function Runtime:BuildItemContext(bagID, slotID)
     }
 end
 
-function Runtime:ResolveAction(context)
-    local action = Logic:ResolveAction(context, {
-        salvageIndex = self.salvageIndex,
-        disenchantItems = self.disenchantItems,
-        disenchantAuthoritative = self.disenchantAuthoritative,
-        allowRareEpic = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "disenchant_rare_epic") == true,
-        playerLevel = type(UnitLevel) == "function" and UnitLevel("player") or 0,
-        isSpellKnown = isSpellKnown,
-    })
+function Runtime:DecorateAction(action)
     if action then
         action.label = self:GetActionLabel(action.kind)
         action.color = COLORS[action.kind] or COLORS.open
-        action.icon = self:GetSpellIcon(action.recipeID or action.spellID)
+        action.icon = action.itemID
+            and self:GetItemIcon(action.itemID)
+            or self:GetSpellIcon(action.recipeID or action.spellID)
     end
     return action
+end
+
+function Runtime:GetResolveOptions()
+    return {
+        salvageIndex = self.salvageIndex,
+        candidateIndex = self.candidateIndex,
+        disenchantItems = self.disenchantItems,
+        disenchantAuthoritative = self.disenchantAuthoritative,
+        allowRareEpic = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "disenchant_rare_epic") == true,
+        allowConsumableKeys = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "consumable_keys") == true,
+        playerLevel = type(UnitLevel) == "function" and UnitLevel("player") or 0,
+        isSpellKnown = isSpellKnown,
+        isRecipeKnown = isRecipeKnown,
+        getItemCount = getItemCount,
+        isKeyUsable = isKeyUsable,
+    }
+end
+
+function Runtime:ResolveAction(context)
+    return self:DecorateAction(Logic:ResolveAction(context, self:GetResolveOptions()))
+end
+
+function Runtime:ResolveFailure(context)
+    local failure = Logic:DiagnoseFailure(context, self:GetResolveOptions())
+    if failure and failure.action then
+        failure.action = self:DecorateAction(failure.action)
+    end
+    return failure
+end
+
+function Runtime:ResolveTradeAction(itemLink)
+    local itemID = getItemID(itemLink)
+    local spellID = itemID and Logic:ResolveLockboxSpell(
+        itemID,
+        type(UnitLevel) == "function" and UnitLevel("player") or 0,
+        isSpellKnown
+    ) or nil
+    if not spellID then
+        return nil
+    end
+    return self:DecorateAction({
+        kind = "open",
+        execution = "trade_spell",
+        spellID = spellID,
+        requiredCount = 1,
+    })
 end
 
 local function createBorder(button, pointA, relativePointA, pointB, relativePointB)
@@ -314,11 +499,11 @@ local function createBorder(button, pointA, relativePointA, pointB, relativePoin
     return texture
 end
 
-local function setButtonActionType(button, actionType)
-    button:SetAttribute("type1", actionType)
-    button:SetAttribute("alt-type1", actionType)
-    button:SetAttribute("alt-shift-type1", actionType)
-    button:SetAttribute("alt-ctrl-type1", actionType)
+local function setButtonActionType(button, actionType, modifier)
+    for _, attributeName in ipairs(ACTION_TYPE_ATTRIBUTES) do
+        button:SetAttribute(attributeName, nil)
+    end
+    button:SetAttribute(getActionTypeAttribute(modifier), actionType)
 end
 
 function Runtime:EnsureButton()
@@ -330,16 +515,38 @@ function Runtime:EnsureButton()
         "Button",
         "VaultloomOneClickProcessingButton",
         UIParent,
-        "SecureActionButtonTemplate,SecureHandlerEnterLeaveTemplate"
+        "SecureActionButtonTemplate,SecureHandlerAttributeTemplate,SecureHandlerEnterLeaveTemplate"
     )
     button:SetFrameStrata("TOOLTIP")
     button:SetSize(38, 38)
     button:RegisterForClicks("LeftButtonUp")
     button:EnableMouse(true)
+    if type(button.SetPropagateMouseClicks) == "function" then
+        button:SetPropagateMouseClicks(false)
+    end
     button:Hide()
 
     button.tint = button:CreateTexture(nil, "BACKGROUND")
     button.tint:SetAllPoints(button)
+
+    button.glow = button:CreateTexture(nil, "ARTWORK", nil, 3)
+    button.glow:SetPoint("CENTER", button, "CENTER", 0, 0)
+    button.glow:SetBlendMode("ADD")
+    button.glow:SetDesaturated(true)
+    button.glowAtlasReady = pcall(button.glow.SetAtlas, button.glow, PROCESSING_GLOW_ATLAS)
+    button.glow:Hide()
+
+    if button.glowAtlasReady and type(button.CreateAnimationGroup) == "function" then
+        button.glowAnimation = button:CreateAnimationGroup()
+        button.glowAnimation:SetLooping("REPEAT")
+        local flipBook = button.glowAnimation:CreateAnimation("FlipBook")
+        flipBook:SetTarget(button.glow)
+        flipBook:SetDuration(1)
+        flipBook:SetFlipBookColumns(5)
+        flipBook:SetFlipBookRows(6)
+        flipBook:SetFlipBookFrames(30)
+        button.glowFlipBook = flipBook
+    end
 
     button.borderTop = createBorder(button, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT")
     button.borderTop:SetHeight(1)
@@ -355,22 +562,59 @@ function Runtime:EnsureButton()
     button.badge:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
     button.badge:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-    button:SetScript("OnShow", function()
+    button:HookScript("OnShow", function()
         Runtime:AnchorButton()
+        if not isCombatLocked() then
+            button:SetAttribute("_entered", true)
+        end
+        if button.glowEnabled and button.glowAnimation then
+            button.glowAnimation:Play()
+        end
     end)
-    button:SetScript("OnEnter", function(enteredButton)
+    button:HookScript("OnHide", function()
+        if button.glowAnimation then
+            button.glowAnimation:Stop()
+        end
+    end)
+    button:HookScript("OnEnter", function(enteredButton)
         Runtime:ShowButtonTooltip(enteredButton)
     end)
-    button:SetScript("OnLeave", function()
+    button:HookScript("OnLeave", function()
         if GameTooltip and type(GameTooltip.Hide) == "function" then
             GameTooltip:Hide()
         end
         Runtime:HideButton()
     end)
     button:SetAttribute("_onleave", "self:Hide()")
+    button:SetAttribute("_onattributechanged", [[
+        if name == "vaultloom-modifier-state" and value ~= "armed" then
+            self:Hide()
+        end
+    ]])
 
     self.button = button
     return button
+end
+
+function Runtime:UpdateModifierDriver()
+    if isCombatLocked() then
+        self.modifierDriverPending = true
+        return false
+    end
+    if type(RegisterAttributeDriver) ~= "function" then
+        self.modifierDriverPending = false
+        return false
+    end
+
+    local button = self:EnsureButton()
+    local modifier = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "modifier")
+    RegisterAttributeDriver(
+        button,
+        SECURE_MODIFIER_ATTRIBUTE,
+        getModifierDriverCondition(modifier)
+    )
+    self.modifierDriverPending = false
+    return true
 end
 
 function Runtime:ApplyAttributes(action, bagID, slotID)
@@ -386,9 +630,10 @@ function Runtime:ApplyAttributes(action, bagID, slotID)
     button:SetAttribute("macrotext", nil)
 
     local spellID = tonumber(action.recipeID or action.spellID)
+    local modifier = Addon.FeatureRegistry:GetSetting(FEATURE_ID, "modifier")
     if action.itemID then
         button:SetAttribute("item", "item:" .. tostring(action.itemID))
-        setButtonActionType(button, "item")
+        setButtonActionType(button, "item", modifier)
     elseif spellID then
         local useSalvageMacro = C_TradeSkillUI
             and type(C_TradeSkillUI.CraftSalvage) == "function"
@@ -401,15 +646,44 @@ function Runtime:ApplyAttributes(action, bagID, slotID)
                 "macrotext",
                 string.format(MACRO_SALVAGE, spellID, bagID, slotID)
             )
-            setButtonActionType(button, "macro")
+            setButtonActionType(button, "macro", modifier)
         else
             button:SetAttribute("spell", spellID)
-            setButtonActionType(button, "spell")
+            setButtonActionType(button, "spell", modifier)
         end
     else
         return false
     end
 
+    return true
+end
+
+function Runtime:ApplyTradeAttributes(action)
+    local button = self:EnsureButton()
+    if isCombatLocked() then
+        return false
+    end
+
+    local spellID = tonumber(action and action.spellID)
+    local spellName
+    if spellID and C_Spell and type(C_Spell.GetSpellName) == "function" then
+        local ok, value = pcall(C_Spell.GetSpellName, spellID)
+        spellName = ok and value or nil
+    end
+    if not spellID or type(spellName) ~= "string" or spellName == "" then
+        return false
+    end
+
+    button:SetAttribute("target-bag", nil)
+    button:SetAttribute("target-slot", nil)
+    button:SetAttribute("spell", nil)
+    button:SetAttribute("item", nil)
+    button:SetAttribute("macrotext", string.format(MACRO_TRADE_LOCK, spellName))
+    setButtonActionType(
+        button,
+        "macro",
+        Addon.FeatureRegistry:GetSetting(FEATURE_ID, "modifier")
+    )
     return true
 end
 
@@ -437,6 +711,9 @@ function Runtime:HideButton()
     button:SetAttribute("spell", nil)
     button:SetAttribute("item", nil)
     button:SetAttribute("macrotext", nil)
+    for _, attributeName in ipairs(ACTION_TYPE_ATTRIBUTES) do
+        button:SetAttribute(attributeName, nil)
+    end
 end
 
 function Runtime:StyleButton(action)
@@ -445,6 +722,17 @@ function Runtime:StyleButton(action)
     button.tint:SetColorTexture(color[1], color[2], color[3], 0.10)
     button.badge:SetTexture(action.icon)
     button.badge:SetVertexColor(1, 1, 1, 1)
+    button.glowEnabled = button.glowAtlasReady == true
+        and Addon.FeatureRegistry:GetSetting(FEATURE_ID, "animated_glow") == true
+    if button.glowEnabled then
+        button.glow:SetVertexColor(color[1], color[2], color[3], 1)
+        button.glow:Show()
+    else
+        button.glow:Hide()
+        if button.glowAnimation then
+            button.glowAnimation:Stop()
+        end
+    end
     for _, edge in ipairs({
         button.borderTop, button.borderBottom, button.borderLeft, button.borderRight,
     }) do
@@ -476,6 +764,9 @@ function Runtime:AnchorButton()
         bottom * scaleMultiplier
     )
     button:SetSize(width * scaleMultiplier, height * scaleMultiplier)
+    if button.glow then
+        button.glow:SetSize(width * scaleMultiplier * 1.4, height * scaleMultiplier * 1.4)
+    end
 end
 
 function Runtime:AddTooltipHint(tooltip, action)
@@ -488,11 +779,87 @@ function Runtime:AddTooltipHint(tooltip, action)
         self:GetModifierLabel(),
         action.label
     )
+    if self:TooltipContainsText(tooltip, text) then
+        return
+    end
     tooltip:AddLine(" ")
     tooltip:AddLine(text, action.color[1], action.color[2], action.color[3], true)
     if type(tooltip.Show) == "function" then
         tooltip:Show()
     end
+end
+
+function Runtime:TooltipContainsText(tooltip, text)
+    if not tooltip or type(text) ~= "string" or text == "" then
+        return false
+    end
+    local name = type(tooltip.GetName) == "function" and tooltip:GetName() or nil
+    local count = type(tooltip.NumLines) == "function" and tooltip:NumLines() or 0
+    if type(name) ~= "string" or name == "" then
+        return false
+    end
+    for index = 1, count do
+        for _, side in ipairs({ "Left", "Right" }) do
+            local region = _G[name .. "Text" .. side .. tostring(index)]
+            local value = region and type(region.GetText) == "function" and region:GetText() or nil
+            if value == text then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function Runtime:AddFailureHint(tooltip, context, failure)
+    local action = failure and failure.action
+    if not tooltip or not action then
+        return false
+    end
+
+    local text
+    if failure.reason == "need_more" then
+        local itemName
+        if C_Item and type(C_Item.GetItemNameByID) == "function" then
+            local ok, value = pcall(C_Item.GetItemNameByID, context.itemID)
+            itemName = ok and value or nil
+        end
+        itemName = itemName or context.itemLink or action.label
+        text = string.format(
+            Addon.L.ONE_CLICK_TOOLTIP_NEED_MORE or "Requires %d x %s.",
+            failure.requiredCount or action.requiredCount or 1,
+            itemName
+        )
+    elseif failure.reason == "recipe_unknown" then
+        local recipeName
+        if C_Spell and type(C_Spell.GetSpellName) == "function" then
+            local ok, value = pcall(C_Spell.GetSpellName, action.recipeID)
+            recipeName = ok and value or nil
+        end
+        recipeName = recipeName or action.label
+        text = string.format(
+            Addon.L.ONE_CLICK_TOOLTIP_RECIPE_UNKNOWN or "Required recipe not learned: %s.",
+            recipeName
+        )
+    elseif failure.reason == "rare_epic_disabled" then
+        text = Addon.L.ONE_CLICK_TOOLTIP_RARE_EPIC_DISABLED
+            or "Rare and epic disenchanting is disabled."
+    elseif failure.reason == "keys_disabled" then
+        text = Addon.L.ONE_CLICK_TOOLTIP_KEYS_DISABLED
+            or "A suitable consumable opener is available, but its use is disabled."
+    elseif failure.reason == "protected" then
+        text = Addon.L.ONE_CLICK_TOOLTIP_PROTECTED
+            or "Vaultloom protects this item from one-click processing."
+    end
+    if not text or self:TooltipContainsText(tooltip, text) then
+        return false
+    end
+
+    tooltip:AddLine(" ")
+    tooltip:AddLine(text, 1.00, 0.25, 0.20, true)
+    if type(tooltip.Show) == "function" then
+        tooltip:Show()
+    end
+    return true
 end
 
 function Runtime:ShowButtonTooltip(button)
@@ -529,22 +896,56 @@ function Runtime:TryShowForTooltip(tooltip, data)
         return false
     end
 
-    local owner, bagID, slotID, itemLink = self:GetTooltipContext(tooltip, data)
-    if not self:IsModifierActive()
+    local owner, bagID, slotID, itemLink, targetType = self:GetTooltipContext(tooltip, data)
+    if isUnsafeInteractionContext(tooltip, owner)
+        or not self:IsModifierActive()
         or not owner
-        or not bagID
-        or bagID < 0
-        or bagID > 5
-        or not slotID
         or type(itemLink) ~= "string"
+        or (targetType ~= "trade" and (
+            not bagID
+            or bagID < 0
+            or bagID > 5
+            or not slotID
+        ))
     then
         self:HideButton()
         return false
     end
 
+    if targetType == "trade" then
+        local action = self:ResolveTradeAction(itemLink)
+        if not action or not self:ApplyTradeAttributes(action) then
+            self:HideButton()
+            return false
+        end
+        self.owner = owner
+        self.itemLink = itemLink
+        self.action = action
+        self.current = {
+            owner = owner,
+            itemID = getItemID(itemLink),
+            itemLink = itemLink,
+            targetType = "trade",
+            action = action,
+        }
+        self:StyleButton(action)
+        self.button:Show()
+        self:AnchorButton()
+        self:AddTooltipHint(tooltip, action)
+        return true
+    end
+
     local context = self:BuildItemContext(bagID, slotID)
     local action = context and self:ResolveAction(context) or nil
-    if not action or not self:ApplyAttributes(action, bagID, slotID) then
+    if not action then
+        local failure = context and self:ResolveFailure(context) or nil
+        self:HideButton()
+        if failure then
+            self:AddFailureHint(tooltip, context, failure)
+        end
+        return false
+    end
+    if not self:ApplyAttributes(action, bagID, slotID) then
         self:HideButton()
         return false
     end
@@ -560,6 +961,7 @@ function Runtime:TryShowForTooltip(tooltip, data)
         slotID = slotID,
         itemID = context.itemID,
         itemLink = itemLink,
+        targetType = "bag",
         action = action,
     }
     self:StyleButton(action)
@@ -600,6 +1002,9 @@ function Runtime:EnsureHooks()
         hooksecurefunc(GameTooltip, "SetBagItem", function(tooltip, bagID, slotID)
             Runtime:TryShowForTooltip(tooltip, { bagID = bagID, slotID = slotID })
         end)
+        hooksecurefunc(GameTooltip, "SetTradeTargetItem", function(tooltip)
+            Runtime:TryShowForTooltip(tooltip, { targetType = "trade" })
+        end)
     end
 end
 
@@ -608,6 +1013,7 @@ function Runtime:OnEnable()
     self:EnsureHooks()
     self:RebuildProcessingData()
     self:RebuildEquipmentSetItems()
+    self:UpdateModifierDriver()
 
     for _, eventName in ipairs({
         "MODIFIER_STATE_CHANGED",
@@ -615,6 +1021,7 @@ function Runtime:OnEnable()
         "PLAYER_REGEN_DISABLED",
         "PLAYER_REGEN_ENABLED",
         "SPELLS_CHANGED",
+        "TRADE_SKILL_LIST_UPDATE",
         "EQUIPMENT_SETS_CHANGED",
     }) do
         Addon.EventBus:Subscribe(eventName, self, function(dispatchedEvent)
@@ -631,12 +1038,16 @@ function Runtime:OnDisable()
 end
 
 function Runtime:OnSettingChanged()
+    self:UpdateModifierDriver()
     self:HideButton()
     self:RefreshFromTooltip()
 end
 
 function Runtime:OnEvent(eventName)
     if eventName == "PLAYER_REGEN_ENABLED" then
+        if self.modifierDriverPending then
+            self:UpdateModifierDriver()
+        end
         if self.hidePending then
             self:HideButton()
         else
@@ -648,7 +1059,7 @@ function Runtime:OnEvent(eventName)
         self:RefreshFromTooltip()
         return
     end
-    if eventName == "SPELLS_CHANGED" then
+    if eventName == "SPELLS_CHANGED" or eventName == "TRADE_SKILL_LIST_UPDATE" then
         self:RebuildProcessingData()
     elseif eventName == "BAG_UPDATE_DELAYED" then
         self:RebuildDisenchantData()

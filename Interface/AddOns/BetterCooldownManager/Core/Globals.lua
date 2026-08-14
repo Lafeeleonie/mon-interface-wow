@@ -21,15 +21,9 @@ BCDM.DBViewerToCooldownManagerViewer = {
 BCDM.LSM = LibStub("LibSharedMedia-3.0")
 BCDM.LDS = LibStub("LibDualSpec-1.0")
 BCDM.LEMO = LibStub("LibEditModeOverride-1.0")
-BCDM.AG = LibStub("AceGUI-3.0")
 
-BCDM.INFOBUTTON = "|TInterface\\AddOns\\BetterCooldownManager\\Media\\InfoButton.png:16:16|t "
 BCDM.ADDON_NAME = C_AddOns.GetAddOnMetadata("BetterCooldownManager", "Title")
 BCDM.ADDON_VERSION = C_AddOns.GetAddOnMetadata("BetterCooldownManager", "Version")
-BCDM.ADDON_AUTHOR = C_AddOns.GetAddOnMetadata("BetterCooldownManager", "Author")
-BCDM.ADDON_LOGO = "|TInterface\\AddOns\\BetterCooldownManager\\Media\\Logo.png:16:16|t"
-BCDM.PRETTY_ADDON_NAME = BCDM.ADDON_LOGO .. " " .. BCDM.ADDON_NAME
-
 BCDM.CAST_BAR_TEST_MODE = false
 
 if BCDM.LSM then BCDM.LSM:Register("statusbar", "Better Blizzard", [[Interface\AddOns\BetterCooldownManager\Media\BetterBlizzard.blp]]) end
@@ -40,7 +34,8 @@ function BCDM:ResolveLSM()
     local LSM = BCDM.LSM
     local General = BCDM.db.profile.General
     BCDM.Media = BCDM.Media or {}
-    BCDM.Media.Font = LSM:Fetch("font", General.Fonts.Font) or STANDARD_TEXT_FONT
+    BCDM.Media.Font = LSM:Fetch("font", General.Fonts.Font)
+        or LSM:Fetch("font", "Friz Quadrata TT") or STANDARD_TEXT_FONT
     BCDM.Media.Foreground = LSM:Fetch("statusbar", General.Textures.Foreground) or "Interface\\RaidFrame\\Raid-Bar-Hp-Fill"
     BCDM.Media.Background = LSM:Fetch("statusbar", General.Textures.Background) or "Interface\\Buttons\\WHITE8X8"
     BCDM.BACKDROP = { bgFile = BCDM.Media.Background, edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = BCDM.db.profile.CooldownManager.General.BorderSize, insets = {left = 0, right = 0, top = 0, bottom = 0} }
@@ -49,8 +44,7 @@ end
 local function SetupSlashCommands()
     SLASH_BCDM1 = "/bcdm"
     SLASH_BCDM2 = "/bettercooldownmanager"
-    SLASH_BCDM3 = "/cdm"
-    SLASH_BCDM4 = "/bcm"
+    SLASH_BCDM3 = "/bcm"
     SlashCmdList["BCDM"] = function() BCDM:CreateGUI() end
     if BCDM.db.global.DisplayLoginMessage then BCDM:PrettyPrint("'|cFF8080FF/bcdm|r' for in-game configuration.") end
 
@@ -66,14 +60,16 @@ local function PixelPerfect(value)
     return pixelSize * math.floor(value / pixelSize + 0.5333)
 end
 
+local frameBorders = setmetatable({}, { __mode = "k" })
+
 function BCDM:AddBorder(parentFrame)
     if not parentFrame then return end
     local borderSize = BCDM.db.profile.CooldownManager.General.BorderSize or 1
     local borderColour = { r = 0, g = 0, b = 0, a = 1 }
     local borderInset = PixelPerfect(0)
-    parentFrame.BCDMBorders = parentFrame.BCDMBorders or {}
+    local borders = frameBorders[parentFrame]
     local borderAnchor = parentFrame.Icon or parentFrame
-    if #parentFrame.BCDMBorders == 0 then
+    if not borders then
         local function CreateBorderLine() return parentFrame:CreateTexture(nil, "OVERLAY") end
         local topBorder = CreateBorderLine()
         topBorder:SetPoint("TOPLEFT", borderAnchor, "TOPLEFT", borderInset, -borderInset)
@@ -87,9 +83,10 @@ function BCDM:AddBorder(parentFrame)
         local rightBorder = CreateBorderLine()
         rightBorder:SetPoint("TOPRIGHT", borderAnchor, "TOPRIGHT", -borderInset, -borderInset)
         rightBorder:SetPoint("BOTTOMRIGHT", borderAnchor, "BOTTOMRIGHT", -borderInset, borderInset)
-        parentFrame.BCDMBorders = { topBorder, bottomBorder, leftBorder, rightBorder }
+        borders = { topBorder, bottomBorder, leftBorder, rightBorder }
+        frameBorders[parentFrame] = borders
     end
-    local top, bottom, left, right = unpack(parentFrame.BCDMBorders)
+    local top, bottom, left, right = unpack(borders)
     if top and bottom and left and right then
         local pixelSize = PixelPerfect(borderSize)
         top:SetHeight(pixelSize)
@@ -97,7 +94,7 @@ function BCDM:AddBorder(parentFrame)
         left:SetWidth(pixelSize)
         right:SetWidth(pixelSize)
         local shouldShow = borderSize > 0
-        for _, border in ipairs(parentFrame.BCDMBorders) do
+        for _, border in ipairs(borders) do
             border:SetColorTexture(borderColour.r, borderColour.g, borderColour.b, borderColour.a)
             border:SetShown(shouldShow)
         end
@@ -187,58 +184,25 @@ function BCDM:ApplyIconTexCoord(texture, width, height, baseZoom)
 end
 
 function BCDM:IsSecretValue(value)
-    return value ~= nil and type(issecretvalue) == "function" and issecretvalue(value)
-end
-
-function BCDM:GetCooldownDesaturationCurves()
-    if self.CooldownDesaturationCurve and self.CooldownGCDFilterCurve then
-        return self.CooldownDesaturationCurve, self.CooldownGCDFilterCurve
-    end
-
-    if not (C_CurveUtil and C_CurveUtil.CreateCurve and Enum and Enum.LuaCurveType and Enum.LuaCurveType.Step) then
-        return nil, nil
-    end
-
-    if not self.CooldownDesaturationCurve then
-        self.CooldownDesaturationCurve = C_CurveUtil.CreateCurve()
-        if self.CooldownDesaturationCurve then
-            self.CooldownDesaturationCurve:SetType(Enum.LuaCurveType.Step)
-            self.CooldownDesaturationCurve:AddPoint(0, 0)
-            self.CooldownDesaturationCurve:AddPoint(0.001, 1)
-        end
-    end
-
-    if not self.CooldownGCDFilterCurve then
-        self.CooldownGCDFilterCurve = C_CurveUtil.CreateCurve()
-        if self.CooldownGCDFilterCurve then
-            self.CooldownGCDFilterCurve:SetType(Enum.LuaCurveType.Step)
-            self.CooldownGCDFilterCurve:AddPoint(0, 0)
-            self.CooldownGCDFilterCurve:AddPoint(1.6, 0)
-            self.CooldownGCDFilterCurve:AddPoint(1.601, 1)
-        end
-    end
-
-    return self.CooldownDesaturationCurve, self.CooldownGCDFilterCurve
+    return type(issecretvalue) == "function" and issecretvalue(value)
 end
 
 function BCDM:Init()
     SetupSlashCommands()
     BCDM:ResolveLSM()
-    BCDM:NormalizeCustomSpellSpecTokens()
     if not C_AddOns.IsAddOnLoaded("Blizzard_CooldownViewer") then C_AddOns.LoadAddOn("Blizzard_CooldownViewer") end
 end
 
-function BCDM:CopyTable(defaultTable)
-    if type(defaultTable) ~= "table" then return defaultTable end
-    local newTable = {}
-    for k, v in pairs(defaultTable) do
-        if type(v) == "table" then
-            newTable[k] = BCDM:CopyTable(v)
-        else
-            newTable[k] = v
-        end
+function BCDM:CopyTable(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local copy = {}
+    seen[value] = copy
+    for key, child in pairs(value) do
+        copy[self:CopyTable(key, seen)] = self:CopyTable(child, seen)
     end
-    return newTable
+    return copy
 end
 
 function BCDM:UpdateBCDM()
@@ -249,48 +213,119 @@ function BCDM:UpdateBCDM()
     BCDM:UpdatePowerBar()
     BCDM:UpdateSecondaryPowerBar()
     BCDM:UpdateCastBar()
-    BCDM:UpdateCustomCooldownViewer()
-    BCDM:UpdateAdditionalCustomCooldownViewer()
-    BCDM:UpdateCustomItemBar()
-    BCDM:UpdateCustomItemsSpellsBar()
+    BCDM:RefreshCustomTrackers()
     BCDM:UpdateTrinketBar()
     BCDM:RefreshCustomGlows()
-    BCDM:DisableAuraOverlay()
+    if BCDM.QueueCooldownViewerLayoutApply then BCDM:QueueCooldownViewerLayoutApply() end
+end
+
+BCDM.SettingsHighlights = {}
+
+function BCDM:ShouldShowSettingsHighlights()
+    local settings = self.db and self.db.global and self.db.global.SettingsWindow
+    return not settings or settings.ShowSelectedElementHighlight ~= false
+end
+
+local EMPTY_HIGHLIGHT_OFFSETS = {
+    TOPLEFT = { -8, 8 }, TOP = { 0, 8 }, TOPRIGHT = { 8, 8 },
+    LEFT = { -8, 0 }, CENTER = { 0, 0 }, RIGHT = { 8, 0 },
+    BOTTOMLEFT = { -8, -8 }, BOTTOM = { 0, -8 }, BOTTOMRIGHT = { 8, -8 },
+}
+
+local function CreateSettingsHighlight(key, globalName)
+    local highlight = BCDM.SettingsHighlights[key]
+    if highlight then return highlight end
+    highlight = CreateFrame("Frame", globalName, UIParent, "BackdropTemplate")
+    highlight:SetBackdrop({
+        edgeFile = "Interface\\AddOns\\BetterCooldownManager\\Media\\Glow.tga",
+        edgeSize = 8,
+        insets = { left = -8, right = -8, top = -8, bottom = -8 },
+    })
+    highlight:SetBackdropColor(0, 0, 0, 0)
+    highlight:SetBackdropBorderColor(64/255, 128/255, 255/255, 1)
+    highlight:SetFrameStrata("DIALOG")
+    highlight:Hide()
+    BCDM.SettingsHighlights[key] = highlight
+    return highlight
+end
+
+function BCDM:ShowSettingsHighlight(key, target, options)
+    local highlight = self.SettingsHighlights[key] or CreateSettingsHighlight(key)
+    if not self:ShouldShowSettingsHighlights() then highlight:Hide() return end
+    if not target then highlight:Hide() return end
+    options = options or {}
+    local ok = pcall(function()
+        highlight:ClearAllPoints()
+        if options.empty == true then
+            local point = options.point or "CENTER"
+            local offset = EMPTY_HIGHLIGHT_OFFSETS[point] or EMPTY_HIGHLIGHT_OFFSETS.CENTER
+            highlight:SetSize((options.width or 1) + 16, (options.height or 1) + 16)
+            highlight:SetPoint(point, target, point, offset[1], offset[2])
+        else
+            highlight:SetPoint("TOPLEFT", target, "TOPLEFT", -8, 8)
+            highlight:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 8, -8)
+        end
+    end)
+    highlight:SetShown(ok)
+end
+
+function BCDM:HideSettingsHighlight(key)
+    local highlight = self.SettingsHighlights[key]
+    if highlight then highlight:Hide() end
+end
+
+function BCDM:HideAllSettingsHighlights()
+    for _, highlight in pairs(self.SettingsHighlights) do
+        highlight:Hide()
+    end
+end
+
+function BCDM:ShowSettingsHighlightForFrames(key, frames, fallbackTarget, options)
+    if not self:ShouldShowSettingsHighlights() then
+        self:HideSettingsHighlight(key)
+        return
+    end
+    local parentScale = UIParent:GetEffectiveScale()
+    local left, bottom, right, top
+    for _, frame in pairs(frames or {}) do
+        if frame and frame:IsShown() then
+            local frameLeft, frameBottom, width, height = frame:GetRect()
+            if frameLeft and frameBottom and width and height then
+                local scale = frame:GetEffectiveScale() / parentScale
+                frameLeft, frameBottom = frameLeft * scale, frameBottom * scale
+                width, height = width * scale, height * scale
+                left = not left and frameLeft or math.min(left, frameLeft)
+                bottom = not bottom and frameBottom or math.min(bottom, frameBottom)
+                right = not right and (frameLeft + width) or math.max(right, frameLeft + width)
+                top = not top and (frameBottom + height) or math.max(top, frameBottom + height)
+            end
+        end
+    end
+
+    if not left then
+        options = options or {}
+        options.empty = true
+        self:ShowSettingsHighlight(key, fallbackTarget, options)
+        return
+    end
+
+    local highlight = self.SettingsHighlights[key] or CreateSettingsHighlight(key)
+    highlight:ClearAllPoints()
+    highlight:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left - 8, bottom - 8)
+    highlight:SetSize((right - left) + 16, (top - bottom) + 16)
+    highlight:Show()
 end
 
 function BCDM:CreateCooldownViewerOverlays()
-    local OVERLAY_COLOUR = { 64/255, 128/255, 255/255, 1 }
-    if _G["EssentialCooldownViewer"] then
-        local EssentialCooldownViewerOverlay = CreateFrame("Frame", "BCDM_EssentialCooldownViewerOverlay", UIParent, "BackdropTemplate")
-        EssentialCooldownViewerOverlay:SetPoint("TOPLEFT", _G["EssentialCooldownViewer"], "TOPLEFT", -8, 8)
-        EssentialCooldownViewerOverlay:SetPoint("BOTTOMRIGHT", _G["EssentialCooldownViewer"], "BOTTOMRIGHT", 8, -8)
-        EssentialCooldownViewerOverlay:SetBackdrop({ edgeFile = "Interface\\AddOns\\BetterCooldownManager\\Media\\Glow.tga", edgeSize = 8, insets = {left = -8, right = -8, top = -8, bottom = -8} })
-        EssentialCooldownViewerOverlay:SetBackdropColor(0, 0, 0, 0)
-        EssentialCooldownViewerOverlay:SetBackdropBorderColor(unpack(OVERLAY_COLOUR))
-        EssentialCooldownViewerOverlay:Hide()
-        BCDM.EssentialCooldownViewerOverlay = EssentialCooldownViewerOverlay
-    end
-
-    if _G["UtilityCooldownViewer"] then
-        local UtilityCooldownViewerOverlay = CreateFrame("Frame", "BCDM_UtilityCooldownViewerOverlay", UIParent, "BackdropTemplate")
-        UtilityCooldownViewerOverlay:SetPoint("TOPLEFT", _G["UtilityCooldownViewer"], "TOPLEFT", -8, 8)
-        UtilityCooldownViewerOverlay:SetPoint("BOTTOMRIGHT", _G["UtilityCooldownViewer"], "BOTTOMRIGHT", 8, -8)
-        UtilityCooldownViewerOverlay:SetBackdrop({ edgeFile = "Interface\\AddOns\\BetterCooldownManager\\Media\\Glow.tga", edgeSize = 8, insets = {left = -8, right = -8, top = -8, bottom = -8} })
-        UtilityCooldownViewerOverlay:SetBackdropColor(0, 0, 0, 0)
-        UtilityCooldownViewerOverlay:SetBackdropBorderColor(unpack(OVERLAY_COLOUR))
-        UtilityCooldownViewerOverlay:Hide()
-        BCDM.UtilityCooldownViewerOverlay = UtilityCooldownViewerOverlay
-    end
-
-    if _G["BuffIconCooldownViewer"] then
-        local BuffIconCooldownViewerOverlay = CreateFrame("Frame", "BCDM_BuffIconCooldownViewerOverlay", UIParent, "BackdropTemplate")
-        BuffIconCooldownViewerOverlay:SetPoint("TOPLEFT", _G["BuffIconCooldownViewer"], "TOPLEFT", -8, 8)
-        BuffIconCooldownViewerOverlay:SetPoint("BOTTOMRIGHT", _G["BuffIconCooldownViewer"], "BOTTOMRIGHT", 8, -8)
-        BuffIconCooldownViewerOverlay:SetBackdrop({ edgeFile = "Interface\\AddOns\\BetterCooldownManager\\Media\\Glow.tga", edgeSize = 8, insets = {left = -8, right = -8, top = -8, bottom = -8} })
-        BuffIconCooldownViewerOverlay:SetBackdropColor(0, 0, 0, 0)
-        BuffIconCooldownViewerOverlay:SetBackdropBorderColor(unpack(OVERLAY_COLOUR))
-        BuffIconCooldownViewerOverlay:Hide()
-        BCDM.BuffIconCooldownViewerOverlay = BuffIconCooldownViewerOverlay
+    for _, viewerName in ipairs(self.CooldownManagerViewers) do
+        local viewer = _G[viewerName]
+        if viewer then
+            local key = viewerName .. "Overlay"
+            local highlight = CreateSettingsHighlight(key, "BCDM_" .. key)
+            highlight:SetPoint("TOPLEFT", viewer, "TOPLEFT", -8, 8)
+            highlight:SetPoint("BOTTOMRIGHT", viewer, "BOTTOMRIGHT", 8, -8)
+            self[key] = highlight
+        end
     end
 end
 
@@ -376,128 +411,16 @@ function BCDM:CreatePrompt(title, text, onAccept, onCancel, acceptText, cancelTe
     return promptDialog
 end
 
-local function ResolveSpecToken(targetSpec)
-    if targetSpec then
-        return BCDM:NormalizeSpecToken(targetSpec)
-    end
-    local specIndex = GetSpecialization()
-    if not specIndex then return end
-    local specID, specName = GetSpecializationInfo(specIndex)
-    return BCDM:NormalizeSpecToken(specName, specID, specIndex)
-end
-
-function BCDM:AdjustSpellLayoutIndex(direction, spellId, customDB, targetClass, targetSpec)
-    local CooldownManagerDB = BCDM.db.profile
-    local CustomDB = CooldownManagerDB.CooldownManager[customDB]
-    local playerClass = targetClass or select(2, UnitClass("player"))
-    local playerSpecialization = ResolveSpecToken(targetSpec)
-    local DefensiveSpells = CustomDB.Spells
-
-    if not playerClass or not playerSpecialization then return end
-    if not DefensiveSpells[playerClass] or not DefensiveSpells[playerClass][playerSpecialization] or not DefensiveSpells[playerClass][playerSpecialization][spellId] then return end
-
-    local currentIndex = DefensiveSpells[playerClass][playerSpecialization][spellId].layoutIndex
-    local newIndex = currentIndex + direction
-
-    local totalSpells = 0
-
-    for _ in pairs(DefensiveSpells[playerClass][playerSpecialization]) do totalSpells = totalSpells + 1 end
-    if newIndex < 1 or newIndex > totalSpells then return end
-
-    for _, data in pairs(DefensiveSpells[playerClass][playerSpecialization]) do
-        if data.layoutIndex == newIndex then
-            data.layoutIndex = currentIndex
-            break
-        end
-    end
-
-    DefensiveSpells[playerClass][playerSpecialization][spellId].layoutIndex = newIndex
-    BCDM:NormalizeSpellLayoutIndices(customDB, playerClass, playerSpecialization)
-    if customDB == "Custom" then
-        BCDM:UpdateCustomCooldownViewer()
-    else
-        BCDM:UpdateAdditionalCustomCooldownViewer()
-    end
-end
-
-function BCDM:NormalizeSpellLayoutIndices(customDB, playerClass, playerSpecialization)
-    local CooldownManagerDB = BCDM.db.profile
-    local CustomDB = CooldownManagerDB.CooldownManager[customDB]
-    local DefensiveSpells = CustomDB.Spells
-
-    if not DefensiveSpells[playerClass] or not DefensiveSpells[playerClass][playerSpecialization] then return end
-
-    local ordered = {}
-    for spellId, data in pairs(DefensiveSpells[playerClass][playerSpecialization]) do
-        ordered[#ordered + 1] = {
-            spellId = spellId,
-            data = data,
-            sortIndex = data.layoutIndex or math.huge,
-        }
-    end
-
-    table.sort(ordered, function(a, b)
-        if a.sortIndex == b.sortIndex then
-            return tostring(a.spellId) < tostring(b.spellId)
-        end
-        return a.sortIndex < b.sortIndex
-    end)
-
-    for index, entry in ipairs(ordered) do
-        entry.data.layoutIndex = index
-    end
-end
-
-function BCDM:AdjustSpellList(spellId, adjustingHow, customDB, targetClass, targetSpec)
-    local CooldownManagerDB = BCDM.db.profile
-    local CustomDB = CooldownManagerDB.CooldownManager[customDB]
-    local playerClass = targetClass or select(2, UnitClass("player"))
-    local playerSpecialization = ResolveSpecToken(targetSpec)
-    local DefensiveSpells = CustomDB.Spells
-
-    if not playerClass or not playerSpecialization then return end
-    if not DefensiveSpells[playerClass] then
-        DefensiveSpells[playerClass] = {}
-    end
-    if not DefensiveSpells[playerClass][playerSpecialization] then
-        DefensiveSpells[playerClass][playerSpecialization] = {}
-    end
-
-    if adjustingHow == "add" then
-        local maxIndex = 0
-        for _, data in pairs(DefensiveSpells[playerClass][playerSpecialization]) do
-            if data.layoutIndex > maxIndex then
-                maxIndex = data.layoutIndex
-            end
-        end
-        DefensiveSpells[playerClass][playerSpecialization][spellId] = { isActive = true, layoutIndex = maxIndex + 1 }
-    elseif adjustingHow == "remove" then
-        DefensiveSpells[playerClass][playerSpecialization][spellId] = nil
-    end
-
-    BCDM:NormalizeSpellLayoutIndices(customDB, playerClass, playerSpecialization)
-    BCDM:UpdateAdditionalCustomCooldownViewer()
-end
-
-
-function BCDM:RepositionSecondaryBar()
-    local SpecsNeedingAltPower = {
-        PALADIN = { 66, 70 },           -- Ret
-        SHAMAN  = { 263 },              -- Ele, Enh
-        EVOKER  = { 1467, 1473 },       -- Dev, Aug
-        WARLOCK = { 265, 266, 267 },    -- Aff, Demo, Dest
-    }
-    local class = select(2, UnitClass("player"))
-    local specIndex = GetSpecialization()
-    if not specIndex then return false end
-    local specID = GetSpecializationInfo(specIndex)
-    local classSpecs = SpecsNeedingAltPower[class]
-    if not classSpecs then return false end
-    for _, requiredSpec in ipairs(classSpecs) do if specID == requiredSpec then return true end end
-    return false
-end
-
 BCDM.AnchorParents = {
+    ["Essential"] = {
+        {
+            ["UtilityCooldownViewer"] = "|cFF00AEF7Blizzard|r: Utility Cooldown Viewer",
+            ["BCDM_PowerBar"] = "|cFF8080FFBCDM|r: Power Bar",
+            ["BCDM_SecondaryPowerBar"] = "|cFF8080FFBCDM|r: Secondary Power Bar",
+            ["NONE"] = "|cFF00AEF7Blizzard|r: UIParent",
+        },
+        { "NONE", "UtilityCooldownViewer", "BCDM_PowerBar", "BCDM_SecondaryPowerBar" },
+    },
     ["Utility"] = {
         {
             ["EssentialCooldownViewer"] = "|cFF00AEF7Blizzard|r: Essential Cooldown Viewer",
@@ -518,7 +441,7 @@ BCDM.AnchorParents = {
         },
         { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "BCDM_PowerBar", "BCDM_SecondaryPowerBar", "BCDM_CastBar" },
     },
-    ["Custom"] = {
+    ["CustomTrackers"] = {
         {
             ["EssentialCooldownViewer"] = "|cFF00AEF7Blizzard|r: Essential Cooldown Viewer",
             ["UtilityCooldownViewer"] = "|cFF00AEF7Blizzard|r: Utility Cooldown Viewer",
@@ -527,44 +450,11 @@ BCDM.AnchorParents = {
             ["TargetFrame"] = "|cFF00AEF7Blizzard|r: Target Frame",
             ["BCDM_PowerBar"] = "|cFF8080FFBCDM|r: Power Bar",
             ["BCDM_SecondaryPowerBar"] = "|cFF8080FFBCDM|r: Secondary Power Bar",
-            ["BCDM_AdditionalCustomCooldownViewer"] = "|cFF8080FFBCDM|r: Additional Custom Bar",
-            ["BCDM_CustomItemSpellBar"] = "|cFF8080FFBCDM|r: Items/Spells Bar",
-            ["BCDM_CustomItemBar"] = "|cFF8080FFBCDM|r: Item Bar",
+            ["BCDM_CastBar"] = "|cFF8080FFBCDM|r: Cast Bar",
             ["BCDM_TrinketBar"] = "|cFF8080FFBCDM|r: Trinket Bar",
         },
-        { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "PlayerFrame", "TargetFrame", "BCDM_PowerBar", "BCDM_SecondaryPowerBar", "BCDM_AdditionalCustomCooldownViewer", "BCDM_CustomItemBar", "BCDM_CustomItemSpellBar", "BCDM_TrinketBar" },
-    },
-    ["AdditionalCustom"] = {
-        {
-            ["EssentialCooldownViewer"] = "|cFF00AEF7Blizzard|r: Essential Cooldown Viewer",
-            ["UtilityCooldownViewer"] = "|cFF00AEF7Blizzard|r: Utility Cooldown Viewer",
-            ["NONE"] = "|cFF00AEF7Blizzard|r: UIParent",
-            ["PlayerFrame"] = "|cFF00AEF7Blizzard|r: Player Frame",
-            ["TargetFrame"] = "|cFF00AEF7Blizzard|r: Target Frame",
-            ["BCDM_PowerBar"] = "|cFF8080FFBCDM|r: Power Bar",
-            ["BCDM_SecondaryPowerBar"] = "|cFF8080FFBCDM|r: Secondary Power Bar",
-            ["BCDM_CustomCooldownViewer"] = "|cFF8080FFBCDM|r: Custom Bar",
-            ["BCDM_CustomItemBar"] = "|cFF8080FFBCDM|r: Item Bar",
-            ["BCDM_CustomItemSpellBar"] = "|cFF8080FFBCDM|r: Items/Spells Bar",
-            ["BCDM_TrinketBar"] = "|cFF8080FFBCDM|r: Trinket Bar",
-        },
-        { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "PlayerFrame", "TargetFrame", "BCDM_PowerBar", "BCDM_SecondaryPowerBar", "BCDM_CustomCooldownViewer", "BCDM_CustomItemBar", "BCDM_CustomItemSpellBar", "BCDM_TrinketBar" },
-    },
-    ["Item"] = {
-        {
-            ["EssentialCooldownViewer"] = "|cFF00AEF7Blizzard|r: Essential Cooldown Viewer",
-            ["UtilityCooldownViewer"] = "|cFF00AEF7Blizzard|r: Utility Cooldown Viewer",
-            ["NONE"] = "|cFF00AEF7Blizzard|r: UIParent",
-            ["PlayerFrame"] = "|cFF00AEF7Blizzard|r: Player Frame",
-            ["TargetFrame"] = "|cFF00AEF7Blizzard|r: Target Frame",
-            ["BCDM_PowerBar"] = "|cFF8080FFBCDM|r: Power Bar",
-            ["BCDM_SecondaryPowerBar"] = "|cFF8080FFBCDM|r: Secondary Power Bar",
-            ["BCDM_CustomCooldownViewer"] = "|cFF8080FFBCDM|r: Custom Bar",
-            ["BCDM_AdditionalCustomCooldownViewer"] = "|cFF8080FFBCDM|r: Additional Custom Bar",
-            ["BCDM_CustomItemSpellBar"] = "|cFF8080FFBCDM|r: Items/Spells Bar",
-            ["BCDM_TrinketBar"] = "|cFF8080FFBCDM|r: Trinket Bar",
-        },
-        { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "PlayerFrame", "TargetFrame", "BCDM_PowerBar", "BCDM_SecondaryPowerBar", "BCDM_CustomCooldownViewer", "BCDM_AdditionalCustomCooldownViewer", "BCDM_CustomItemSpellBar", "BCDM_TrinketBar" },
+        { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "PlayerFrame", "TargetFrame",
+            "BCDM_PowerBar", "BCDM_SecondaryPowerBar", "BCDM_CastBar", "BCDM_TrinketBar" },
     },
     ["Trinket"] = {
         {
@@ -575,28 +465,8 @@ BCDM.AnchorParents = {
             ["TargetFrame"] = "|cFF00AEF7Blizzard|r: Target Frame",
             ["BCDM_PowerBar"] = "|cFF8080FFBCDM|r: Power Bar",
             ["BCDM_SecondaryPowerBar"] = "|cFF8080FFBCDM|r: Secondary Power Bar",
-            ["BCDM_CustomCooldownViewer"] = "|cFF8080FFBCDM|r: Custom Bar",
-            ["BCDM_AdditionalCustomCooldownViewer"] = "|cFF8080FFBCDM|r: Additional Custom Bar",
-            ["BCDM_CustomItemBar"] = "|cFF8080FFBCDM|r: Item Bar",
-            ["BCDM_CustomItemSpellBar"] = "|cFF8080FFBCDM|r: Items/Spells Bar",
         },
-        { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "PlayerFrame", "TargetFrame", "BCDM_PowerBar", "BCDM_SecondaryPowerBar", "BCDM_CustomCooldownViewer", "BCDM_AdditionalCustomCooldownViewer", "BCDM_CustomItemBar", "BCDM_CustomItemSpellBar" },
-    },
-    ["ItemSpell"] = {
-        {
-            ["EssentialCooldownViewer"] = "|cFF00AEF7Blizzard|r: Essential Cooldown Viewer",
-            ["UtilityCooldownViewer"] = "|cFF00AEF7Blizzard|r: Utility Cooldown Viewer",
-            ["NONE"] = "|cFF00AEF7Blizzard|r: UIParent",
-            ["PlayerFrame"] = "|cFF00AEF7Blizzard|r: Player Frame",
-            ["TargetFrame"] = "|cFF00AEF7Blizzard|r: Target Frame",
-            ["BCDM_PowerBar"] = "|cFF8080FFBCDM|r: Power Bar",
-            ["BCDM_SecondaryPowerBar"] = "|cFF8080FFBCDM|r: Secondary Power Bar",
-            ["BCDM_CustomCooldownViewer"] = "|cFF8080FFBCDM|r: Custom Bar",
-            ["BCDM_AdditionalCustomCooldownViewer"] = "|cFF8080FFBCDM|r: Additional Custom Bar",
-            ["BCDM_CustomItemBar"] = "|cFF8080FFBCDM|r: Item Bar",
-            ["BCDM_TrinketBar"] = "|cFF8080FFBCDM|r: Trinket Bar",
-        },
-        { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "PlayerFrame", "TargetFrame", "BCDM_PowerBar", "BCDM_SecondaryPowerBar", "BCDM_CustomCooldownViewer", "BCDM_AdditionalCustomCooldownViewer", "BCDM_CustomItemBar", "BCDM_TrinketBar" },
+        { "EssentialCooldownViewer", "UtilityCooldownViewer", "NONE", "PlayerFrame", "TargetFrame", "BCDM_PowerBar", "BCDM_SecondaryPowerBar" },
     },
     ["Power"] = {
         {

@@ -73,7 +73,10 @@ local function BuildRedirectPanel(panel, version)
 	button:SetSize(240, 32)
 	button:SetPoint("TOP", message, "BOTTOM", 0, -20)
 	button:SetText(L["Open Settings"])
-	SetFontSize(button:GetFontString(), 14)
+	-- 14pt via font objects, not a raw SetFont path: the path drops the per-locale
+	-- glyph fallbacks (Cyrillic boxes), and hover swaps font objects anyway.
+	button:SetNormalFontObject(GameFontNormalMed3)
+	button:SetHighlightFontObject(GameFontHighlightMedium)
 	button:SetScript("OnClick", function()
 		-- Close Blizzard's settings window on the way out: it opened this one, and leaving it
 		-- sitting behind the config window is just a panel the user has to dismiss afterwards.
@@ -98,8 +101,17 @@ local function BuildRedirectPanel(panel, version)
 	end)
 end
 
-function M:Apply()
-	addon:Refresh()
+---Applies a settings change. A ModuleName key scopes the refresh to the one module whose
+---settings table changed - sliders and colour pickers fire this per drag step, so refreshing all
+---eleven modules each time is real cost. No key means the change has addon-wide reach and
+---everything refreshes.
+---@param settingsKey string? A ModuleName value naming the db.Modules table that changed.
+function M:Apply(settingsKey)
+	if settingsKey then
+		addon:RefreshModule(settingsKey)
+	else
+		addon:Refresh()
+	end
 end
 
 function M:Init()
@@ -231,6 +243,14 @@ function M:Init()
 			end,
 		},
 		{
+			Key = "CustomAuras",
+			Title = L["Custom Auras_Short"] or L["Custom Auras"],
+			Icon = NAV_ICON_BASE .. "CustomAuras.png",
+			Build = function(content)
+				M.CustomAuras:Build(content)
+			end,
+		},
+		{
 			Key = "RaidFrameAuras",
 			Title = L["Raid Frame Auras_Short"] or L["Raid Frame Auras"],
 			Icon = NAV_ICON_BASE .. "RaidFrameAuras.png",
@@ -263,33 +283,6 @@ function M:Init()
 				M.Portraits:Build(content)
 			end,
 		},
-		-- TEMPORARY 12.0 leftovers: all three are removed on 12.1 below, so they park at the
-		-- end of the General group rather than earning a heading of their own.
-		{
-			Key = "FriendlyCooldowns",
-			Title = L["Friendly Cooldowns_Short"] or L["Friendly Cooldowns"],
-			Icon = NAV_ICON_BASE .. "FriendlyCooldowns.png",
-			Build = function(content)
-				local m = db.Modules.FriendlyCooldownTrackerModule
-				M.FriendlyCooldownTracker:Build(content, m.Default, m.Raid)
-			end,
-		},
-		{
-			Key = "EnemyCooldowns",
-			Title = L["Enemy Cooldowns_Short"] or L["Enemy Cooldowns"],
-			Icon = NAV_ICON_BASE .. "EnemyCooldowns.png",
-			Build = function(content)
-				M.EnemyCooldownTracker:Build(content, db.Modules.EnemyCooldownTrackerModule)
-			end,
-		},
-		{
-			Key = "Precog",
-			Title = L["Precognition"],
-			Icon = NAV_ICON_BASE .. "Precog.png",
-			Build = function(content)
-				M.Precog:Build(content)
-			end,
-		},
 		{ Heading = L["Crowd Control"] },
 		{
 			Key = "CC",
@@ -313,6 +306,14 @@ function M:Init()
 			Icon = NAV_ICON_BASE .. "Healer.png",
 			Build = function(content)
 				M.Healer:Build(content, db.Modules.HealerCCModule)
+			end,
+		},
+		{
+			Key = "Trinkets",
+			Title = L["Party Trinkets_Short"] or L["Party Trinkets"],
+			Icon = NAV_ICON_BASE .. "Trinkets.png",
+			Build = function(content)
+				M.Trinkets:Build(content)
 			end,
 		},
 		{ Heading = L["Kicks"] },
@@ -359,56 +360,6 @@ function M:Init()
 		},
 	}
 
-	-- Cooldown tracking (friendly and enemy) is disabled on 12.1 - it infers cooldowns from
-	-- aura data, which addons can no longer read - so those config tabs are hidden there.
-	-- The standalone Party Trinkets module takes the friendly tracker's slot (trinket data
-	-- is C_PvP-based, not aura-based, so it survives the lockdown).
-	-- TEMPORARY: remove with the modules once 12.1 is live.
-	if addon.Utils.WoWEx:UseAuraContainers() then
-		-- Precognition joins the cooldown trackers: the starter custom aura groups track the
-		-- same two spells, so the module is switched off there and its tab has nothing to set.
-		for i = #tabs, 1, -1 do
-			local key = tabs[i].Key
-
-			if key == "FriendlyCooldowns" or key == "EnemyCooldowns" or key == "Precog" then
-				table.remove(tabs, i)
-			end
-		end
-
-		-- Party trinkets read C_PvP rather than aura data, so the feature survives the lockdown
-		-- that took the cooldown trackers. It closes the Crowd Control group.
-		for i = 1, #tabs do
-			if tabs[i].Key == "Healer" then
-				table.insert(tabs, i + 1, {
-					Key = "Trinkets",
-					Title = L["Party Trinkets_Short"] or L["Party Trinkets"],
-					Icon = NAV_ICON_BASE .. "Trinkets.png",
-					Build = function(content)
-						M.Trinkets:Build(content)
-					end,
-				})
-				break
-			end
-		end
-
-		-- Custom auras are 12.1-only: the whole feature is aura filtering, which the older client
-		-- has no equivalent for. First in the General group, because it is the one users build
-		-- with. Inserted by key rather than index: the heading entries make positions unstable.
-		for i = 1, #tabs do
-			if tabs[i].Key == "RaidFrameAuras" then
-				table.insert(tabs, i, {
-					Key = "CustomAuras",
-					Title = L["Custom Auras_Short"] or L["Custom Auras"],
-					Icon = NAV_ICON_BASE .. "CustomAuras.png",
-					Build = function(content)
-						M.CustomAuras:Build(content)
-					end,
-				})
-				break
-			end
-		end
-	end
-
 	local contentPadding = 12
 	local windowInset = 2 + contentPadding * 2 + 14 -- border (2), padding (24), scrollbar (14)
 	local tabStripWidth = 135
@@ -437,18 +388,6 @@ function M:Init()
 
 	M.TabController = tabController
 
-
-	StaticPopupDialogs["MINIAURAS_RELOAD_CONFIRM"] = {
-		text = L["Language changed. Reload UI now?"],
-		button1 = YES,
-		button2 = NO,
-		OnAccept = function()
-			C_UI.Reload()
-		end,
-		timeout = 0,
-		whileDead = true,
-		hideOnEscape = true,
-	}
 
 	StaticPopupDialogs["MINIAURAS_CONFIRM"] = {
 		text = "%s",
@@ -485,14 +424,6 @@ function M:Init()
 			return
 		end
 
-		-- TEMPORARY: the cooldown Brain only exists on the legacy path; delete this branch
-		-- with the 12.0 path.
-		if msg == "debug" and not addon.Utils.WoWEx:UseAuraContainers() then
-			local on = addon.Core.Cooldowns.Brain:ToggleDebug()
-			mini:NotifyWithPrefix(on and "Cooldown debug logging ON" or "Cooldown debug logging OFF")
-			return
-		end
-
 		window:Toggle()
 	end
 
@@ -507,7 +438,7 @@ end
 
 ---@class Config
 ---@field Init fun(self: table)
----@field Apply fun(self: table)
+---@field Apply fun(self: table, settingsKey: string?)
 ---@field Migrator DbMigrator
 ---@field TabController TabReturn
 ---@field General GeneralConfig
@@ -519,10 +450,7 @@ end
 ---@field Nameplates NameplatesConfig
 ---@field EnemyKickTracker EnemyKickTrackerConfig
 ---@field AllyKickTracker AllyKickTrackerConfig
----@field Precog PrecogConfig
 ---@field OtherAddons OtherAddonsConfig
 ---@field RaidFrameAuras RaidFrameAurasConfig
 ---@field CustomAuras CustomAurasConfig
----@field FriendlyCooldownTracker FriendlyCooldownTrackerConfig
----@field EnemyCooldownTracker EnemyCooldownTrackerConfig
 ---@field Miscellaneous MiscellaneousConfig

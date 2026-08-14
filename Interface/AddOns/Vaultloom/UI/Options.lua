@@ -385,8 +385,9 @@ local function createGeneralPage(frame, callbacks)
     page.discordLink:SetSize(420, 28)
     page.discordLink:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
+        edgeFile = Addon.Assets.roundedColorBorder,
+        edgeSize = 4,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     page.discordLink:SetBackdropColor(0.025, 0.022, 0.020, 0.98)
     page.discordLink:SetBackdropBorderColor(unpackColor(Theme.colors.goldDim))
@@ -426,10 +427,32 @@ local function createGeneralPage(frame, callbacks)
     page.chatTitle:SetPoint("TOPLEFT", 18, -16)
     page.chatText = createDescription(page.chat, L.OPTIONS_GENERAL_CHAT_TEXT)
     page.chatText:SetPoint("TOPLEFT", page.chatTitle, "BOTTOMLEFT", 0, -8)
-    page.chatText:SetPoint("TOPRIGHT", -18, 0)
+    page.chatText:SetWidth(610)
     page.chatText:SetHeight(32)
     page.chatToggle = Widgets:CreateButton(page.chat, "", 238, 28)
     page.chatToggle:SetPoint("BOTTOMLEFT", 18, 16)
+
+    page.soundDivider = page.chat:CreateTexture(nil, "ARTWORK")
+    page.soundDivider:SetPoint("TOP", 660, -14)
+    page.soundDivider:SetPoint("BOTTOM", 660, 14)
+    page.soundDivider:SetWidth(1)
+    page.soundDivider:SetColorTexture(
+        Theme.colors.goldDim[1],
+        Theme.colors.goldDim[2],
+        Theme.colors.goldDim[3],
+        0.62
+    )
+
+    page.soundTitle = createSectionTitle(page.chat, L.OPTIONS_GENERAL_SOUND_TITLE)
+    page.soundTitle:SetPoint("TOPLEFT", 690, -16)
+    page.soundText = createDescription(page.chat, L.OPTIONS_GENERAL_SOUND_TEXT)
+    page.soundText:SetPoint("TOPLEFT", page.soundTitle, "BOTTOMLEFT", 0, -8)
+    page.soundText:SetPoint("TOPRIGHT", -18, 0)
+    page.soundText:SetHeight(32)
+    page.soundToggle = Widgets:CreateButton(page.chat, "", 238, 28)
+    page.soundToggle:SetPoint("BOTTOMLEFT", 690, 16)
+    page.soundTest = Widgets:CreateButton(page.chat, L.OPTIONS_GENERAL_SOUND_TEST, 190, 28)
+    page.soundTest:SetPoint("LEFT", page.soundToggle, "RIGHT", 8, 0)
 
     page.scaleRow.minus:SetScript("OnClick", function()
         callbacks.setScale((callbacks.getSettings().scale or 1) - 0.05)
@@ -542,6 +565,13 @@ local function createGeneralPage(frame, callbacks)
     page.chatToggle:SetScript("OnClick", function()
         callbacks.setChatMessagesEnabled(not callbacks.areChatMessagesEnabled())
         frame:RefreshGeneral()
+    end)
+    page.soundToggle:SetScript("OnClick", function()
+        callbacks.setSoundsEnabled(not callbacks.areSoundsEnabled())
+        frame:RefreshGeneral()
+    end)
+    page.soundTest:SetScript("OnClick", function()
+        callbacks.previewSound()
     end)
 end
 
@@ -960,6 +990,9 @@ function Options:Create(parent, callbacks)
         end
         button.pageKey = definition.key
         button:SetScript("OnClick", function(self)
+            if callbacks.getSettings().options.selectedPage ~= self.pageKey and Addon.Sound then
+                Addon.Sound:Play("tabSwitch")
+            end
             frame:SetPage(self.pageKey)
         end)
         if definition.key == "patchnotes" then
@@ -1007,6 +1040,13 @@ function Options:Create(parent, callbacks)
                 or L.OPTIONS_GENERAL_CHAT_ENABLE
         )
         Widgets:SetButtonActive(self.pages.general.chatToggle, chatMessagesEnabled)
+        local soundEnabled = callbacks.areSoundsEnabled()
+        self.pages.general.soundToggle.label:SetText(
+            soundEnabled
+                and L.OPTIONS_GENERAL_SOUND_DISABLE
+                or L.OPTIONS_GENERAL_SOUND_ENABLE
+        )
+        Widgets:SetButtonActive(self.pages.general.soundToggle, soundEnabled)
         self.pages.general.discordLink:SetText(callbacks.getDiscordURL())
         local keybindPage = self.pages.general
         if keybindPage.keybindCapturing then

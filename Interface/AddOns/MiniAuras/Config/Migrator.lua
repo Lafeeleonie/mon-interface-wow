@@ -11,22 +11,22 @@ addon.Config.Migrator = M
 -- "Profiles", "ActiveProfile", and "AutoSwitch" are included here because CleanTable
 -- would otherwise wipe all stored profile snapshots (profile names are unknown keys
 -- relative to the dbDefaults.Profiles = {} template).
-local OPAQUE_CACHE_KEYS = { "SpecCache", "TalentCache", "PvPTalentCache", "WhatsNew", "NotifiedChanges", "Profiles", "ActiveProfile", "AutoSwitch" }
+local OPAQUE_CACHE_KEYS = { "SpecCache", "WhatsNew", "NotifiedChanges", "Profiles", "ActiveProfile", "AutoSwitch" }
+-- The announcement categories whose TTS opt-out lists need the same protection.
+local TTS_MUTE_CATEGORIES = { "Important", "Defensive", "EnemyDebuff" }
+
+---The alert module's TTS options, or nil on a db that predates them.
+local function TtsOptions(vars)
+	return vars.Modules and vars.Modules.AlertsModule and vars.Modules.AlertsModule.TTS
+end
 
 local function SaveOpaqueCaches(vars)
 	local saved = {}
 	for _, key in ipairs(OPAQUE_CACHE_KEYS) do
 		saved[key] = mini:CopyValueOrTable(vars[key])
 	end
-	-- DisabledSpells is a user-edited hash (spellId -> true) nested inside the module options.
-	-- CleanTable would strip all SpellId keys because none are in the empty-table schema, so
-	-- we save and restore each module's DisabledSpells the same way as top-level opaque caches.
-	local fcdModule = vars.Modules and vars.Modules.FriendlyCooldownTrackerModule
-	saved._FcdDisabledSpells = fcdModule and mini:CopyValueOrTable(fcdModule.DisabledSpells) or {}
-	local ecdModule = vars.Modules and vars.Modules.EnemyCooldownTrackerModule
-	saved._EcdDisabledSpells = ecdModule and mini:CopyValueOrTable(ecdModule.DisabledSpells) or {}
-	-- Same shape again: the auras module's tracked-spell deltas are spellId -> true hashes
-	-- against an empty schema, so they would be cleaned away too.
+	-- The auras module's tracked-spell deltas are spellId -> true hashes against an empty schema,
+	-- so CleanTable would strip every key; save and restore them like the top-level caches.
 	local raidFrameAurasSpells = vars.Modules and vars.Modules.RaidFrameAurasModule
 		and vars.Modules.RaidFrameAurasModule.Spells
 	saved._RaidFrameAurasDisabledSpells = raidFrameAurasSpells and mini:CopyValueOrTable(raidFrameAurasSpells.Disabled) or {}
@@ -36,20 +36,19 @@ local function SaveOpaqueCaches(vars)
 	-- them against and CleanTable would strip every one of them.
 	local customAuras = vars.Modules and vars.Modules.CustomAurasModule
 	saved._CustomAuraGroups = customAuras and mini:CopyValueOrTable(customAuras.Groups) or {}
+	-- The TTS per-spell switches are the same shape: spellId -> boolean against an empty schema.
+	local tts = TtsOptions(vars)
+	saved._TtsMutedSpells = {}
+	for _, category in ipairs(TTS_MUTE_CATEGORIES) do
+		local options = tts and tts[category]
+		saved._TtsMutedSpells[category] = options and mini:CopyValueOrTable(options.MutedSpellIds) or {}
+	end
 	return saved
 end
 
 local function RestoreOpaqueCaches(vars, saved)
 	for _, key in ipairs(OPAQUE_CACHE_KEYS) do
 		vars[key] = saved[key]
-	end
-	local fcdModule = vars.Modules and vars.Modules.FriendlyCooldownTrackerModule
-	if fcdModule then
-		fcdModule.DisabledSpells = saved._FcdDisabledSpells or {}
-	end
-	local ecdModule = vars.Modules and vars.Modules.EnemyCooldownTrackerModule
-	if ecdModule then
-		ecdModule.DisabledSpells = saved._EcdDisabledSpells or {}
 	end
 	local raidFrameAurasModule = vars.Modules and vars.Modules.RaidFrameAurasModule
 	if raidFrameAurasModule then
@@ -61,6 +60,64 @@ local function RestoreOpaqueCaches(vars, saved)
 	local customAuras = vars.Modules and vars.Modules.CustomAurasModule
 	if customAuras then
 		customAuras.Groups = saved._CustomAuraGroups or {}
+	end
+	local tts = TtsOptions(vars)
+	if tts then
+		for _, category in ipairs(TTS_MUTE_CATEGORIES) do
+			if tts[category] then
+				tts[category].MutedSpellIds = saved._TtsMutedSpells[category] or {}
+			end
+		end
+	end
+end
+
+---Drops any setting the addon no longer ships from a stored profile payload, matching it against
+---the same defaults CleanTable uses on the live db.
+---
+---An empty table in the defaults is the schema's way of saying "the user authors this" (custom
+---aura groups, the spell-id hashes), so those are left whole rather than recursed into - the same
+---carve-out SaveOpaqueCaches makes for the live db.
+local function PruneToDefaults(value, defaults)
+	if type(value) ~= "table" or type(defaults) ~= "table" or next(defaults) == nil then
+		return
+	end
+
+	for key, sub in pairs(value) do
+		if defaults[key] == nil then
+			value[key] = nil
+		else
+			PruneToDefaults(sub, defaults[key])
+		end
+	end
+end
+
+---Applies that to every stored profile. CleanTable cannot reach them: Profiles is opaque to it,
+---so a snapshot keeps whatever the addon had when it was saved. Switching to that profile writes
+---the whole payload back over the live db, so without this a retired setting round-trips forever.
+local function PruneRemovedSettingsFromProfiles(vars)
+	if type(vars.Profiles) ~= "table" then
+		return
+	end
+
+	local payloadKeys = addon.Core.ProfileManager.PayloadKeys
+	local isPayloadKey = {}
+	for _, key in ipairs(payloadKeys) do
+		isPayloadKey[key] = true
+	end
+
+	for _, payload in pairs(vars.Profiles) do
+		if type(payload) == "table" then
+			-- A snapshot only ever holds payload keys, so one dropped from that list (a retired
+			-- top-level setting) is as stale as a value the defaults no longer describe.
+			for key in pairs(payload) do
+				if not isPayloadKey[key] then
+					payload[key] = nil
+				end
+			end
+			for _, key in ipairs(payloadKeys) do
+				PruneToDefaults(payload[key], dbDefaults[key])
+			end
+		end
 	end
 end
 
@@ -135,6 +192,7 @@ function M:GetAndUpgradeDb()
 		local caches = SaveOpaqueCaches(vars)
 		mini:CleanTable(vars, dbDefaults, true, true)
 		RestoreOpaqueCaches(vars, caches)
+		PruneRemovedSettingsFromProfiles(vars)
 	end
 
 	return vars
@@ -165,6 +223,7 @@ function M:SoftReset()
 	local caches = SaveOpaqueCaches(vars)
 	mini:CleanTable(vars, dbDefaults, true, true)
 	RestoreOpaqueCaches(vars, caches)
+	PruneRemovedSettingsFromProfiles(vars)
 
 	-- The default-merge above only fills MISSING keys, so a stale Version (from a corrupt
 	-- migration chain or a db written by a newer addon version) would survive - leaving the

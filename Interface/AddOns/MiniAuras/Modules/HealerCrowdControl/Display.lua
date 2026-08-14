@@ -1,17 +1,14 @@
 ---@type string, Addon
 local addonName, addon = ...
 local mini = addon.Framework
-local wowEx = addon.Utils.WoWEx
 local L = addon.L
 local iconSlotContainer = addon.Core.IconSlotContainer
 local auraContainerDisplay = addon.Core.AuraContainerDisplay
 local auraFilters = addon.Core.AuraFilters
-local unitWatcher = addon.Core.UnitAuraWatcher
 local testSpellData = addon.Core.TestSpells
 local units = addon.Utils.Units
 local moduleUtil = addon.Utils.ModuleUtil
-local ModuleName = addon.Utils.ModuleName
-local rc = LibStub("LibRangeCheck-3.0")
+local wowEx = addon.Utils.WoWEx
 
 -- Loaded before this file in TOC order.
 local sound = addon.Modules.HealerCrowdControl.Sound
@@ -22,21 +19,24 @@ addon.Modules.HealerCrowdControl = addon.Modules.HealerCrowdControl or {}
 local M = {}
 addon.Modules.HealerCrowdControl.Display = M
 
--- 12.1 path: healer CC icons render through one AuraContainer per healer. The warning text
--- cannot work there (it requires knowing whether a CC aura is present, which 12.1 makes
--- secret). The IconSlotContainer is kept for test mode.
+-- Healer CC icons render through one AuraContainer per healer, and the warning text through a
+-- second, label-only container per healer (the engine shows the label button while a CC aura is
+-- present, so no aura read is needed). Every healer's label anchors to the same point: identical
+-- overlapping texts read as one label, which acts as an OR across healers. The IconSlotContainer
+-- is kept for test mode.
 --
--- The battleground 40-yard range gate (IsInRange, below) is also dropped on 12.1: it works by
--- skipping healers when rendering, and rendering is the engine's job there. In a battleground
--- every healer in the raid now gets a container, not just the nearby ones. Re-adding it would
--- mean SetEnabled(false) on out-of-range healers' displays on a range poll - possible, but it
--- was never wired up, so don't read the missing gate as an oversight in the sound/display code.
--- TEMPORARY dual path: remove the watcher branch once 12.1 is live everywhere.
-local USE_AURA_CONTAINERS = wowEx:UseAuraContainers()
-local paused = false
+-- There is no battleground 40-yard range gate: skipping merely-far healers would have to happen
+-- while rendering, and rendering is the engine's job. Every healer in the raid gets a container,
+-- not just the nearby ones. Healers outside the player's visible world are the exception:
+-- ApplyUnitGates zeroes their budgets, because the engine cannot filter their auras at all
+-- (see Core/AuraFilters).
+
+-- Per-healer icon budget, and the one label slot: one CC aura is enough to warrant the text.
+local MAX_CC_ICONS = 5
+local LABEL_MAX_ICONS = 1
 local testModeActive = false
--- 12.1 path: sorted healer-unit scratch so the display chain has a stable order (pairs order
--- would let the healer rows swap places between refreshes).
+-- Sorted healer-unit scratch so the display chain has a stable order (pairs order would let the
+-- healer rows swap places between refreshes).
 local healerOrderScratch = {}
 
 ---@type Db
@@ -54,21 +54,12 @@ local iconsContainer
 local activePool = {}
 ---@type table<string, HealerWatchEntry>
 local discardPool = {}
+-- Names the discard-pool slots for entries rejected while styling was restricted, so they park
+-- under keys no unit token can collide with (see RefreshHealers).
+local staleParkCounter = 0
 
 ---@type TestSpell[]
 local testSpells = {}
-
--- TEMPORARY: both only serve the legacy renderer's battleground range gate (see the header
--- comment); they and the LibRangeCheck import die with the 12.0 path.
-local function IsInBattleground()
-	local inInstance, instanceType = IsInInstance()
-	return inInstance and instanceType == "pvp"
-end
-
-local function IsInRange(unit)
-	local _, maxRange = rc:GetRange(unit)
-	return maxRange ~= nil and maxRange <= 40
-end
 
 local function UpdateAnchorSize()
 	if not healerAnchor then
@@ -77,25 +68,21 @@ local function UpdateAnchorSize()
 
 	local options = db.Modules.HealerCCModule
 	local iconSize = tonumber(options.Icons.Size) or 32
+	-- The anchor's own fontstring stands in for the live text: the label containers carry the
+	-- same string at the same size, and their (possibly secret) frames must never be read.
 	local text = healerAnchor.HealerWarning
 	local stringWidth = text and text:GetStringWidth() or 0
-	-- 12.1: the warning text is disabled (see the header comment) and an AuraContainer's size can
-	-- be secret, so only the icon size feeds the anchor size there.
-	local showText = not USE_AURA_CONTAINERS and options.ShowWarningText
+	local showText = options.ShowWarningText
 	local stringHeight = (showText and text and text:GetStringHeight()) or 0
-	local containerWidth = iconSize
-	if not USE_AURA_CONTAINERS and iconsContainer and iconsContainer.Frame then
-		containerWidth = iconsContainer.Frame:GetWidth() or iconSize
-	end
-	local width = math.max(iconSize, stringWidth, containerWidth)
+	local width = math.max(iconSize, stringWidth)
 	local height = iconSize + stringHeight
 
 	healerAnchor:SetSize(width, height)
 end
 
----12.1 path: lays the per-healer aura containers out in a chain under the anchor. Chaining
----containers to each other avoids reading their (possibly secret) sizes; empty containers
----collapse so the row only occupies space for healers that are actually CC'd.
+---Lays the per-healer aura containers out in a chain under the anchor. Chaining containers to
+---each other avoids reading their (possibly secret) sizes; empty containers collapse so the row
+---only occupies space for healers that are actually CC'd.
 local function LayoutHealerDisplays()
 	local options = db.Modules.HealerCCModule
 	local spacing = options.IconSpacing or 2
@@ -128,15 +115,51 @@ end
 local function BuildStyle(options)
 	local style = auraContainerDisplay:BuildStandardStyle(options.Icons)
 
+	-- The display only ever holds CC, and most of that is physical: without this a stun gets the
+	-- tinted glow but no ring, which reads as the border being broken.
+	style.BorderWithoutDispelType = true
 	style.ShowTooltips = options.ShowTooltips ~= false
 
 	return style
 end
 
----12.1 path: applies size/style options to every healer display.
+---The style for the label-only warning-text displays. The display size doubles as the button
+---size, so the font size is passed to ApplyConfig/New separately as well.
+---@param options table
+---@return AuraDisplayStyle
+local function BuildLabelStyle(options)
+	local style = auraContainerDisplay:GetStyleScratch()
+
+	style.LabelFontSize = tonumber(options.Font.Size) or 32
+	style.LabelFontFlags = options.Font.Flags
+	style.ShowTooltips = false
+
+	return style
+end
+
+---Whether a parked entry's displays already carry the current options. Asked while aura styling
+---is restricted, where a reused entry cannot be restyled and would keep its old look for the
+---whole match.
+---@param item HealerWatchEntry
+---@param options table
+---@return boolean
+local function ItemCarriesOptions(item, options)
+	local display = item.Display
+	local label = item.LabelDisplay
+
+	-- One style scratch is shared, so each style is built right before the compare that reads it.
+	return (not display or display:CarriesConfig(tonumber(options.Icons.Size) or 32,
+			options.IconSpacing or 2, BuildStyle(options)))
+		and (not label or label:CarriesConfig(tonumber(options.Font.Size) or 32, 0,
+			BuildLabelStyle(options)))
+end
+
+---Applies size/style options to every healer display.
 local function RefreshHealerDisplays()
 	local options = db.Modules.HealerCCModule
 	local iconSize = tonumber(options.Icons.Size) or 32
+	local fontSize = tonumber(options.Font.Size) or 32
+	local showText = options.ShowWarningText == true
 
 	for _, item in pairs(activePool) do
 		local display = item.Display
@@ -147,129 +170,60 @@ local function RefreshHealerDisplays()
 			display:SetEnabled(options.Icons.Enabled ~= false)
 			display:SetShown(options.Icons.Enabled ~= false and not testModeActive)
 		end
+
+		local label = item.LabelDisplay
+		if label then
+			label:ApplyConfig(fontSize, 0, BuildLabelStyle(options))
+			label:SetEnabled(showText)
+			label:SetShown(showText and not testModeActive)
+		end
 	end
 
 	LayoutHealerDisplays()
 end
 
-local function OnAuraStateUpdated()
-	-- 12.1: rendering is container-driven and pool entries carry no Watcher - this legacy
-	-- re-render would nil-index watcher.Watcher below.
-	if USE_AURA_CONTAINERS then
-		return
-	end
-
-	if paused then
-		return
-	end
-
-	if not healerAnchor or not iconsContainer or not moduleUtil:IsModuleEnabled(ModuleName.HealerCrowdControl) then
-		return
-	end
-
-	local options = db.Modules.HealerCCModule
-	local iconsEnabled = options.Icons.Enabled
-	local iconsReverse = options.Icons.ReverseCooldown
-	local iconsGlow = options.Icons.Glow
-	local colorByDispelType = options.Icons.ColorByDispelType
-	local showTooltips = options.ShowTooltips ~= false
-
-	UpdateAnchorSize()
-
-	---@type AuraInfo[]
-	local allCcAuraData = {}
-	local slot = 0
-	local checkRange = IsInBattleground()
-
-	for _, watcher in pairs(activePool) do
-		if not checkRange or IsInRange(watcher.Unit) then
-			local ccState = watcher.Watcher:GetCcState()
-			mini:Append(ccState, allCcAuraData)
-
-			if iconsEnabled then
-				for _, aura in ipairs(ccState) do
-					slot = slot + 1
-					iconsContainer:SetSlot(slot, {
-						Texture = aura.SpellIcon,
-						DurationObject = aura.DurationObject,
-						Alpha = aura.IsCC,
-						ReverseCooldown = iconsReverse,
-						Glow = iconsGlow,
-						Color = colorByDispelType and aura.DispelColor,
-						FontScale = db.FontScale,
-						SpellId = showTooltips and aura.SpellId or nil,
-					})
-				end
-			end
-		end
-	end
-
-	-- Clear any unused slots beyond the aura count
-	for i = slot + 1, iconsContainer.Count do
-		iconsContainer:SetSlotUnused(i)
-	end
-
-	local show = #allCcAuraData > 0
-	local soundEnabled = db.Modules.HealerCCModule.Sound.Enabled
-
-	if show then
-		if healerAnchor:IsVisible() then
-			return
-		end
-
-		healerAnchor:Show()
-
-		if soundEnabled then
-			sound:Play()
-		end
-	else
-		healerAnchor:Hide()
-	end
-end
-
----Parks every active healer entry in the discard pool, disabling its watcher and display.
+---Parks every active healer entry in the discard pool, disabling its displays.
 ---Clearing a key mid-traversal is legal in Lua (only additions are not), so no staging list.
 local function DiscardActiveEntries()
 	for unit, item in pairs(activePool) do
-		if item.Watcher then
-			item.Watcher:Disable()
-		end
 		if item.Display then
 			item.Display:SetEnabled(false)
 			item.Display:Hide()
+		end
+		if item.LabelDisplay then
+			item.LabelDisplay:SetEnabled(false)
+			item.LabelDisplay:Hide()
 		end
 		discardPool[unit] = item
 		activePool[unit] = nil
 	end
 end
 
-local function Teardown()
-	DiscardActiveEntries()
-
-	if iconsContainer then
-		iconsContainer:ResetAllSlots()
-	end
-
-	if healerAnchor then
-		healerAnchor:Hide()
-	end
-
-	if USE_AURA_CONTAINERS then
-		sound:Clear()
-	end
-
-	paused = true
-end
-
 local function EnableWatchers()
-	paused = false
 	for _, item in pairs(activePool) do
-		if item.Watcher then
-			item.Watcher:Enable()
-		end
 		if item.Display then
 			item.Display:SetEnabled(true)
 		end
+	end
+end
+
+---Budgets one healer's containers for the unit's current state. Outside the player's visible
+---world the engine stops evaluating the CROWD_CONTROL token and both containers fill with
+---unrelated debuffs (the spell-id map is identity-gated off on assistable units, so the token is
+---the only filter left), so a healer that far away shows nothing - icons and warning text both.
+---Visibility has no event of its own, which is why the duel poller re-asks this.
+---Urgent: the unit a gate zeroes emits no aura events, so a budget flip parked for combat would
+---keep showing the garbage until regen.
+---@param item HealerWatchEntry
+local function ApplyUnitGates(item)
+	local visible = units:IsVisible(item.Unit)
+
+	if item.Display then
+		item.Display:SetMaxIcons(auraFilters.GroupKey.CrowdControl, visible and MAX_CC_ICONS or 0, true)
+	end
+
+	if item.LabelDisplay then
+		item.LabelDisplay:SetMaxIcons(auraFilters.GroupKey.CrowdControl, visible and LABEL_MAX_ICONS or 0, true)
 	end
 end
 
@@ -279,44 +233,60 @@ local function RefreshHealers()
 	DiscardActiveEntries()
 
 	local healers = units:FindHealers()
+	local options = db.Modules.HealerCCModule
+	local restricted = wowEx:IsAuraStylingRestricted()
 
 	-- Re-add healers from the new set
 	for _, healer in ipairs(healers) do
 		local item = discardPool[healer]
 
+		if item and restricted and not ItemCarriesOptions(item, options) then
+			-- Re-keyed out of the token's slot: the fresh entry built below lands back in the
+			-- discard pool under this token on the next refresh, and must not clobber this one.
+			staleParkCounter = staleParkCounter + 1
+			discardPool["stale" .. staleParkCounter] = item
+			discardPool[healer] = nil
+			item = nil
+		end
+
 		-- Container entries are interchangeable: same groups, retargeted by SetUnit. Taking any
 		-- parked one caps the display count at the largest healer set seen at once, where the
 		-- same-token match alone builds a new display for every token that ever held a healer
-		-- (containers can never be freed). Legacy entries carry a unit-bound watcher and only
-		-- fit their own token, so they keep the strict match.
-		if not item and USE_AURA_CONTAINERS then
-			local token, parked = next(discardPool)
-
-			if parked then
-				item = parked
-				discardPool[token] = nil
+		-- (containers can never be freed). While styling is restricted only an entry already
+		-- carrying the current look is taken: a reused one cannot be restyled, so a mismatch
+		-- would keep its old look for the whole match.
+		if not item then
+			for token, parked in pairs(discardPool) do
+				if not restricted or ItemCarriesOptions(parked, options) then
+					item = parked
+					discardPool[token] = nil
+					break
+				end
 			end
 		end
 
 		if item then
-			if item.Watcher then
-				item.Watcher:Enable()
-			end
 			if item.Display then
 				item.Display:SetUnit(healer)
 				item.Display:SetEnabled(true)
 			end
+			if item.LabelDisplay then
+				-- Enabled/shown state follows the ShowWarningText option in RefreshHealerDisplays.
+				item.LabelDisplay:SetUnit(healer)
+			end
 			item.Unit = healer
 			activePool[healer] = item
 			discardPool[healer] = nil
-		elseif USE_AURA_CONTAINERS then
-			local options = db.Modules.HealerCCModule
+			-- The budgets a parked entry carries belong to whoever held it last; re-ask the gate
+			-- for the healer it tracks now.
+			ApplyUnitGates(item)
+		else
 			item = {
 				Unit = healer,
 				Display = auraContainerDisplay:New(
 					healerAnchor,
 					healer,
-					{ auraFilters:GroupSpec("CrowdControl", 5) },
+					{ auraFilters:GroupSpec("CrowdControl", MAX_CC_ICONS) },
 					tonumber(options.Icons.Size) or 32,
 					options.IconSpacing or 2,
 					"Healer CC",
@@ -324,115 +294,39 @@ local function RefreshHealers()
 					-- built the moment a healer turns up, which in an arena is mid-match while
 					-- auras are secret and every button setter is refused. Its buttons would
 					-- then keep the unstyled look, no glow and no border, for the whole game.
-					{ Style = BuildStyle(options) }
+					{ Style = BuildStyle(options), MasqueGroup = "Healer CC" }
 				),
 			}
+			-- The warning text: a label-only container on the same CC filter, so the engine
+			-- shows the text exactly while this healer has a CC aura. maxIcons 1 - one aura is
+			-- enough to warrant the label, and more would repeat it.
+			item.LabelDisplay = auraContainerDisplay:New(
+				healerAnchor,
+				healer,
+				{ auraFilters:GroupSpec("CrowdControl", LABEL_MAX_ICONS) },
+				tonumber(options.Font.Size) or 32,
+				0,
+				"Healer CC",
+				{ Label = L["Healer in CC!"], Style = BuildLabelStyle(options) }
+			)
+			-- Every healer's label lands on this same point on purpose - see the header comment.
+			item.LabelDisplay.Frame:SetPoint("TOP", healerAnchor, "TOP", 0, 6)
 			activePool[healer] = item
-		else
-			item = {
-				Unit = healer,
-				Watcher = unitWatcher:New(healer, nil, {
-					CC = true,
-				}),
-			}
-
-			item.Watcher:RegisterCallback(OnAuraStateUpdated)
-			activePool[healer] = item
+			-- The groups above are built with the full budget; ask the gate right away, or a
+			-- display born for a healer already outside the visible world shows unfiltered auras
+			-- until the next refresh.
+			ApplyUnitGates(item)
 		end
 	end
 
-	if USE_AURA_CONTAINERS then
-		RefreshHealerDisplays()
-		sound:Refresh(activePool)
-		-- The anchor is the fixed positioning frame for the healer displays; with aura presence
-		-- unreadable, it stays shown while the module is active and the icons come and go inside.
-		if next(activePool) ~= nil and db.Modules.HealerCCModule.Icons.Enabled ~= false then
-			healerAnchor:Show()
-		else
-			healerAnchor:Hide()
-		end
-		return
-	end
-
-	OnAuraStateUpdated()
-end
-
-local function RefreshTestFrame()
-	local options = db.Modules.HealerCCModule
-
-	if not iconsContainer or not options then
-		return
-	end
-
-	local size = tonumber(options.Icons.Size) or 32
-
-	iconsContainer:SetIconSize(size)
-
-	if not options.Icons.Enabled then
-		iconsContainer:ResetAllSlots()
+	RefreshHealerDisplays()
+	sound:Refresh(activePool)
+	-- The anchor is the fixed positioning frame for the healer displays; with aura presence
+	-- unreadable, it stays shown while the module is active and the icons come and go inside.
+	if next(activePool) ~= nil and db.Modules.HealerCCModule.Icons.Enabled ~= false then
+		healerAnchor:Show()
 	else
-		local nextSlot = testSpellData:FillContainer(iconsContainer, testSpells, 1, {
-			ReverseCooldown = options.Icons.ReverseCooldown,
-			Glow = options.Icons.Glow,
-			ColorByDispelType = options.Icons.ColorByDispelType,
-			FontScale = db.FontScale,
-			ShowTooltips = options.ShowTooltips ~= false,
-			Stagger = true,
-		})
-
-		for i = nextSlot, iconsContainer.Count do
-			iconsContainer:SetSlotUnused(i)
-		end
-	end
-
-	UpdateAnchorSize()
-end
-
-local function EnsureFrames()
-	if testModeActive then
-		-- 12.1: test icons render through the IconSlotContainer; hide the live aura displays
-		-- so real and fake icons don't mix.
-		for _, item in pairs(activePool) do
-			if item.Display then
-				item.Display:Hide()
-			end
-		end
-		return
-	end
-
-	-- Watchers only cover other people's healers, so the module goes dormant when the player
-	-- is the healer.
-	if units:IsHealer("player") then
-		Teardown()
-		return
-	end
-
-	EnableWatchers()
-	RefreshHealers()
-end
-
----@param options HealerCCModuleOptions
-local function ApplyOptions(options)
-	healerAnchor:ClearAllPoints()
-	healerAnchor:SetPoint(
-		options.Point,
-		_G[options.RelativeTo] or UIParent,
-		options.RelativePoint,
-		options.Offset.X,
-		options.Offset.Y
-	)
-
-	local currentFont, _, _ = healerAnchor.HealerWarning:GetFont()
-	healerAnchor.HealerWarning:SetFont(currentFont, options.Font.Size, options.Font.Flags)
-	iconsContainer:SetIconSize(tonumber(options.Icons.Size) or 32)
-	iconsContainer:SetSpacing(options.IconSpacing or 2)
-
-	-- 12.1: the warning text needs to know whether a CC aura is present, which is secret there,
-	-- so it is disabled outright.
-	if options.ShowWarningText and not USE_AURA_CONTAINERS then
-		healerAnchor.HealerWarning:Show()
-	else
-		healerAnchor.HealerWarning:Hide()
+		healerAnchor:Hide()
 	end
 end
 
@@ -466,9 +360,22 @@ local function CreateFrames()
 	UpdateAnchorSize()
 
 	-- Icons sit at the bottom of the anchor, text sits at the top.
-	iconsContainer = iconSlotContainer:New(healerAnchor, 5, tonumber(options.Icons.Size) or 32, options.IconSpacing or 2, "Healer CC", nil, "Healer CC")
+	iconsContainer = iconSlotContainer:New(healerAnchor, MAX_CC_ICONS, tonumber(options.Icons.Size) or 32, options.IconSpacing or 2, "Healer CC", nil, "Healer CC")
 	iconsContainer.Frame:SetPoint("BOTTOM", healerAnchor, "BOTTOM", 0, 0)
 	iconsContainer.Frame:Show()
+end
+
+---Every healer the module currently draws, for the duel poller's visibility scan.
+---@param out string[] Filled in place and returned, so the caller can keep one table.
+---@return string[]
+function M:CollectWatchedUnits(out)
+	wipe(out)
+
+	for unit in pairs(activePool) do
+		out[#out + 1] = unit
+	end
+
+	return out
 end
 
 ---@return HealerCCModuleOptions?
@@ -482,34 +389,106 @@ function M:GetOptions()
 end
 
 ---@param value boolean
-function M:SetPaused(value)
-	paused = value
-end
-
----@param value boolean
 function M:SetTestMode(value)
 	testModeActive = value
 end
 
 function M:Teardown()
-	Teardown()
+	DiscardActiveEntries()
+
+	if iconsContainer then
+		iconsContainer:ResetAllSlots()
+	end
+
+	if healerAnchor then
+		healerAnchor:Hide()
+	end
+
+	sound:Clear()
 end
 
 function M:EnsureFrames()
-	EnsureFrames()
+	if testModeActive then
+		-- Test icons render through the IconSlotContainer and the test text through the anchor's
+		-- own fontstring; hide the live displays so real and fake don't mix.
+		for _, item in pairs(activePool) do
+			if item.Display then
+				item.Display:Hide()
+			end
+			if item.LabelDisplay then
+				item.LabelDisplay:Hide()
+			end
+		end
+		return
+	end
+
+	-- Only other people's healers are tracked, so the module goes dormant when the player is
+	-- the healer.
+	if units:IsHealer("player") then
+		M:Teardown()
+		return
+	end
+
+	EnableWatchers()
+	RefreshHealers()
 end
 
 ---@param options HealerCCModuleOptions
 function M:ApplyOptions(options)
-	ApplyOptions(options)
+	healerAnchor:ClearAllPoints()
+	healerAnchor:SetPoint(
+		options.Point,
+		_G[options.RelativeTo] or UIParent,
+		options.RelativePoint,
+		options.Offset.X,
+		options.Offset.Y
+	)
+
+	local currentFont, _, _ = healerAnchor.HealerWarning:GetFont()
+	healerAnchor.HealerWarning:SetFont(currentFont, options.Font.Size, options.Font.Flags)
+	iconsContainer:SetIconSize(tonumber(options.Icons.Size) or 32)
+	iconsContainer:SetSpacing(options.IconSpacing or 2)
+
+	-- The live warning text renders through the per-healer label containers; the anchor's own
+	-- fontstring only serves the test-mode preview.
+	if options.ShowWarningText and testModeActive then
+		healerAnchor.HealerWarning:Show()
+	else
+		healerAnchor.HealerWarning:Hide()
+	end
 end
 
 function M:RefreshTestFrame()
-	RefreshTestFrame()
-end
+	local options = db.Modules.HealerCCModule
 
-function M:OnAuraStateUpdated()
-	OnAuraStateUpdated()
+	if not iconsContainer or not options then
+		return
+	end
+
+	local size = tonumber(options.Icons.Size) or 32
+
+	iconsContainer:SetIconSize(size)
+
+	if not options.Icons.Enabled then
+		iconsContainer:ResetAllSlots()
+	else
+		local nextSlot = testSpellData:FillContainer(iconsContainer, testSpells, 1, {
+			ReverseCooldown = options.Icons.ReverseCooldown,
+			Glow = options.Icons.Glow,
+			ColorByDispelType = options.Icons.ColorByDispelType,
+			-- The live buttons draw border and glow together, so the preview does too.
+			Border = true,
+			FontScale = db.FontScale,
+			ShowTooltips = options.ShowTooltips ~= false,
+			Stagger = true,
+		})
+
+		for i = nextSlot, iconsContainer.Count do
+			iconsContainer:SetSlotUnused(i)
+		end
+	end
+
+	UpdateAnchorSize()
 end
 
 function M:ResetIcons()
@@ -522,8 +501,8 @@ function M:ShowAnchor()
 	healerAnchor:Show()
 end
 
----Visibility is left to Refresh: on 12.1 the anchor has to stay shown while the module is
----active, so hiding it here would blank the live display until the next addon-wide Refresh.
+---Visibility is left to Refresh: the anchor has to stay shown while the module is active, so
+---hiding it here would blank the live display until the next addon-wide Refresh.
 ---@param active boolean
 function M:SetAnchorInteractive(active)
 	if not healerAnchor then
@@ -549,5 +528,5 @@ end
 
 ---@class HealerWatchEntry
 ---@field Unit string
----@field Watcher Watcher? Legacy path only (nil on 12.1).
----@field Display AuraContainerDisplay? 12.1 path only.
+---@field Display AuraContainerDisplay?
+---@field LabelDisplay AuraContainerDisplay? The label-only warning-text container.

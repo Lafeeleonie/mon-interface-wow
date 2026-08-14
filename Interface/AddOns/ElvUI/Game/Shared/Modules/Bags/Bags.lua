@@ -4,7 +4,6 @@ local S = E:GetModule('Skins')
 local TT = E:GetModule('Tooltip')
 local AB = E:GetModule('ActionBars')
 local NP = E:GetModule('NamePlates')
-local LSM = E.Libs.LSM
 
 local _G = _G
 local tinsert, tremove, wipe = tinsert, tremove, wipe
@@ -280,23 +279,17 @@ if E.Wrath or E.Mists then
 end
 
 local bagIDs, bankIDs = {0, 1, 2, 3, 4}, {}
-local bankOffset, maxBankSlots = (E.Classic or E.TBC or E.Wrath or E.Mists) and 4 or 5, E.Classic and 10 or 11
-local bankEvents = {'BAG_UPDATE_DELAYED', 'BAG_UPDATE', 'BAG_CLOSED', 'BANK_BAG_SLOT_FLAGS_UPDATED'}
-local bagEvents = {'BAG_UPDATE_DELAYED', 'BAG_UPDATE', 'BAG_CLOSED', 'ITEM_LOCK_CHANGED', 'BAG_SLOT_FLAGS_UPDATED', 'QUEST_ACCEPTED', 'QUEST_REMOVED'}
+local bankOffset, maxBankSlots = E.Retail and 5 or 4, E.Classic and 10 or 11
+local bankEvents = {'BAG_CONTAINER_UPDATE', 'BAG_UPDATE_DELAYED', 'BAG_UPDATE', 'BAG_CLOSED', 'BANK_BAG_SLOT_FLAGS_UPDATED'}
+local bagEvents = {'BAG_CONTAINER_UPDATE', 'BAG_UPDATE_DELAYED', 'BAG_UPDATE', 'BAG_CLOSED', 'ITEM_LOCK_CHANGED', 'BAG_SLOT_FLAGS_UPDATED', 'QUEST_ACCEPTED', 'QUEST_REMOVED'}
 local presistentEvents = {
+	BAG_CONTAINER_UPDATE = true,
 	BAG_SLOT_FLAGS_UPDATED = true,
 	BANK_BAG_SLOT_FLAGS_UPDATED = true,
 	BAG_UPDATE_DELAYED = true,
 	BAG_UPDATE = true,
 	BAG_CLOSED = true
 }
-
-if E.hasEditMode then
-	tinsert(bagEvents, 'BAG_CONTAINER_UPDATE')
-	tinsert(bankEvents, 'BAG_CONTAINER_UPDATE')
-
-	presistentEvents.BAG_CONTAINER_UPDATE = true
-end
 
 if E.Retail then
 	tinsert(bagIDs, REAGENT_CONTAINER)
@@ -456,9 +449,9 @@ function B:UpdateItemDisplay()
 	if not E.private.bags.enable then return end
 
 	local db = B.db
-	local itemLevelFont = LSM:Fetch('font', db.itemLevelFont)
-	local itemInfoFont = LSM:Fetch('font', db.itemInfoFont)
-	local countFont = LSM:Fetch('font', db.countFont)
+	local itemLevelFont = db.itemLevelFont
+	local itemInfoFont = db.itemInfoFont
+	local countFont = db.countFont
 
 	local countFontSize, countFontOutline = db.countFontSize, db.countFontOutline
 	local countPosition, countxOffset, countyOffset = db.countPosition, db.countxOffset, db.countyOffset
@@ -2050,7 +2043,7 @@ end
 function B:ConstructContainerHolder(f, bagID, isBank, name, index)
 	local bagNum = isBank and (bagID == BANK_CONTAINER and 0 or (bagID - bankOffset)) or (bagID - (E.Retail and 0 or 1))
 	local holderName = bagID == BACKPACK_CONTAINER and 'ElvUIMainBagBackpack' or bagID == KEYRING_CONTAINER and 'ElvUIKeyRing' or B:ConstructContainerName(isBank, bagNum)
-	local inherit = (E.Retail and '' or isBank and 'BankItemButtonBagTemplate') or (E.TBC or E.Mists or bagID == BACKPACK_CONTAINER or bagID == KEYRING_CONTAINER) and (not E.Retail and 'ItemButtonTemplate,' or '')..'ItemAnimTemplate' or 'BagSlotButtonTemplate'
+	local inherit = (E.Retail and '' or isBank and 'BankItemButtonBagTemplate') or (not E.Retail or bagID == BACKPACK_CONTAINER or bagID == KEYRING_CONTAINER) and (not E.Retail and 'ItemButtonTemplate,' or '')..'ItemAnimTemplate' or 'BagSlotButtonTemplate'
 
 	local holder = CreateFrame((E.Retail and 'ItemButton' or 'CheckButton'), holderName, f.ContainerHolder, inherit)
 	f.ContainerHolderByBagID[bagID] = holder
@@ -2680,7 +2673,7 @@ function B:ConstructContainerButton(f, bagID, slotID)
 
 	slot.Count:ClearAllPoints()
 	slot.Count:Point(db.countPosition, db.countxOffset, db.countyOffset)
-	slot.Count:FontTemplate(LSM:Fetch('font', db.countFont), db.countFontSize, db.countFontOutline)
+	slot.Count:FontTemplate(db.countFont, db.countFontSize, db.countFontOutline)
 
 	if not slot.questIcon then
 		slot.questIcon = _G[slotName..'IconQuestTexture'] or _G[slotName].IconQuestTexture
@@ -2757,15 +2750,15 @@ function B:ConstructContainerButton(f, bagID, slotID)
 
 	slot.itemLevel = slot:CreateFontString(nil, 'OVERLAY')
 	slot.itemLevel:Point(db.itemLevelPosition, db.itemLevelxOffset, db.itemLevelyOffset)
-	slot.itemLevel:FontTemplate(LSM:Fetch('font', db.itemLevelFont), db.itemLevelFontSize, db.itemLevelFontOutline)
+	slot.itemLevel:FontTemplate(db.itemLevelFont, db.itemLevelFontSize, db.itemLevelFontOutline)
 
 	slot.bindType = slot:CreateFontString(nil, 'OVERLAY')
 	slot.bindType:Point('TOP', 0, -2)
-	slot.bindType:FontTemplate(LSM:Fetch('font', db.itemLevelFont), db.itemLevelFontSize, db.itemLevelFontOutline)
+	slot.bindType:FontTemplate(db.itemLevelFont, db.itemLevelFontSize, db.itemLevelFontOutline)
 
 	slot.centerText = slot:CreateFontString(nil, 'OVERLAY')
 	slot.centerText:Point('CENTER', 0, 0)
-	slot.centerText:FontTemplate(LSM:Fetch('font', db.itemInfoFont), db.itemInfoFontSize, db.itemInfoFontOutline)
+	slot.centerText:FontTemplate(db.itemInfoFont, db.itemInfoFontSize, db.itemInfoFontOutline)
 	slot.centerText:SetTextColor(db.itemInfoColor.r, db.itemInfoColor.g, db.itemInfoColor.b)
 
 	if slot.BattlepayItemTexture then
@@ -3766,15 +3759,15 @@ function B:Initialize()
 
 	if E.Classic or E.TBC or E.Wrath then
 		B:SecureHook(_G.PlayerInteractionFrameManager, 'ShowFrame', 'PlayerInteraction_ShowFrame')
-	elseif E.Retail then
+	elseif E.Mists then
+		B:SecureHook('BackpackTokenFrame_Update', 'UpdateTokens')
+	elseif _G.TokenFrame then
 		B:SecureHook(_G.TokenFrame, 'SetTokenWatched', 'UpdateTokensIfVisible')
 
 		local BackpackTokenFrame = _G.BackpackTokenFrame
 		if BackpackTokenFrame then -- GetMaxTokensWatched: counter to adjust max currencies we can track
 			BackpackTokenFrame:SetWidth(MAX_WATCHED_TOKENS * (BackpackTokenFrame.tokenWidth or 50))
 		end
-	else
-		B:SecureHook('BackpackTokenFrame_Update', 'UpdateTokens')
 	end
 
 	if E.Retail then

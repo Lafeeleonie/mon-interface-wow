@@ -304,20 +304,34 @@ function SlashCommands:RunTest(tokens)
     end
 
     local executed = 0
+    local skippedDisabled = 0
     local lastModule
     for _, moduleID in ipairs(moduleIDs) do
         local module = ns.ModuleRegistry:GetModule(moduleID)
         if module and type(module.RunTest) == "function" then
-            executed = executed + 1
-            lastModule = moduleID
-            ns.Diagnostics:SafeCall(moduleID .. ":RunTest", module.RunTest, module, durationSeconds)
+            -- RunTest assumes the state that OnEnable sets up (update frames,
+            -- timers, baselines). Running it on a disabled module either
+            -- errors on nil state or leaves the test overlay stuck on screen
+            -- with no event loop to hide it again -- so disabled modules are
+            -- skipped instead.
+            if ns.ModuleRegistry:IsModuleEnabled(moduleID) then
+                executed = executed + 1
+                lastModule = moduleID
+                ns.Diagnostics:SafeCall(moduleID .. ":RunTest", module.RunTest, module, durationSeconds)
+            else
+                skippedDisabled = skippedDisabled + 1
+            end
         end
     end
 
     -- One summary line instead of one chat line per module, so /thyrax test
     -- all doesn't bury the user under 7 lines of noise.
     if executed == 0 then
-        ns.Diagnostics:Warn("No testable modules were found for that target.")
+        if skippedDisabled > 0 then
+            ns.Diagnostics:Warn("No test ran: the matching module(s) are disabled. Enable them first (/thyrax module <id> on).")
+        else
+            ns.Diagnostics:Warn("No testable modules were found for that target.")
+        end
     elseif executed == 1 then
         ns.Diagnostics:Info(("Test triggered for module: %s"):format(tostring(lastModule)))
     else

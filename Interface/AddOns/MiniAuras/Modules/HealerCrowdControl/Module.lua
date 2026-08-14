@@ -1,10 +1,10 @@
 ---@type string, Addon
 local _, addon = ...
 local mini = addon.Framework
-local wowEx = addon.Utils.WoWEx
 local moduleUtil = addon.Utils.ModuleUtil
 local ModuleName = addon.Utils.ModuleName
 local eventGate = addon.Core.EventGate
+local duelPoller = addon.Core.DuelPoller
 
 -- Loaded before this file in TOC order.
 local sound   = addon.Modules.HealerCrowdControl.Sound
@@ -15,27 +15,43 @@ local M = {}
 addon.Modules.HealerCrowdControl.Module = M
 addon.Modules.HealerCrowdControlModule = M
 
--- TEMPORARY dual path: remove the watcher branch once 12.1 is live everywhere.
-local USE_AURA_CONTAINERS = wowEx:UseAuraContainers()
-
 ---@type Db
 local db
 local testModeActive = false
 local previousTestSoundEnabled = false
 ---@type EventGate?
 local rosterGate
+---@type DuelPollerSubscriber?
+local duelSub
+-- Scratch for the watched healers handed to the duel poller each refresh.
+local duelUnitsScratch = {}
+local QueueRefresh = moduleUtil:Coalesced(function()
+	M:Refresh()
+end)
 
 local function OnEvent(_, event)
 	if event == "GROUP_ROSTER_UPDATE" then
-		C_Timer.After(0, function()
-			M:Refresh()
-		end)
+		QueueRefresh()
 	end
 end
 
 ---@return boolean
 local function IsEnabled()
 	return moduleUtil:IsModuleEnabled(ModuleName.HealerCrowdControl)
+end
+
+---Hands the poller the healers drawn right now. Re-seeded per refresh: the healer set changes
+---with the roster, and a baseline for a healer nobody draws would fire a refresh for nothing.
+local function SeedDuelBaselines()
+	if not duelSub then
+		return
+	end
+
+	duelSub:ClearAll()
+
+	for _, unit in ipairs(display:CollectWatchedUnits(duelUnitsScratch)) do
+		duelSub:Seed(unit)
+	end
 end
 
 ---@param active boolean
@@ -48,7 +64,7 @@ local function SetEventsActive(active)
 	end
 end
 
----Live icons are driven by the watchers/containers; only the fake ones rebuild here.
+---Live icons are driven by the aura containers; only the fake ones rebuild here.
 ---@param options HealerCCModuleOptions
 local function UpdateContent(options)
 	if not testModeActive then
@@ -59,13 +75,8 @@ local function UpdateContent(options)
 	display:RefreshTestFrame()
 
 	if previousTestSoundEnabled ~= options.Sound.Enabled and options.Sound.Enabled then
-		if USE_AURA_CONTAINERS then
-			-- The transition-based sound is disabled on 12.1 (engine-side AddAuraSound covers
-			-- live auras), but the config preview still needs to demo the file.
-			sound:PlayPreview(options)
-		else
-			sound:Play()
-		end
+		-- The live sound is engine-side (AddAuraSound), so the preview plays the file directly.
+		sound:PlayPreview(options)
 	end
 
 	previousTestSoundEnabled = options.Sound.Enabled
@@ -76,12 +87,8 @@ local function SetTestMode(active)
 	testModeActive = active
 	display:SetTestMode(active)
 
-	if active then
-		display:SetPaused(true)
-	else
+	if not active then
 		display:ResetIcons()
-		display:SetPaused(false)
-		display:OnAuraStateUpdated()
 	end
 
 	M:Refresh()
@@ -92,6 +99,17 @@ local function CreateEvents()
 	eventsFrame:SetScript("OnEvent", OnEvent)
 	-- Registered by the Refresh gate while the module is enabled.
 	rosterGate = eventGate:New(eventsFrame, { "GROUP_ROSTER_UPDATE" })
+
+	-- A healer leaving or re-entering the player's visible world has no event, and it decides
+	-- whether the engine evaluates the CC filter at all, so the budgets are recomputed when the
+	-- poller sees it flip. Registered for the module's lifetime; the predicate below gates it.
+	-- Coalesced: the poller fires once per flipped token, and a raid riding out of range flips
+	-- many in one tick - each would otherwise pay a full refresh.
+	duelSub = duelPoller:Register(function()
+		return IsEnabled()
+	end, function()
+		QueueRefresh()
+	end)
 end
 
 local function ApplyInitialState()
@@ -126,6 +144,7 @@ function M:Refresh()
 	display:EnsureFrames()
 	display:ApplyOptions(options)
 	UpdateContent(options)
+	SeedDuelBaselines()
 
 	-- Owned here rather than by the test-mode toggle, so flipping the module switch while a
 	-- test is running shows or hides the drag anchor and its caption with it.
