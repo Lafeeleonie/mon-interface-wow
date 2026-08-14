@@ -47,7 +47,7 @@ Les descriptions et versions proviennent directement des métadonnées installé
 | [ElvUI WindTools](Interface/AddOns/ElvUI_WindTools)<br><sub>ElvUI_WindTools</sub> | 4.19 | fang2hou | Customizable enhancements for ElvUI. |
 | [MiniAuras](Interface/AddOns/MiniAuras)<br><sub>MiniAuras</sub> | 5.12.2 | Verz | Shows CC and important spells on frames/nameplates/alerts in PvP. |
 | [MiniCC (settings bridge for MiniAuras)](Interface/AddOns/MiniCC)<br><sub>MiniCC</sub> | 5.12.2 | Verz | Loads the old MiniCC settings file so MiniAuras can import it. Does nothing else. |
-| [Platynator](https://wago.io/OYbMwElUi)<br><sub>Platynator</sub> | 462 | plusmouse | Module ou extension de Platynator. |
+| [Platynator](https://www.curseforge.com/wow/addons/platynator)<br><sub>Platynator</sub> | 462 | plusmouse | Module ou extension de Platynator. [Mon profil](https://wago.io/OYbMwElUi) |
 | [WIM - ElvUI Skin](Interface/AddOns/WIM_ElvUI_Skin)<br><sub>WIM_ElvUI_Skin</sub> | 120007.01-Release | fuba | A simple skin matching the Design of Elvui |
 
 </details>

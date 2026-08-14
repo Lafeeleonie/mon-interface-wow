@@ -125,6 +125,10 @@ $categoryOrder = @(
     "Confort et outils"
 )
 
+$addonLinks = @{
+    Platynator = "https://www.curseforge.com/wow/addons/platynator"
+}
+
 $profileLinks = @{
     Platynator = "https://wago.io/OYbMwElUi"
 }
@@ -161,12 +165,13 @@ foreach ($category in $categoryOrder) {
 
     foreach ($addon in $items) {
         $encodedFolder = [Uri]::EscapeDataString($addon.Folder)
-        $addonLink = if ($profileLinks.ContainsKey($addon.Folder)) { $profileLinks[$addon.Folder] } else { "Interface/AddOns/$encodedFolder" }
+        $addonLink = if ($addonLinks.ContainsKey($addon.Folder)) { $addonLinks[$addon.Folder] } else { "Interface/AddOns/$encodedFolder" }
         $titleCell = ConvertTo-MarkdownCell -Value $addon.Title
         $folderCell = ConvertTo-MarkdownCell -Value $addon.Folder
         $versionCell = ConvertTo-MarkdownCell -Value $addon.Version
         $authorCell = ConvertTo-MarkdownCell -Value $addon.Author
-        $descriptionCell = ConvertTo-MarkdownCell -Value $addon.Description
+        $profileLink = if ($profileLinks.ContainsKey($addon.Folder)) { " [Mon profil]($($profileLinks[$addon.Folder]))" } else { "" }
+        $descriptionCell = ConvertTo-MarkdownCell -Value ($addon.Description + $profileLink)
         [void] $builder.AppendLine("| [$titleCell]($addonLink)<br><sub>$folderCell</sub> | $versionCell | $authorCell | $descriptionCell |")
     }
 
